@@ -5,6 +5,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import '../services/gemini_ocr_service.dart';
 import '../services/receipt_parser.dart';
+import 'auth_service.dart';
 
 /// 학습 데이터 수집 서비스
 /// 저장하는 3가지:
@@ -50,7 +51,7 @@ class TrainingDataService {
   Future<String?> saveInitialScan({
     required String? imagePath,       // 원본 이미지 경로 (null이면 수동입력)
     required GeminiOcrResult aiResult, // Gemini OCR 결과
-    required String userId,           // 익명화된 사용자 ID
+    String? userId,                   // 미지정 시 로그인한 Firebase uid 사용
   }) async {
     if (!isAvailable) return null;
 
@@ -69,7 +70,7 @@ class TrainingDataService {
       // 3) Firestore에 문서 생성
       await _db!.collection(_collection).doc(docId).set({
         'doc_id': docId,
-        'user_id': userId,
+        'user_id': userId ?? AuthService.instance.uid ?? 'unknown',
         'image_url': imageUrl,
         'ai_result': aiMap,
         'user_label': null,        // 아직 수정 전
