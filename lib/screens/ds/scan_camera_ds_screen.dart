@@ -442,17 +442,14 @@ class _ScanCameraDsScreenState extends State<ScanCameraDsScreen>
                 ),
               ),
               // 점선 프레임 + 실제 프리뷰
+              //
+              // 🔴 점선 프레임은 여기서 그리지 않는다. 프리뷰가 실제로
+              //    차지하는 사각형에 맞춰 `_preview()` 안에서 그린다.
+              //    (예전에는 이 슬롯 경계에 그려서, 잘린 프리뷰와 어긋났다)
               Expanded(
                 child: Container(
                   margin: const EdgeInsets.symmetric(vertical: 20),
-                  child: CustomPaint(
-                    painter: _DashFramePainter(
-                        color: _dash, radius: 16, strokeWidth: 2),
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(16),
-                      child: _preview(),
-                    ),
-                  ),
+                  child: _preview(),
                 ),
               ),
               // 셔터 (시안 72x72)
@@ -464,9 +461,26 @@ class _ScanCameraDsScreenState extends State<ScanCameraDsScreen>
     );
   }
 
+  /// 점선 가이드 프레임 + 라운드 클리핑을 한 번에 씌운다.
+  ///
+  /// 🔴 예전에는 이 프레임을 `build()` 쪽의 `Expanded` 슬롯 **바깥 경계**에
+  ///    그렸다. 프리뷰가 `BoxFit.cover` 로 잘려 있었으니, 그 점선은 실제
+  ///    촬영 범위와 아무 관계가 없는 선이었다. 이제는 프리뷰가 실제로
+  ///    차지하는 사각형에만 그린다.
+  Widget _framed(Widget child) {
+    return CustomPaint(
+      painter:
+          _DashFramePainter(color: _dash, radius: 16, strokeWidth: 2),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(16),
+        child: child,
+      ),
+    );
+  }
+
   Widget _preview() {
     if (_fallback != null) {
-      return Center(
+      return _framed(Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -486,10 +500,10 @@ class _ScanCameraDsScreenState extends State<ScanCameraDsScreen>
             ),
           ],
         ),
-      );
+      ));
     }
     if (!_ready || _controller == null) {
-      return const Center(
+      return _framed(const Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -500,43 +514,103 @@ class _ScanCameraDsScreenState extends State<ScanCameraDsScreen>
                     fontFamily: 'Pretendard', fontSize: 14, color: _hintFg)),
           ],
         ),
-      );
+      ));
     }
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        LayoutBuilder(
-          builder: (context, box) => FittedBox(
-            fit: BoxFit.cover,
-            child: SizedBox(
-              width: box.maxWidth,
-              height: box.maxWidth * _controller!.value.aspectRatio,
-              child: CameraPreview(_controller!),
-            ),
+
+    // 🔴 화각 불일치 수정
+    //    (사용자 리포트: "라인에 맞추라고 해놓고 찍으면 초광각/광각처럼
+    //     물체가 내가 찍는 순간보다 작게 나온다")
+    //
+    // 이전 코드는 이랬다.
+    //
+    // ```dart
+    // LayoutBuilder(
+    //   builder: (context, box) => FittedBox(
+    //     fit: BoxFit.cover,                     // ⚠️ 원인
+    //     child: SizedBox(
+    //       width: box.maxWidth,
+    //       height: box.maxWidth * _controller!.value.aspectRatio,
+    //       child: CameraPreview(_controller!),
+    //     ),
+    //   ),
+    // )
+    // ```
+    //
+    // `BoxFit.cover` 는 프리뷰를 **확대해서 슬롯을 꽉 채우고, 넘치는 부분을
+    // 잘라낸다.** 그런데 저장은 `c.takePicture()` 가 하고, 이 함수는 잘라낸
+    // 프리뷰가 아니라 **센서 프레임 전체**를 파일에 쓴다.
+    //
+    //   - 화면에서 본 것   = 센서 프레임의 일부(확대된 중앙 영역)
+    //   - 파일에 저장된 것 = 센서 프레임 전체
+    //
+    // 그래서 저장된 사진에는 화면에서 본 것보다 **더 넓은 범위**가 담긴다.
+    // 같은 영수증이 더 넓은 그림 안에 들어가니 상대적으로 작아 보이고,
+    // 그것이 "초광각으로 찍힌 것 같다" 는 느낌의 정확한 정체다. 카메라가
+    // 렌즈를 바꾼 것이 아니라, 우리가 화면에서 확대해 보여주고 있었을 뿐이다.
+    //
+    // 수정: `BoxFit.contain` + 정확한 비율 계산. 프리뷰가 센서 비율 그대로
+    // 슬롯 안에 들어가고(남는 쪽에 여백이 생긴다), **화면에 보이는 영역과
+    // 저장되는 영역이 정확히 같아진다.** 점선 가이드도 그 사각형에만 그리니
+    // 이제 "라인에 맞추면 그대로 찍힌다" 가 사실이 된다.
+    //
+    // 대안으로 cover 를 유지하고 저장된 JPEG 를 잘라내는 방법도 있었다.
+    // 하지만 네이티브에서 JPEG 를 다시 인코딩하려면 `image` 패키지를 새로
+    // 의존성에 넣어야 하고(지금은 transitive 뿐이다), 한 장마다 디코딩·
+    // 인코딩 비용이 붙는다. 불만의 본질이 "본 것과 찍힌 것이 다르다" 이므로
+    // 본 것을 진실로 만드는 쪽을 택했다.
+    return LayoutBuilder(
+      builder: (context, box) {
+        // `CameraPreview` 는 세로 화면에서 `1 / aspectRatio` 로 비율을 잡는다.
+        // 이 화면은 `portraitUp` 으로 고정되어 있으므로 그대로 쓴다.
+        final ar = 1 / _controller!.value.aspectRatio;
+        var w = box.maxWidth;
+        var h = w / ar;
+        if (h > box.maxHeight) {
+          h = box.maxHeight;
+          w = h * ar;
+        }
+        return Center(
+          child: SizedBox(
+            width: w,
+            height: h,
+            child: _framed(Stack(
+              fit: StackFit.expand,
+              children: [
+                FittedBox(
+                  fit: BoxFit.contain,
+                  child: SizedBox(
+                    width: w,
+                    height: h,
+                    child: CameraPreview(_controller!),
+                  ),
+                ),
+                // 시안 프레임 안 안내 문구 — 프리뷰 위에 얹는다
+                Align(
+                  alignment: Alignment.topCenter,
+                  child: Container(
+                    margin: const EdgeInsets.only(top: 14),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: const Color(0x9E000000),
+                      borderRadius: BorderRadius.circular(15),
+                    ),
+                    child: Text(
+                      widget.frameHint,
+                      style: const TextStyle(
+                        fontFamily: 'Pretendard',
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            )),
           ),
-        ),
-        // 시안 프레임 안 안내 문구 — 프리뷰 위에 얹는다
-        Align(
-          alignment: Alignment.topCenter,
-          child: Container(
-            margin: const EdgeInsets.only(top: 14),
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-            decoration: BoxDecoration(
-              color: const Color(0x9E000000),
-              borderRadius: BorderRadius.circular(15),
-            ),
-            child: Text(
-              widget.frameHint,
-              style: const TextStyle(
-                fontFamily: 'Pretendard',
-                fontSize: 12.5,
-                fontWeight: FontWeight.w600,
-                color: Colors.white,
-              ),
-            ),
-          ),
-        ),
-      ],
+        );
+      },
     );
   }
 

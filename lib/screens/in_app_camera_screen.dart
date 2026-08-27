@@ -432,24 +432,33 @@ class _InAppCameraScreenState extends State<InAppCameraScreen>
       );
     }
 
-    return ClipRect(
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          return OverflowBox(
-            maxWidth: constraints.maxWidth,
-            maxHeight: constraints.maxHeight,
-            child: FittedBox(
-              fit: BoxFit.cover,
-              child: SizedBox(
-                width: constraints.maxWidth,
-                height: constraints.maxWidth *
-                    _controller!.value.aspectRatio,
-                child: CameraPreview(_controller!),
-              ),
-            ),
-          );
-        },
-      ),
+    // 🔴 화각 불일치 수정 — `scan_camera_ds_screen.dart` 와 같은 원인.
+    //
+    // `BoxFit.cover` 는 프리뷰를 확대해 슬롯을 채우고 넘치는 부분을 잘라내는데,
+    // `controller.takePicture()` 는 잘린 프리뷰가 아니라 **센서 프레임 전체**를
+    // 파일에 쓴다. 그래서 저장된 사진에는 화면에서 본 것보다 더 넓은 범위가
+    // 담기고, 피사체가 상대적으로 작아 보인다("초광각처럼 나온다").
+    //
+    // `BoxFit.contain` 으로 바꾸면 화면에 보이는 영역과 저장되는 영역이
+    // 정확히 같아진다. 남는 쪽에 검은 여백이 생기지만, 그게 진실이다.
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // `CameraPreview` 는 세로 화면에서 `1 / aspectRatio` 비율을 쓴다.
+        final ar = 1 / _controller!.value.aspectRatio;
+        var w = constraints.maxWidth;
+        var h = w / ar;
+        if (h > constraints.maxHeight) {
+          h = constraints.maxHeight;
+          w = h * ar;
+        }
+        return Center(
+          child: SizedBox(
+            width: w,
+            height: h,
+            child: CameraPreview(_controller!),
+          ),
+        );
+      },
     );
   }
 

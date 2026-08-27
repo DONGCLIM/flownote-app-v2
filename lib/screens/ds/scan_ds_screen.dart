@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
 import '../../design/fn_tokens.dart';
@@ -12,20 +14,34 @@ import '../scan/scan_flow.dart';
 
 /// 시안 `AppH1Mvp / screen === 'main'` 1:1 포팅
 ///
-/// ```
+/// ```js
 /// Shell(navTitle:'스캔', tabs, activeTab:'scan')
 ///   div padding:20 column gap:26
-///     Card (bordered 아님, shadow) textAlign:center padding:'32px 16px'
-///       div 56x56 r28 background blue-95, margin '0 auto 14px'  → Icon Camera 26
+///     Card { textAlign:'center', padding:'30px 16px', overflow:'hidden',
+///            background:'linear-gradient(170deg, #FFF8F6 0%, #FDEEF0 100%)' }
+///       div 168x112 margin '0 auto 16px'            → 겹친 영수증 일러스트
+///         · radial-gradient glow (rgba(238,118,134,.18) → 0 at 70%)
+///         · 영수증 3장 [rot, dx, opacity]
+///             [[-9,-34,.9], [7,30,.9], [-1,0,1]]
+///           각 66x90 r7 #fff, shadow '0 6px 16px rgba(180,90,105,.16)',
+///           padding '10px 9px', gap 5
+///             · 제목 줄 h5 w62% r3 #F6C9D0
+///             · 본문 4줄 h3 r2 rgba(23,23,23,.10) w[86,68,78,54]%
+///         · 카메라 FAB 40x40 r20 #EE7686 (right:10, bottom:0)
+///           shadow '0 6px 16px rgba(238,118,134,.4)', 아이콘 21
 ///       div wds-heading2 mb14 fontWeight600     '오늘 촬영한 영수증 0장'
 ///       div 14/400 label-alternative mb18       '이번 달 무료 스캔 N/M장 사용'
 ///       Button large  width100%                 '촬영하기'
 ///       Button large outlined width100% mt8     '갤러리에서 선택'
-///     Card bordered  background blue-99, inset 1px blue-90
-///       header: [20x20 r10 blue-50 흰'!' 12/800] gap8 mb12 + '촬영 전 스캔 팁' 18
-///       3행: [✓ blue-50 15/800] [제목 15/600] / [설명 13.5 lh1.5 label-alternative]
+///     Card bordered { background:'#FFF9F9', boxShadow:'inset 0 0 0 1px #FBE3E6' }
+///       header: [22x22 r11 #EE7686 흰'!' 13/800] gap8 mb12 + '촬영 전 스캔 팁' 18
+///       3행: [18x18 r9 #FDECEC 원 + #EE7686 체크 12] gap10
+///            [제목 15/600] / [설명 13.5 lh1.5 label-alternative]
 ///            padding '9px 0', 첫 행 제외 borderTop 1px line-normal-neutral
 /// ```
+///
+/// 🔴 디자인만 시안에 맞춘다. 동작(`_start` / `_pickFromGallery` /
+///    `todayCount` / 스캔 한도 / 구독 분기)은 그대로다.
 class ScanDsScreen extends StatefulWidget {
   const ScanDsScreen({super.key});
 
@@ -88,28 +104,30 @@ class ScanDsScreenState extends State<ScanDsScreen> {
       padding: const EdgeInsets.all(20),
       children: [
         // ── 촬영 카드 ───────────────────────────────────────────────────
-        FnCard(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 32),
+        //
+        // 🔴 `FnCard` 는 단색만 받는다. 시안은 그라데이션이므로
+        //    Container 로 직접 그린다. (radius 20 / shadow-normal 은 동일)
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 30),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(20),
+            boxShadow: FnShadow.normal,
+            // linear-gradient(170deg, #FFF8F6 0%, #FDEEF0 100%)
+            //   CSS 170deg = 위에서 아래로 살짝 왼쪽으로 기운 방향
+            gradient: const LinearGradient(
+              begin: Alignment(-0.174, -1),
+              end: Alignment(0.174, 1),
+              colors: [Color(0xFFFFF8F6), Color(0xFFFDEEF0)],
+            ),
+          ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Container(
-                width: 56,
-                height: 56,
-                decoration: const BoxDecoration(
-                  color: FnColors.rose95, // blue-95
-                  shape: BoxShape.circle,
-                ),
-                alignment: Alignment.center,
-                child: const Icon(
-                  Icons.photo_camera_outlined,
-                  size: 26,
-                  color: FnColors.labelNormal,
-                ),
-              ),
-              const SizedBox(height: 14),
+              const _ScanHeroArt(),
+              const SizedBox(height: 16),
               Text(
                 '오늘 촬영한 영수증 $todayCount장',
+                textAlign: TextAlign.center,
                 style: const TextStyle(
                   fontFamily: 'Pretendard',
                   fontSize: 18,
@@ -118,12 +136,25 @@ class ScanDsScreenState extends State<ScanDsScreen> {
                 ),
               ),
               const SizedBox(height: 14),
+              // 🔴 시안 원본은 플랜 구분 없이 이 한 줄이다.
+              //
+              // ```js
+              // div { fontSize:14, fontWeight:400, color:'var(--label-alternative)' }
+              //   `이번 달 무료 스캔 ${monthlyCount}/${MVP_MONTHLY_CAP}장 사용`
+              // ```
+              //
+              // 예전에는 `sub.purchasedPro` / `sub.isPro` 로 'PRO · 스캔 무제한'
+              // 같은 문구를 갈라 보여줬다. 그런데 지금은
+              // `SubscriptionService.unlockEverything == true` 라서 `isPro` 가
+              // 항상 참이고, 결과적으로 화면에는 늘 '스캔 무제한' 이 떴다.
+              // 사장님이 준 디자인에는 그런 문구가 없고, "프로 어쩌고는 다
+              // 빼기로 했다" 는 지시도 있었다. 그래서 시안 문구 하나로 통일한다.
+              //
+              // 남은 횟수 계산(`used` / `cap`)과 한도 도달 판단(`reached`)은
+              // 건드리지 않는다 — 기능은 그대로다.
               Text(
-                sub.purchasedPro
-                    ? 'PRO · 스캔 무제한'
-                    : sub.isPro
-                        ? '스캔 무제한 · 이번 달 $used장 스캔'
-                        : '이번 달 무료 스캔 $used/$cap장 사용',
+                '이번 달 무료 스캔 $used/$cap장 사용',
+                textAlign: TextAlign.center,
                 style: const TextStyle(
                   fontFamily: 'Pretendard',
                   fontSize: 14,
@@ -153,8 +184,8 @@ class ScanDsScreenState extends State<ScanDsScreen> {
         // ── 스캔 팁 카드 ────────────────────────────────────────────────
         FnCard(
           bordered: true,
-          color: FnColors.rose99, // blue-99
-          borderColor: FnColors.rose90, // blue-90
+          color: const Color(0xFFFFF9F9),
+          borderColor: const Color(0xFFFBE3E6),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
@@ -162,10 +193,10 @@ class ScanDsScreenState extends State<ScanDsScreen> {
               Row(
                 children: [
                   Container(
-                    width: 20,
-                    height: 20,
+                    width: 22,
+                    height: 22,
                     decoration: const BoxDecoration(
-                      color: FnColors.primaryNormal,
+                      color: _rose,
                       shape: BoxShape.circle,
                     ),
                     alignment: Alignment.center,
@@ -173,7 +204,7 @@ class ScanDsScreenState extends State<ScanDsScreen> {
                       '!',
                       style: TextStyle(
                         fontFamily: 'Pretendard',
-                        fontSize: 12,
+                        fontSize: 13,
                         fontWeight: FontWeight.w800,
                         height: 1,
                         color: Colors.white,
@@ -186,7 +217,7 @@ class ScanDsScreenState extends State<ScanDsScreen> {
                     style: TextStyle(
                       fontFamily: 'Pretendard',
                       fontSize: 18,
-                      fontWeight: FontWeight.w700,
+                      fontWeight: FontWeight.w600,
                       color: FnColors.labelNormal,
                     ),
                   ),
@@ -208,16 +239,20 @@ class ScanDsScreenState extends State<ScanDsScreen> {
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Padding(
-                        padding: EdgeInsets.only(top: 1),
-                        child: Text(
-                          '✓',
-                          style: TextStyle(
-                            fontFamily: 'Pretendard',
-                            fontSize: 15,
-                            fontWeight: FontWeight.w800,
-                            color: FnColors.primaryNormal,
-                          ),
+                      // 시안: 18x18 r9 #FDECEC 원 + #EE7686 체크 12
+                      Container(
+                        margin: const EdgeInsets.only(top: 2),
+                        width: 18,
+                        height: 18,
+                        decoration: const BoxDecoration(
+                          color: Color(0xFFFDECEC),
+                          shape: BoxShape.circle,
+                        ),
+                        alignment: Alignment.center,
+                        child: const Icon(
+                          Icons.check_rounded,
+                          size: 12,
+                          color: _rose,
                         ),
                       ),
                       const SizedBox(width: 10),
@@ -256,6 +291,151 @@ class ScanDsScreenState extends State<ScanDsScreen> {
           ),
         ),
       ],
+    );
+  }
+}
+
+/// 시안 로즈 `#EE7686` (= 템플릿이 덮어쓴 `--blue-50`)
+const Color _rose = Color(0xFFEE7686);
+
+/// 스캔 카드 히어로 일러스트 — 겹쳐 놓인 영수증 3장 + 카메라 FAB.
+///
+/// 시안 원본:
+/// ```js
+/// div { position:'relative', width:168, height:112, margin:'0 auto 16px' }
+///   div { inset:0, borderRadius:16,
+///         background:'radial-gradient(circle at 50% 46%,
+///                     rgba(238,118,134,.18), rgba(238,118,134,0) 70%)' }
+///   [[-9,-34,.9],[7,30,.9],[-1,0,1]].map(([rot,dx,op], i) => …)
+///   div { right:10, bottom:0, width:40, height:40, borderRadius:20,
+///         background:'#EE7686', boxShadow:'0 6px 16px rgba(238,118,134,.4)' }
+/// ```
+class _ScanHeroArt extends StatelessWidget {
+  const _ScanHeroArt();
+
+  /// [회전(deg), 좌우 오프셋(px), 투명도]
+  static const _cards = <(double, double, double)>[
+    (-9, -34, .9),
+    (7, 30, .9),
+    (-1, 0, 1),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 168,
+      height: 112,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          // radial glow
+          Positioned.fill(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(16),
+                gradient: const RadialGradient(
+                  center: Alignment(0, -0.08), // circle at 50% 46%
+                  radius: 0.7,
+                  colors: [Color(0x2EEE7686), Color(0x00EE7686)],
+                ),
+              ),
+            ),
+          ),
+          // 영수증 3장 — 시안 z-index 대로 마지막(가운데) 장이 맨 위
+          for (final (rot, dx, op) in _cards)
+            Positioned(
+              left: 168 / 2 - 33 + dx,
+              top: 6,
+              child: Opacity(
+                opacity: op,
+                child: Transform.rotate(
+                  angle: rot * math.pi / 180,
+                  child: const _ReceiptSheet(),
+                ),
+              ),
+            ),
+          // 카메라 FAB
+          Positioned(
+            right: 10,
+            bottom: 0,
+            child: Container(
+              width: 40,
+              height: 40,
+              decoration: const BoxDecoration(
+                color: _rose,
+                shape: BoxShape.circle,
+                boxShadow: [
+                  BoxShadow(
+                    color: Color(0x66EE7686), // rgba(238,118,134,.4)
+                    blurRadius: 16,
+                    offset: Offset(0, 6),
+                  ),
+                ],
+              ),
+              alignment: Alignment.center,
+              child: const Icon(Icons.photo_camera_rounded,
+                  size: 21, color: Colors.white),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 일러스트 안 영수증 한 장 (66x90 r7)
+class _ReceiptSheet extends StatelessWidget {
+  const _ReceiptSheet();
+
+  /// 본문 줄 너비(%) — 시안 [86, 68, 78, 54]
+  static const _lines = <double>[.86, .68, .78, .54];
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 66,
+      height: 90,
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 10),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(7),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x29B45A69), // rgba(180,90,105,.16)
+            blurRadius: 16,
+            offset: Offset(0, 6),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // 제목 줄
+          FractionallySizedBox(
+            widthFactor: .62,
+            child: Container(
+              height: 5,
+              decoration: BoxDecoration(
+                color: const Color(0xFFF6C9D0),
+                borderRadius: BorderRadius.circular(3),
+              ),
+            ),
+          ),
+          for (final w in _lines) ...[
+            const SizedBox(height: 5),
+            FractionallySizedBox(
+              widthFactor: w,
+              child: Container(
+                height: 3,
+                decoration: BoxDecoration(
+                  color: const Color(0x1A171717), // rgba(23,23,23,.10)
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
     );
   }
 }
