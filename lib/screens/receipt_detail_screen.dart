@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 
 import '../design/fn_badge_ds.dart';
@@ -12,6 +13,8 @@ import '../design/fn_shell.dart';
 import '../design/fn_tokens.dart';
 import '../models/receipt_model.dart';
 import '../providers/receipt_provider.dart';
+import '../services/gallery_intake.dart';
+import 'ds/receipt_crop_ds_screen.dart';
 import '../services/vendor_tax_service.dart';
 import '../widgets/flower_name_field.dart';
 import '../widgets/receipt_photo.dart';
@@ -328,6 +331,43 @@ class _ReceiptDetailScreenState extends State<ReceiptDetailScreen> {
     );
   }
 
+  /// 죽은 사진(기기에서 삭제된 예전 캐시 경로)을 되살리는 유일한 수단.
+  ///
+  /// 🔴 왜 필요한가 — 실측으로 확인한 내용을 남긴다.
+  ///    Firestore 의 영수증 40건 중 `imagePath` 가 기기 경로인 16건이
+  ///    전부 `/data/user/0/com.flownote.app/cache/…` 였다. `cache/` 는
+  ///    안드로이드가 예고 없이 비우는 폴더다. 그래서 몇 주 뒤 내역에서
+  ///    열면 '사진을 찾을 수 없어요' 만 남는다.
+  ///
+  ///    지금은 저장 시점에 문서 폴더로 옮기고(ReceiptImageStore.persist)
+  ///    촬영 시점부터 문서 폴더에 쓰기 때문에 새로 찍는 사진은 이 문제가
+  ///    없다. 하지만 **이미 저장된 16건은 파일이 사라져서 복구가 불가능**
+  ///    하다. 사장님이 할 수 있는 유일한 일은 사진을 다시 붙이는 것이다.
+  ///    그래서 그 동작을 화면에 꺼내 둔다.
+  Future<void> _reattachPhoto() async {
+    final picked = await GalleryIntake.pickAndPrepare(multiple: false);
+    if (!mounted || picked == null || picked.usable.isEmpty) return;
+
+    // 붙이기 전에 자르기·크기 조절을 거친다. 촬영 흐름과 동일하다.
+    final edited = await Navigator.push<XFile>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ReceiptCropDsScreen(file: picked.usable.first),
+      ),
+    );
+    if (!mounted) return;
+    final file = edited ?? picked.usable.first;
+
+    final provider = context.read<ReceiptProvider>();
+    final updated = widget.receipt.copyWith(imagePath: file.path);
+    await provider.updateReceipt(updated);
+    if (!mounted) return;
+    setState(() {
+      _imageRotation = 0;
+    });
+    showFnToast(context, '사진을 다시 붙였습니다', type: FnToastType.success);
+  }
+
   // ── 상단 고정 영수증 이미지 ───────────────────────────────
   Widget _viewer() {
     final path = widget.receipt.imagePath!;
@@ -364,6 +404,11 @@ class _ReceiptDetailScreenState extends State<ReceiptDetailScreen> {
                     () => setState(() => _imageRotation = (_imageRotation + 1) % 4)),
                 const SizedBox(width: 8),
                 _toolBtn(Icons.zoom_in_rounded, () => _showFull(path, isNetwork)),
+                const SizedBox(width: 8),
+                // 🔴 사진이 죽었을 때(예전 캐시 경로) 사장님이 할 수 있는
+                //    유일한 복구 동작. 항상 꺼내 둔다 — 잘 보이는 사진도
+                //    다시 찍어 붙이고 싶을 수 있다.
+                _toolBtn(Icons.add_photo_alternate_outlined, _reattachPhoto),
               ],
             ),
           ),

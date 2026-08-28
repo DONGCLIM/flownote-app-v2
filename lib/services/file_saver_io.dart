@@ -88,6 +88,25 @@ Future<bool> copyLocalFile(String from, String to) async {
   }
 }
 
+/// 편집한 사진 바이트를 [path] 에 **새 파일로** 쓴다. 성공하면 true.
+///
+/// 크롭/리사이즈 결과는 원본 파일이 아니라 새 바이트다. 그런데 이후
+/// 파이프라인(`ScanDraft.toReceipt` → `imagePath: file.path`) 은 **경로**를
+/// 요구한다. 그래서 네이티브에서는 실제 파일로 떨어뜨려야 한다.
+/// (웹판은 no-op — 웹은 `XFile.fromData` 의 blob URL 을 쓰고, 저장 시점에
+///  `ReceiptImageStore` 가 클라우드로 올린다)
+Future<bool> writeLocalBytes(String path, Uint8List bytes) async {
+  try {
+    final f = File(path);
+    final parent = f.parent;
+    if (!await parent.exists()) await parent.create(recursive: true);
+    await f.writeAsBytes(bytes, flush: true);
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
 /// 파일 삭제.
 Future<void> deleteLocalFile(String path) async {
   try {

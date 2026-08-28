@@ -84,33 +84,95 @@ void main() {
     });
   });
 
-  test('🔴 카메라 프리뷰 소스에 BoxFit.cover 가 다시 들어오면 실패한다', () {
+  // 🔴 #103 에서 화각 계약이 바뀌었다. 기록을 남긴다.
+  //
+  // #101 은 "cover 금지" 를 못박았다. 이유는 정당했다 — cover 로 늘리면
+  // 프리뷰가 잘려서 사장님이 프레임에 맞춘 것과 저장된 사진이 달라졌다
+  // (초광각 문제). 그래서 프레임을 센서 비율(0.75)로 줄였다.
+  //
+  // 그런데 그게 #103 의 "왜 갑자기 작아졌어?" 다. 시안은 프레임이 세로로
+  // 꽉 차야 한다(`flex: 1`, 비율 약 0.62).
+  //
+  // 두 요구를 동시에 만족시키는 방법은 하나뿐이다.
+  //   프리뷰는 cover 로 프레임을 꽉 채우고,
+  //   **찍은 JPEG 을 같은 비율로 잘라서** 저장한다.
+  // 그래서 cover 는 이제 허용하되, **자르기가 반드시 함께 있어야 한다.**
+  test('🔴 cover 로 채우면 찍은 사진도 같은 비율로 잘라야 한다', () {
     for (final path in const [
       'lib/screens/ds/scan_camera_ds_screen.dart',
       'lib/screens/in_app_camera_screen.dart',
     ]) {
       final f = File(path);
       expect(f.existsSync(), isTrue, reason: '$path 가 없다');
-      final offenders = <String>[];
-      for (final ln in f.readAsLinesSync()) {
-        final t = ln.trim();
-        // 원인을 설명하는 주석은 세지 않는다
-        if (t.startsWith('//')) continue;
-        if (t.contains('BoxFit.cover')) offenders.add(t);
-      }
-      expect(offenders, isEmpty,
-          reason: '$path 의 카메라 프리뷰는 cover 를 쓰면 안 된다 — '
-              '프리뷰가 잘려서 저장 결과와 화각이 어긋난다');
+      final src = f.readAsStringSync();
+      final code = f
+          .readAsLinesSync()
+          .map((l) => l.trim())
+          .where((l) => !l.startsWith('//'))
+          .join('\n');
+
+      if (!code.contains('BoxFit.cover')) continue;
+
+      // cover 를 쓴다면 자르기가 반드시 있어야 한다.
+      expect(code.contains('_cropToFrame'), isTrue,
+          reason: '$path 가 cover 로 프리뷰를 채우는데 _cropToFrame 이 없다 — '
+              '프레임에 맞춘 것과 저장된 사진이 달라진다(초광각 문제 재발)');
+      expect(code.contains('coverCropRect'), isTrue,
+          reason: '$path 의 자르기가 프리뷰와 같은 계산(coverCropRect)을 써야 한다');
+      // 잘린 사진이 프레임 밖으로 새지 않게 clip 이 있어야 한다.
+      expect(code.contains('Clip.hardEdge'), isTrue,
+          reason: '$path 의 cover 프리뷰에 clipBehavior 가 없다');
+      // 화각 계약 상수가 살아있는지
+      expect(src.contains('0.62'), isTrue,
+          reason: '$path 에 프레임 비율 계약(0.62)이 없다');
     }
   });
 
-  test('🔴 점선 가이드는 프리뷰가 차지하는 사각형에만 그린다', () {
+  test('🔴 프레임 비율 계약은 화면·저장 양쪽이 같은 값을 쓴다', () {
+    // 프레임 그리기 / cover 프리뷰 / JPEG 자르기 — 세 곳이 같은 값을 봐야
+    // 한다. 값이 갈라지면 다시 화각이 어긋난다.
+    final ds =
+        File('lib/screens/ds/scan_camera_ds_screen.dart').readAsStringSync();
+    expect(ds.contains('static const double frameAspect = 0.62;'), isTrue,
+        reason: 'frameAspect 계약 상수가 사라졌다');
+    final iac =
+        File('lib/screens/in_app_camera_screen.dart').readAsStringSync();
+    expect(iac.contains('static const double _frameAspect = 0.62;'), isTrue,
+        reason: 'in_app_camera 의 프레임 비율이 어긋났다');
+  });
+
+  test('🔴 프레임은 세로로 꽉 차야 한다 (#103 "왜 갑자기 작아졌어?")', () {
+    // #101 의 회귀 코드는 이랬다.
+    //   if (h > box.maxHeight) { h = box.maxHeight; w = h * ar; }  ← 폭이 줄어든다
+    // 지금은 폭이 78% 아래로는 절대 줄지 않는다.
+    const boxW = 380.0, boxH = 520.0;
+    const frameAspect = 0.62;
+    var w = boxW;
+    var h = w / frameAspect;
+    if (h > boxH) {
+      h = boxH;
+      w = h * frameAspect;
+      if (w < boxW * 0.78) {
+        w = boxW * 0.78;
+        h = boxH;
+      }
+    }
+    // 세로는 슬롯을 꽉 채운다
+    expect(h, closeTo(boxH, 1e-9));
+    // 폭이 시안보다 많이 좁아지지 않는다
+    expect(w, greaterThanOrEqualTo(boxW * 0.78 - 1e-9));
+  });
+
+  test('🔴 프레임 가이드는 프리뷰 사각형에만 그린다', () {
     // 예전에는 build() 쪽 Expanded 슬롯 경계에 CustomPaint 를 뒀다.
     // 지금은 `_framed()` 헬퍼 하나로 모아서, 프리뷰 사각형에만 씌운다.
     final src =
         File('lib/screens/ds/scan_camera_ds_screen.dart').readAsStringSync();
-    expect(src.contains('Widget _framed(Widget child) {'), isTrue,
+    expect(src.contains('Widget _framed('), isTrue,
         reason: '_framed 헬퍼가 사라지면 가이드가 다시 어긋날 수 있다');
+    // 시안 요소들이 살아있는지 (모서리 브래킷 / 스캔 라인)
+    expect(src.contains('_Bracket'), isTrue, reason: '모서리 브래킷이 사라졌다');
+    expect(src.contains('0.46'), isTrue, reason: '스캔 라인 위치(46%)가 사라졌다');
     // 프리뷰 사각형 계산이 살아있는지
     expect(src.contains('1 / _controller!.value.aspectRatio'), isTrue);
   });

@@ -9,7 +9,10 @@ import '../../design/fn_shell.dart';
 import '../../design/fn_controls_ds.dart';
 import '../../design/fn_sheet.dart';
 import '../../design/fn_feedback.dart';
+import '../../services/file_saver.dart';
 import '../../services/gallery_intake.dart';
+import '../../services/receipt_image_editor.dart';
+import 'receipt_crop_ds_screen.dart';
 import '../../widgets/xfile_image.dart';
 
 /// 촬영 화면 — 시안 `AppH7 scan-camera` / `AppH4 biz-camera` 1:1
@@ -69,8 +72,24 @@ class _ScanCameraDsScreenState extends State<ScanCameraDsScreen>
   /// 시안 배지 글자 `#FFC9CE`
   static const _badgeFg = Color(0xFFFFC9CE);
 
-  /// 시안 점선 `rgba(255,255,255,.5)`
-  static const _dash = Color(0x80FFFFFF);
+  /// 시안 촬영 프레임의 **가로/세로 비율**.
+  ///
+  /// 시안(`AppH7 scan-camera`)의 프레임은 `flex: 1` — 남은 세로를 전부
+  /// 차지하는 **세로로 긴 사각형**이다. 영수증(감열지)이 세로로 길기
+  /// 때문에 그 모양이 맞다. 화면 폭 372 · 프레임 높이 약 600 이므로
+  /// 실측 비율은 0.62 근처다.
+  ///
+  /// 🔴 이 값이 화면과 저장 사진을 잇는 **유일한 계약**이다.
+  ///    프레임을 이 비율로 그리고, 프리뷰를 `BoxFit.cover` 로 꽉 채우고,
+  ///    찍힌 JPEG 를 **이 비율로 잘라낸다.** 세 곳이 같은 숫자를 쓰는 한
+  ///    "라인에 맞추면 그대로 찍힌다" 가 사실로 유지된다.
+  static const double frameAspect = 0.62;
+
+  /// 시안 프레임 배경 `rgba(255,255,255,.04)`
+  static const _frameFill = Color(0x0AFFFFFF);
+
+  /// 시안 코너 브래킷 `3px solid #EE7686`
+  static const _bracket = Color(0xFFEE7686);
 
   /// 시안 안내문 `rgba(255,255,255,.6)`
   static const _hintFg = Color(0x99FFFFFF);
@@ -93,6 +112,10 @@ class _ScanCameraDsScreenState extends State<ScanCameraDsScreen>
   String? _fallback;
 
   final List<XFile> _shots = [];
+
+  /// 마지막으로 그려진 프레임 크기. 촬영 시 자를 비율을 알기 위해
+  /// `_previewSlot()` 이 채운다.
+  Size _frameSize = Size.zero;
 
   bool get _isMulti => widget.mode == 'multi';
 
@@ -238,7 +261,12 @@ class _ScanCameraDsScreenState extends State<ScanCameraDsScreen>
 
     setState(() => _shooting = true);
     try {
-      final x = await c.takePicture();
+      final raw = await c.takePicture();
+      if (!mounted) return;
+
+      // 🔴 화면에서 본 프레임만 남긴다. 이 한 줄이 "라인에 맞춰 찍었는데
+      //    더 넓게 나온다" 를 없앤다. 실패하면 원본을 그대로 쓴다.
+      var x = await _cropToFrame(raw);
       if (!mounted) return;
 
       final action = await Navigator.push<String>(
@@ -248,6 +276,8 @@ class _ScanCameraDsScreenState extends State<ScanCameraDsScreen>
             file: x,
             shotIndex: _shots.length + 1,
             isMulti: _isMulti,
+            // 미리보기에서 자르면 저장할 파일을 바꿔치기한다.
+            onEdited: (edited) => x = edited,
           ),
         ),
       );
@@ -441,15 +471,11 @@ class _ScanCameraDsScreenState extends State<ScanCameraDsScreen>
                   ),
                 ),
               ),
-              // 점선 프레임 + 실제 프리뷰
-              //
-              // 🔴 점선 프레임은 여기서 그리지 않는다. 프리뷰가 실제로
-              //    차지하는 사각형에 맞춰 `_preview()` 안에서 그린다.
-              //    (예전에는 이 슬롯 경계에 그려서, 잘린 프리뷰와 어긋났다)
+              // 시안 프레임 + 실제 프리뷰 (`flex: 1`, margin '20px 0')
               Expanded(
                 child: Container(
                   margin: const EdgeInsets.symmetric(vertical: 20),
-                  child: _preview(),
+                  child: _previewSlot(),
                 ),
               ),
               // 셔터 (시안 72x72)
@@ -461,20 +487,163 @@ class _ScanCameraDsScreenState extends State<ScanCameraDsScreen>
     );
   }
 
-  /// 점선 가이드 프레임 + 라운드 클리핑을 한 번에 씌운다.
+  /// 시안 프레임(코너 브래킷 4개 + 스캔 라인 + 하단 안내문) 을 씌운다.
   ///
-  /// 🔴 예전에는 이 프레임을 `build()` 쪽의 `Expanded` 슬롯 **바깥 경계**에
-  ///    그렸다. 프리뷰가 `BoxFit.cover` 로 잘려 있었으니, 그 점선은 실제
-  ///    촬영 범위와 아무 관계가 없는 선이었다. 이제는 프리뷰가 실제로
-  ///    차지하는 사각형에만 그린다.
-  Widget _framed(Widget child) {
-    return CustomPaint(
-      painter:
-          _DashFramePainter(color: _dash, radius: 16, strokeWidth: 2),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(16),
-        child: child,
-      ),
+  /// ## 왜 점선을 버렸나
+  ///
+  /// 사장님이 준 시안 이미지에는 점선이 없다. 네 귀퉁이에만 분홍색
+  /// 갈고리(브래킷)가 있고, 46% 높이에 분홍 그라데이션 스캔 라인이 있고,
+  /// 프레임 아래쪽에 안내문이 있다. 프로토타입 소스도 같다.
+  ///
+  /// ```js
+  /// div { flex:1, margin:'20px 0', borderRadius:18, position:'relative',
+  ///       background:'rgba(255,255,255,.04)',
+  ///       display:'flex', alignItems:'flex-end', justifyContent:'center',
+  ///       padding:18 }
+  ///   [[0,0],[0,1],[1,0],[1,1]].map(([r,b]) => div {
+  ///     position:'absolute', width:34, height:34,
+  ///     [r?'right':'left']:10, [b?'bottom':'top']:10, borderRadius:6,
+  ///     border:'3px solid #EE7686', ... })
+  ///   div { position:'absolute', left:26, right:26, top:'46%', height:2,
+  ///         background:'linear-gradient(90deg,
+  ///           rgba(238,118,134,0), #EE7686, rgba(238,118,134,0))' }
+  ///   div { color:'rgba(255,255,255,.72)', fontSize:13.5 }
+  ///     '영수증을 프레임 안에 맞춰주세요'
+  /// ```
+  Widget _framed(Widget child, {String? topHint}) {
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        // 프레임 배경 + 라운드 클리핑 안에 프리뷰
+        ClipRRect(
+          borderRadius: BorderRadius.circular(18),
+          child: Container(color: _frameFill, child: child),
+        ),
+        // 시안: 왼쪽 위 안내문 (`문서 경계 자동 감지 중`)
+        if (topHint != null)
+          Positioned(
+            left: 18,
+            top: 22,
+            child: Text(
+              topHint,
+              style: const TextStyle(
+                fontFamily: 'Pretendard',
+                fontSize: 13,
+                fontWeight: FontWeight.w500,
+                color: Color(0xB8FFFFFF),
+                shadows: [
+                  Shadow(color: Color(0xCC000000), blurRadius: 4),
+                ],
+              ),
+            ),
+          ),
+        // 시안: 46% 높이 스캔 라인
+        Positioned(
+          left: 26,
+          right: 26,
+          top: 0,
+          bottom: 0,
+          child: LayoutBuilder(
+            builder: (context, box) => Padding(
+              padding: EdgeInsets.only(top: box.maxHeight * 0.46),
+              child: Align(
+                alignment: Alignment.topCenter,
+                child: Container(
+                  height: 2,
+                  decoration: const BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [
+                        Color(0x00EE7686),
+                        _bracket,
+                        Color(0x00EE7686),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+        // 시안: 네 귀퉁이 브래킷 34x34 / 3px / r6 / 10px 안쪽
+        for (final corner in const [
+          (false, false),
+          (false, true),
+          (true, false),
+          (true, true),
+        ])
+          Positioned(
+            left: corner.$1 ? null : 10,
+            right: corner.$1 ? 10 : null,
+            top: corner.$2 ? null : 10,
+            bottom: corner.$2 ? 10 : null,
+            child: _Bracket(right: corner.$1, bottom: corner.$2),
+          ),
+        // 시안: 프레임 아래 안내문
+        Align(
+          alignment: Alignment.bottomCenter,
+          child: Padding(
+            padding: const EdgeInsets.only(bottom: 18),
+            child: Text(
+              widget.frameHint,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                fontFamily: 'Pretendard',
+                fontSize: 13.5,
+                fontWeight: FontWeight.w500,
+                color: Color(0xB8FFFFFF),
+                shadows: [
+                  Shadow(color: Color(0xCC000000), blurRadius: 4),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// 프레임 슬롯 — 시안의 `flex: 1` 을 그대로 재현한다.
+  ///
+  /// 🔴 여기가 "왜 갑자기 작아졌어?" 의 정답이다.
+  ///
+  /// 직전 버전은 프레임 크기를 **센서 비율**로 계산했다.
+  ///
+  /// ```dart
+  /// final ar = 1 / _controller!.value.aspectRatio;   // 4:3 세로 → 0.75
+  /// var w = box.maxWidth;
+  /// var h = w / ar;
+  /// if (h > box.maxHeight) { h = box.maxHeight; w = h * ar; }  // ⚠️ 폭이 줄어든다
+  /// ```
+  ///
+  /// 세로가 넘치면 **가로를 깎아서** 센서 비율을 지켰다. 그래서 프레임이
+  /// 슬롯보다 작아지고, 시안의 세로로 긴 영수증 모양이 아니라 사진기
+  /// 비율의 작은 사각형이 됐다. 화각을 정직하게 만들려던 수정이 프레임
+  /// 크기를 희생한 것이다.
+  ///
+  /// 이제는 프레임을 **시안 비율([frameAspect])로 슬롯에 꽉** 채우고,
+  /// 프리뷰를 `BoxFit.cover` 로 채운다. 그러면 화면과 센서 프레임이
+  /// 어긋나는데, 그 차이를 촬영 직후 [_cropToFrame] 이 잘라내서 없앤다.
+  /// 화각 정직성과 시안 크기를 둘 다 지키는 유일한 방법이다.
+  Widget _previewSlot() {
+    return LayoutBuilder(
+      builder: (context, box) {
+        // 시안 비율로 슬롯을 최대한 채운다.
+        var w = box.maxWidth;
+        var h = w / frameAspect;
+        if (h > box.maxHeight) {
+          h = box.maxHeight;
+          w = h * frameAspect;
+          // 세로가 부족해서 가로를 깎게 되면, 시안 느낌을 살리려고
+          // 폭을 너무 줄이지는 않는다. 최소 폭을 보장하고 대신 프레임이
+          // 조금 더 정사각형에 가까워지도록 허용한다.
+          if (w < box.maxWidth * 0.78) {
+            w = box.maxWidth * 0.78;
+            h = box.maxHeight;
+          }
+        }
+        _frameSize = Size(w, h);
+        return Center(child: SizedBox(width: w, height: h, child: _preview()));
+      },
     );
   }
 
@@ -517,101 +686,98 @@ class _ScanCameraDsScreenState extends State<ScanCameraDsScreen>
       ));
     }
 
-    // 🔴 화각 불일치 수정
-    //    (사용자 리포트: "라인에 맞추라고 해놓고 찍으면 초광각/광각처럼
-    //     물체가 내가 찍는 순간보다 작게 나온다")
+    // 🔴 화각 계약 (읽지 않고 고치면 반드시 되돌아오는 버그다)
     //
-    // 이전 코드는 이랬다.
+    // 요구가 두 개인데 서로 충돌한다.
+    //   (A) 프레임은 시안처럼 세로로 긴 영수증 모양으로 꽉 차야 한다
+    //   (B) 라인에 맞춰 찍으면 그대로 저장돼야 한다 (초광각 느낌 금지)
     //
-    // ```dart
-    // LayoutBuilder(
-    //   builder: (context, box) => FittedBox(
-    //     fit: BoxFit.cover,                     // ⚠️ 원인
-    //     child: SizedBox(
-    //       width: box.maxWidth,
-    //       height: box.maxWidth * _controller!.value.aspectRatio,
-    //       child: CameraPreview(_controller!),
-    //     ),
-    //   ),
-    // )
-    // ```
+    // 카메라 센서는 4:3(세로로 놓으면 0.75)이고 시안 프레임은 0.62 다.
+    // 비율이 다르니 둘 다 만족시키는 배치는 없다.
     //
-    // `BoxFit.cover` 는 프리뷰를 **확대해서 슬롯을 꽉 채우고, 넘치는 부분을
-    // 잘라낸다.** 그런데 저장은 `c.takePicture()` 가 하고, 이 함수는 잘라낸
-    // 프리뷰가 아니라 **센서 프레임 전체**를 파일에 쓴다.
+    // | 방법 | (A) | (B) |
+    // |---|---|---|
+    // | `contain` + 센서 비율로 프레임 축소 (직전 버전) | ❌ 작아진다 | ✅ |
+    // | `cover` + 자르지 않음 (그 전 버전) | ✅ | ❌ 초광각 |
+    // | **`cover` + 찍은 JPEG 를 프레임 비율로 자름** | ✅ | ✅ |
     //
-    //   - 화면에서 본 것   = 센서 프레임의 일부(확대된 중앙 영역)
-    //   - 파일에 저장된 것 = 센서 프레임 전체
-    //
-    // 그래서 저장된 사진에는 화면에서 본 것보다 **더 넓은 범위**가 담긴다.
-    // 같은 영수증이 더 넓은 그림 안에 들어가니 상대적으로 작아 보이고,
-    // 그것이 "초광각으로 찍힌 것 같다" 는 느낌의 정확한 정체다. 카메라가
-    // 렌즈를 바꾼 것이 아니라, 우리가 화면에서 확대해 보여주고 있었을 뿐이다.
-    //
-    // 수정: `BoxFit.contain` + 정확한 비율 계산. 프리뷰가 센서 비율 그대로
-    // 슬롯 안에 들어가고(남는 쪽에 여백이 생긴다), **화면에 보이는 영역과
-    // 저장되는 영역이 정확히 같아진다.** 점선 가이드도 그 사각형에만 그리니
-    // 이제 "라인에 맞추면 그대로 찍힌다" 가 사실이 된다.
-    //
-    // 대안으로 cover 를 유지하고 저장된 JPEG 를 잘라내는 방법도 있었다.
-    // 하지만 네이티브에서 JPEG 를 다시 인코딩하려면 `image` 패키지를 새로
-    // 의존성에 넣어야 하고(지금은 transitive 뿐이다), 한 장마다 디코딩·
-    // 인코딩 비용이 붙는다. 불만의 본질이 "본 것과 찍힌 것이 다르다" 이므로
-    // 본 것을 진실로 만드는 쪽을 택했다.
-    return LayoutBuilder(
-      builder: (context, box) {
-        // `CameraPreview` 는 세로 화면에서 `1 / aspectRatio` 로 비율을 잡는다.
-        // 이 화면은 `portraitUp` 으로 고정되어 있으므로 그대로 쓴다.
-        final ar = 1 / _controller!.value.aspectRatio;
-        var w = box.maxWidth;
-        var h = w / ar;
-        if (h > box.maxHeight) {
-          h = box.maxHeight;
-          w = h * ar;
-        }
-        return Center(
-          child: SizedBox(
-            width: w,
-            height: h,
-            child: _framed(Stack(
-              fit: StackFit.expand,
-              children: [
-                FittedBox(
-                  fit: BoxFit.contain,
-                  child: SizedBox(
-                    width: w,
-                    height: h,
-                    child: CameraPreview(_controller!),
-                  ),
-                ),
-                // 시안 프레임 안 안내 문구 — 프리뷰 위에 얹는다
-                Align(
-                  alignment: Alignment.topCenter,
-                  child: Container(
-                    margin: const EdgeInsets.only(top: 14),
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: const Color(0x9E000000),
-                      borderRadius: BorderRadius.circular(15),
-                    ),
-                    child: Text(
-                      widget.frameHint,
-                      style: const TextStyle(
-                        fontFamily: 'Pretendard',
-                        fontSize: 12.5,
-                        fontWeight: FontWeight.w600,
-                        color: Colors.white,
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            )),
-          ),
-        );
-      },
+    // 마지막 방법을 쓴다. `_cropToFrame()` 이 촬영 직후 `frameAspect` 로
+    // 잘라내므로, 화면에서 본 사각형과 파일에 저장된 사각형이 같아진다.
+    // (직전 버전에서 이 방법을 안 쓴 이유는 "`image` 패키지를 새 의존성으로
+    //  넣어야 한다" 였는데, 크롭/리사이즈 기능이 그 패키지를 이미 필요로
+    //  하므로 그 이유는 사라졌다)
+    return _framed(
+      FittedBox(
+        fit: BoxFit.cover,
+        clipBehavior: Clip.hardEdge,
+        child: SizedBox(
+          width: _frameSize.width <= 0 ? 300 : _frameSize.width,
+          height: _frameSize.width <= 0
+              ? 300 / (1 / _controller!.value.aspectRatio)
+              : _frameSize.width / (1 / _controller!.value.aspectRatio),
+          child: CameraPreview(_controller!),
+        ),
+      ),
+      topHint: '문서 경계 자동 감지 중',
     );
+  }
+
+  /// 찍힌 JPEG 를 **화면에서 보였던 프레임 비율**로 잘라낸다.
+  ///
+  /// 프리뷰를 `BoxFit.cover` 로 보여주면 센서 프레임의 일부만 화면에
+  /// 나타난다. `takePicture()` 는 센서 프레임 전체를 파일에 쓰므로,
+  /// 그대로 저장하면 화면보다 넓게 찍히고 영수증이 상대적으로 작아진다.
+  /// 그게 "초광각처럼 나온다" 의 정체였다.
+  ///
+  /// 여기서 같은 비율로 중앙을 잘라내면 그 차이가 없어진다.
+  /// 잘라내기가 실패하면 원본을 그대로 쓴다 — 사진 한 장 때문에 촬영을
+  /// 실패로 만들지 않는다.
+  Future<XFile> _cropToFrame(XFile shot) async {
+    try {
+      final bytes = await shot.readAsBytes();
+      if (bytes.isEmpty) return shot;
+
+      final size = await ReceiptImageEditor.measure(bytes);
+      if (size == null) return shot;
+
+      final rect = ReceiptImageEditor.coverCropRect(
+        imageWidth: size.width,
+        imageHeight: size.height,
+        previewAspect: frameAspect,
+      );
+      // 이미 비율이 같으면(거의 없다) 손대지 않는다.
+      if (rect.isFull) return shot;
+
+      final out = await ReceiptImageEditor.transform(
+        bytes,
+        rect: rect,
+        maxDimension: ReceiptImageEditor.defaultMaxDimension,
+      );
+      if (out == null || out.isEmpty) return shot;
+
+      final stamp = DateTime.now().microsecondsSinceEpoch;
+      final name = 'r_shot_$stamp.jpg';
+
+      // 네이티브: 문서 폴더에 실제 파일로 쓴다.
+      //
+      // 🔴 캐시가 아니라 문서 폴더다. 카메라 원본은
+      //    `/data/user/0/com.flownote.app/cache/CAP….jpg` 에 떨어지고
+      //    안드로이드가 예고 없이 지운다. 실제로 사장님 계정의 영수증
+      //    16건이 그 경로를 들고 있고 파일은 이미 사라진 상태였다.
+      //    여기서 문서 폴더에 쓰면 촬영 시점부터 안전한 경로가 된다.
+      final dir = await ensureDocsSubdir('receipts');
+      if (dir != null) {
+        final target = '$dir/$name';
+        if (await writeLocalBytes(target, out)) {
+          return ReceiptImageEditor.wrap(out, name: name, savedPath: target);
+        }
+      }
+      // 웹: 바이트를 들고 간다. 저장 시점에 클라우드로 올라간다.
+      return ReceiptImageEditor.wrap(out, name: name);
+    } catch (e) {
+      debugPrint('[ScanCamera] 프레임 자르기 실패(원본 사용): $e');
+      return shot;
+    }
   }
 
   Widget _shutterRow() {
@@ -689,63 +855,92 @@ class _RoundIcon extends StatelessWidget {
   }
 }
 
-/// `border: 2px dashed` 재현
-class _DashFramePainter extends CustomPainter {
-  _DashFramePainter({
-    required this.color,
-    required this.radius,
-    required this.strokeWidth,
-  });
+/// 시안 코너 브래킷 — 34x34 사각형의 **두 변만** 그린 갈고리.
+///
+/// ```js
+/// div { position:'absolute', width:34, height:34, borderRadius:6,
+///       border:'3px solid #EE7686',
+///       borderRightWidth: r?3:0, borderLeftWidth: r?0:3,
+///       borderBottomWidth: b?3:0, borderTopWidth: b?0:3 }
+/// ```
+class _Bracket extends StatelessWidget {
+  const _Bracket({required this.right, required this.bottom});
 
-  final Color color;
-  final double radius;
-  final double strokeWidth;
-  static const double dash = 7;
-  static const double gap = 5;
+  final bool right;
+  final bool bottom;
+
+  static const _c = Color(0xFFEE7686);
+  static const _w = 3.0;
 
   @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = color
-      ..strokeWidth = strokeWidth
-      ..style = PaintingStyle.stroke;
-    final rrect = RRect.fromRectAndRadius(
-      Rect.fromLTWH(strokeWidth / 2, strokeWidth / 2,
-          size.width - strokeWidth, size.height - strokeWidth),
-      Radius.circular(radius),
+  Widget build(BuildContext context) {
+    const none = BorderSide.none;
+    const on = BorderSide(color: _c, width: _w);
+    return Container(
+      width: 34,
+      height: 34,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(6),
+        border: Border(
+          left: right ? none : on,
+          right: right ? on : none,
+          top: bottom ? none : on,
+          bottom: bottom ? on : none,
+        ),
+      ),
     );
-    for (final m in (Path()..addRRect(rrect)).computeMetrics()) {
-      var p = 0.0;
-      while (p < m.length) {
-        final n = (p + dash).clamp(0.0, m.length);
-        canvas.drawPath(m.extractPath(p, n), paint);
-        p = n + gap;
-      }
-    }
   }
-
-  @override
-  bool shouldRepaint(_DashFramePainter old) =>
-      old.color != color || old.radius != radius;
 }
 
 /// 찍은 한 장 미리보기 — 시안 촬영 화면 톤(cool-neutral-10)을 그대로 유지.
 ///
+/// 여기에 **크롭/리사이즈로 가는 입구**가 붙는다. 촬영 직후가 사장님이
+/// 사진을 다시 볼 유일한 지점이라서, 자를 기회도 여기서 줘야 한다.
+///
 /// 반환: 'retake' | 'add' | 'scan' | null
-class _ShotPreviewDsScreen extends StatelessWidget {
+/// (편집을 하면 [onEdited] 로 새 `XFile` 을 알려주고, 부모가 그 파일을
+///  대신 저장한다 — 화면 자체는 계속 살아 있어야 하므로 pop 하지 않는다)
+class _ShotPreviewDsScreen extends StatefulWidget {
   const _ShotPreviewDsScreen({
     required this.file,
     required this.shotIndex,
     required this.isMulti,
+    required this.onEdited,
   });
 
   final XFile file;
   final int shotIndex;
   final bool isMulti;
 
+  /// 크롭/리사이즈를 마쳤을 때 부모(`_shoot`)에게 새 파일을 넘긴다.
+  final ValueChanged<XFile> onEdited;
+
+  @override
+  State<_ShotPreviewDsScreen> createState() => _ShotPreviewDsScreenState();
+}
+
+class _ShotPreviewDsScreenState extends State<_ShotPreviewDsScreen> {
   static const _bg = Color(0xFF1B1D22);
   static const _badgeBg = Color(0x4DF2687A);
   static const _badgeFg = Color(0xFFFFC9CE);
+
+  late XFile _file = widget.file;
+  bool _edited = false;
+
+  Future<void> _openCrop() async {
+    final out = await Navigator.push<XFile>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ReceiptCropDsScreen(file: _file),
+      ),
+    );
+    if (!mounted || out == null) return;
+    setState(() {
+      _file = out;
+      _edited = true;
+    });
+    widget.onEdited(out);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -767,7 +962,11 @@ class _ShotPreviewDsScreen extends StatelessWidget {
                   borderRadius: BorderRadius.circular(6),
                 ),
                 child: Text(
-                  isMulti ? '$shotIndex장 촬영됨' : '촬영한 사진',
+                  _edited
+                      ? '자르기 적용됨'
+                      : (widget.isMulti
+                          ? '${widget.shotIndex}장 촬영됨'
+                          : '촬영한 사진'),
                   style: const TextStyle(
                     fontFamily: 'Pretendard',
                     fontSize: 12,
@@ -785,11 +984,27 @@ class _ShotPreviewDsScreen extends StatelessWidget {
                   borderRadius: BorderRadius.circular(16),
                   // 웹에서는 File() 이 UnsupportedError 를 던진다. XFileImage 가
                   // 플랫폼에 따라 blob URL / 로컬 파일을 알아서 골라준다.
-                  child: XFileImage(file, fit: BoxFit.contain),
+                  //
+                  // 🔴 편집한 파일은 `XFile.fromData` 라서 네이티브에서도
+                  //    바이트를 들고 있다. `key` 를 바꿔야 새 그림으로 갱신된다.
+                  child: XFileImage(_file, key: ValueKey(_file.path),
+                      fit: BoxFit.contain),
                 ),
               ),
             ),
-            if (isMulti)
+            // 크롭/리사이즈 입구 — 촬영 직후가 자를 유일한 기회다.
+            FnDsButton(
+              label: '영수증만 자르기 · 크기 조절',
+              size: FnDsButtonSize.large,
+              variant: FnDsButtonVariant.outlined,
+              foreground: Colors.white,
+              expand: true,
+              leadingIcon: const Icon(Icons.crop_rounded,
+                  size: 19, color: Colors.white),
+              onPressed: _openCrop,
+            ),
+            const SizedBox(height: 10),
+            if (widget.isMulti)
               Row(
                 children: [
                   Expanded(
@@ -826,7 +1041,9 @@ class _ShotPreviewDsScreen extends StatelessWidget {
               ),
             const SizedBox(height: 10),
             FnDsButton(
-              label: isMulti ? '$shotIndex장 인식 시작' : '이 사진으로 인식',
+              label: widget.isMulti
+                  ? '${widget.shotIndex}장 인식 시작'
+                  : '이 사진으로 인식',
               size: FnDsButtonSize.large,
               expand: true,
               onPressed: () => Navigator.pop(context, 'scan'),

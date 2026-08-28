@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:camera/camera.dart';
 import 'package:permission_handler/permission_handler.dart';
+import '../services/file_saver.dart';
+import '../services/receipt_image_editor.dart';
 import '../theme/app_theme.dart';
 
 /// 앱 내 카메라 화면
@@ -25,6 +27,10 @@ class _InAppCameraScreenState extends State<InAppCameraScreen>
   bool _isTakingPicture = false;
   bool _isFrontCamera = false;
   bool _isFlashOn = false;
+
+  /// 시안 촬영 프레임 비율(가로/세로). `ScanCameraDsScreen.frameAspect`
+  /// 와 같은 값을 써야 두 화면이 같은 사진을 만든다.
+  static const double _frameAspect = 0.62;
 
   // 연속 촬영 시 찍은 사진 목록
   final List<XFile> _capturedImages = [];
@@ -143,7 +149,9 @@ class _InAppCameraScreenState extends State<InAppCameraScreen>
     setState(() => _isTakingPicture = true);
 
     try {
-      final xfile = await controller.takePicture();
+      final raw = await controller.takePicture();
+      // 화면에서 본 프레임만 남긴다. 실패하면 원본을 그대로 쓴다.
+      final xfile = await _cropToFrame(raw);
 
       if (!mounted) return;
 
@@ -432,34 +440,142 @@ class _InAppCameraScreenState extends State<InAppCameraScreen>
       );
     }
 
-    // 🔴 화각 불일치 수정 — `scan_camera_ds_screen.dart` 와 같은 원인.
+    // 🔴 화각 계약 — `scan_camera_ds_screen.dart` 와 **똑같은 규칙**을 쓴다.
     //
-    // `BoxFit.cover` 는 프리뷰를 확대해 슬롯을 채우고 넘치는 부분을 잘라내는데,
-    // `controller.takePicture()` 는 잘린 프리뷰가 아니라 **센서 프레임 전체**를
-    // 파일에 쓴다. 그래서 저장된 사진에는 화면에서 본 것보다 더 넓은 범위가
-    // 담기고, 피사체가 상대적으로 작아 보인다("초광각처럼 나온다").
+    // 직전 버전은 `BoxFit.contain` + 센서 비율로 프리뷰를 그렸다. 화각은
+    // 정직해졌지만 프레임이 시안보다 훨씬 작아졌다("왜 갑자기 작아졌어?").
     //
-    // `BoxFit.contain` 으로 바꾸면 화면에 보이는 영역과 저장되는 영역이
-    // 정확히 같아진다. 남는 쪽에 검은 여백이 생기지만, 그게 진실이다.
+    // 이제는 시안 비율([_frameAspect])로 프레임을 슬롯에 꽉 채우고,
+    // 프리뷰를 `BoxFit.cover` 로 채우고, 찍힌 JPEG 를 같은 비율로 잘라낸다
+    // (`_cropToFrame`). 화면과 파일이 같아지고 프레임도 커진다.
     return LayoutBuilder(
       builder: (context, constraints) {
-        // `CameraPreview` 는 세로 화면에서 `1 / aspectRatio` 비율을 쓴다.
-        final ar = 1 / _controller!.value.aspectRatio;
         var w = constraints.maxWidth;
-        var h = w / ar;
+        var h = w / _frameAspect;
         if (h > constraints.maxHeight) {
           h = constraints.maxHeight;
-          w = h * ar;
+          w = h * _frameAspect;
+          if (w < constraints.maxWidth * 0.78) {
+            w = constraints.maxWidth * 0.78;
+            h = constraints.maxHeight;
+          }
         }
+        final previewW = w;
+        final previewH = w / (1 / _controller!.value.aspectRatio);
         return Center(
           child: SizedBox(
             width: w,
             height: h,
-            child: CameraPreview(_controller!),
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(18),
+                  child: Container(
+                    color: const Color(0x0AFFFFFF),
+                    child: FittedBox(
+                      fit: BoxFit.cover,
+                      clipBehavior: Clip.hardEdge,
+                      child: SizedBox(
+                        width: previewW,
+                        height: previewH,
+                        child: CameraPreview(_controller!),
+                      ),
+                    ),
+                  ),
+                ),
+                // 시안: 46% 높이 스캔 라인
+                Positioned(
+                  left: 26,
+                  right: 26,
+                  top: h * 0.46,
+                  child: Container(
+                    height: 2,
+                    decoration: const BoxDecoration(
+                      gradient: LinearGradient(colors: [
+                        Color(0x00EE7686),
+                        Color(0xFFEE7686),
+                        Color(0x00EE7686),
+                      ]),
+                    ),
+                  ),
+                ),
+                // 시안: 네 귀퉁이 브래킷
+                for (final c in const [
+                  (false, false),
+                  (false, true),
+                  (true, false),
+                  (true, true),
+                ])
+                  Positioned(
+                    left: c.$1 ? null : 10,
+                    right: c.$1 ? 10 : null,
+                    top: c.$2 ? null : 10,
+                    bottom: c.$2 ? 10 : null,
+                    child: _CornerBracket(right: c.$1, bottom: c.$2),
+                  ),
+                // 시안: 프레임 아래 안내문
+                const Align(
+                  alignment: Alignment.bottomCenter,
+                  child: Padding(
+                    padding: EdgeInsets.only(bottom: 18),
+                    child: Text(
+                      '영수증을 프레임 안에 맞춰주세요',
+                      style: TextStyle(
+                        fontSize: 13.5,
+                        fontWeight: FontWeight.w500,
+                        color: Color(0xB8FFFFFF),
+                        shadows: [
+                          Shadow(color: Color(0xCC000000), blurRadius: 4),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
         );
       },
     );
+  }
+
+  /// 찍힌 JPEG 를 화면에서 보였던 프레임 비율로 잘라낸다.
+  /// 실패하면 원본을 그대로 쓴다.
+  Future<XFile> _cropToFrame(XFile shot) async {
+    try {
+      final bytes = await shot.readAsBytes();
+      if (bytes.isEmpty) return shot;
+      final size = await ReceiptImageEditor.measure(bytes);
+      if (size == null) return shot;
+      final rect = ReceiptImageEditor.coverCropRect(
+        imageWidth: size.width,
+        imageHeight: size.height,
+        previewAspect: _frameAspect,
+      );
+      if (rect.isFull) return shot;
+      final out = await ReceiptImageEditor.transform(
+        bytes,
+        rect: rect,
+        maxDimension: ReceiptImageEditor.defaultMaxDimension,
+      );
+      if (out == null || out.isEmpty) return shot;
+
+      final stamp = DateTime.now().microsecondsSinceEpoch;
+      final name = 'r_shot_$stamp.jpg';
+      // 캐시가 아니라 문서 폴더에 쓴다. 캐시는 OS 가 예고 없이 비운다.
+      final dir = await ensureDocsSubdir('receipts');
+      if (dir != null) {
+        final target = '$dir/$name';
+        if (await writeLocalBytes(target, out)) {
+          return ReceiptImageEditor.wrap(out, name: name, savedPath: target);
+        }
+      }
+      return ReceiptImageEditor.wrap(out, name: name);
+    } catch (e) {
+      debugPrint('[InAppCamera] 프레임 자르기 실패(원본 사용): $e');
+      return shot;
+    }
   }
 
   // ── 하단 바: 촬영 버튼 + (multi & 1장 이상) 완료 버튼 ──
@@ -698,6 +814,33 @@ class _OutlineBtn extends StatelessWidget {
         padding: const EdgeInsets.symmetric(vertical: 14),
         shape:
             RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      ),
+    );
+  }
+}
+
+/// 시안 코너 브래킷 — 34x34 사각형의 두 변만 그린 갈고리.
+class _CornerBracket extends StatelessWidget {
+  const _CornerBracket({required this.right, required this.bottom});
+
+  final bool right;
+  final bool bottom;
+
+  @override
+  Widget build(BuildContext context) {
+    const none = BorderSide.none;
+    const on = BorderSide(color: Color(0xFFEE7686), width: 3);
+    return Container(
+      width: 34,
+      height: 34,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(6),
+        border: Border(
+          left: right ? none : on,
+          right: right ? on : none,
+          top: bottom ? none : on,
+          bottom: bottom ? on : none,
+        ),
       ),
     );
   }

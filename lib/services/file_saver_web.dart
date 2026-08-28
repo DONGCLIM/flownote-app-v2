@@ -67,4 +67,8 @@ Future<bool> localFileExists(String path) async => false;
 
 Future<bool> copyLocalFile(String from, String to) async => false;
 
+/// 웹에는 쓸 파일 시스템이 없다. 호출부는 `XFile.fromData` 의 blob URL 을
+/// 쓰고, 저장 시점에 `ReceiptImageStore` 가 클라우드로 올린다.
+Future<bool> writeLocalBytes(String path, Uint8List bytes) async => false;
+
 Future<void> deleteLocalFile(String path) async {}
