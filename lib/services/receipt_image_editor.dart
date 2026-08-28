@@ -35,22 +35,15 @@ import 'package:image_picker/image_picker.dart';
 class ReceiptImageEditor {
   ReceiptImageEditor._();
 
-  /// 저장할 때 쓰는 기본 긴 변 길이(px).
+  /// 저장할 때 쓰는 긴 변 길이(px). **모든 저장 경로가 이 값을 쓴다.**
   ///
-  /// 영수증 글자를 Gemini OCR 이 읽을 수 있어야 하므로 너무 줄이면 안 된다.
-  /// 실측으로 1600px 이면 감열지 영수증의 품목/금액이 또렷하게 남는다.
-  static const int defaultMaxDimension = 2000;
-
-  /// 사용자가 고를 수 있는 리사이즈 단계.
+  /// 예전에는 원본/높음/보통/작게 네 단계를 사장님이 직접 고르게 했다.
+  /// 실제로 쓸 때 매번 고르는 게 번거롭고, 잘못 고르면 용량만 커졌다.
+  /// 그래서 선택을 없애고 **1200px 로 자동 변환**하기로 정했다.
   ///
-  /// `null` = 원본 유지.
-  static const List<({String label, int? maxDimension, String note})>
-      resizeChoices = [
-    (label: '원본', maxDimension: null, note: '가장 선명 · 용량 큼'),
-    (label: '높음', maxDimension: 2400, note: '거의 원본'),
-    (label: '보통', maxDimension: 1600, note: '권장 · 인식 잘 됨'),
-    (label: '작게', maxDimension: 1200, note: '용량 최소'),
-  ];
+  /// 긴 변 1200px 이면 감열지 영수증 한 장이 세로로 다 들어가고,
+  /// 파일은 200~400KB 로 떨어져서 업로드·백업·PDF 가 모두 빨라진다.
+  static const int defaultMaxDimension = 1200;
 
   /// JPEG 저장 품질.
   static const int quality = 88;
@@ -104,34 +97,91 @@ class ReceiptImageEditor {
     }
   }
 
-  /// 촬영 직후, 화면에서 보이던 프레임 영역만 남긴다.
+  /// 촬영 직후, **화면에서 실제로 보였던 사각형**만 남긴다.
   ///
-  /// [previewAspect] = 화면 프레임의 `가로/세로` 비율.
-  /// 프리뷰를 `BoxFit.cover` 로 보여줬다는 전제 하에, 센서 프레임의
-  /// 중앙에서 그 비율에 해당하는 사각형을 계산한다.
+  /// ## 🔴 여기가 "찍을 때랑 찍고 나서 배율이 다르다" 의 정답이다
   ///
-  /// 예: 프레임이 0.62 (세로로 긴 영수증 모양), 사진이 0.75 (4:3 세로) 라면
-  /// 사진이 프레임보다 가로로 넓으므로 좌우를 잘라낸다.
+  /// 화각이 어긋나는 지점이 **두 곳**인데, 예전 코드는 한 곳만 계산했다.
+  ///
+  /// ```
+  ///  ① 센서/촬영본  ─(카메라 플러그인이 프리뷰용으로 잘라줌)─▶  ② 프리뷰 표면
+  ///                                                              │
+  ///                                     ③ 위젯이 BoxFit.cover 로 잘라 보여줌
+  ///                                                              ▼
+  ///                                                        화면 프레임(0.62)
+  /// ```
+  ///
+  /// 안드로이드에서 `ResolutionPreset.high` 는 **프리뷰를 16:9 로** 요청한다
+  /// (`camera_android_camerax` 의 `_getResolutionSelectorFromPreset` 에서
+  ///  `aspectRatio = AspectRatio.ratio16To9`). 그런데 사진 촬영은 기기가
+  /// 16:9 를 못 주면 4:3 센서 모드로 떨어진다. 즉 **②와 ①의 비율이 다르다.**
+  ///
+  /// 실제 숫자로 보면 (프리뷰 16:9 = 세로 0.5625, 촬영본 4:3 = 세로 0.75):
+  ///
+  /// | | 가로로 보이는 화각 |
+  /// |---|---|
+  /// | 화면에서 본 것 (②→③) | 촬영본 가로의 **75%** |
+  /// | 예전 코드가 저장한 것 | 촬영본 가로의 **82.7%** |
+  ///
+  /// 예전 코드는 ①의 비율만 보고 0.62 로 중앙을 잘랐다. 비율(0.62)은 맞지만
+  /// **영역이 다르다.** 그래서 프리뷰가 파일보다 약 1.10배 확대돼 보였다.
+  /// 화면에서 라인에 딱 맞췄는데 저장된 사진은 더 넓게 나오는 것이다.
+  ///
+  /// ## 고친 방식
+  ///
+  /// ①→②→③ 두 단계를 **곱해서** 한 번에 잘라낸다.
+  ///
+  /// - ①→② : 프리뷰는 촬영본의 중앙 일부다.
+  ///   [cameraAspect] 가 더 좁으면 가로를, 더 넓으면 세로를 잘라낸 것이다.
+  /// - ②→③ : 위젯의 `BoxFit.cover` 가 다시 [previewAspect] 로 잘라낸다.
+  ///
+  /// 두 비율을 곱한 사각형은 어떤 조합에서든 최종 비율이 정확히
+  /// [previewAspect] 가 된다(네 경우 모두 대수적으로 증명되고,
+  /// `test/camera_fov_test.dart` 가 숫자로 검증한다).
+  ///
+  /// - [previewAspect] : 화면 프레임의 `가로/세로` (시안 계약값 0.62)
+  /// - [cameraAspect]  : 프리뷰 표면의 `가로/세로` (세로 기준).
+  ///   `1 / controller.value.aspectRatio` 를 넘긴다.
+  ///   `null` 이면 프리뷰와 촬영본 비율이 같다고 보고 예전 계산을 쓴다.
   static Rel coverCropRect({
     required int imageWidth,
     required int imageHeight,
     required double previewAspect,
+    double? cameraAspect,
   }) {
     if (imageWidth <= 0 || imageHeight <= 0 || previewAspect <= 0) {
       return const Rel(0, 0, 1, 1);
     }
     final imageAspect = imageWidth / imageHeight;
-    if ((imageAspect - previewAspect).abs() < 0.001) {
-      return const Rel(0, 0, 1, 1);
+
+    // 프리뷰 표면 비율을 모르면 촬영본과 같다고 본다(예전 동작).
+    final camera =
+        (cameraAspect == null || cameraAspect <= 0 || !cameraAspect.isFinite)
+            ? imageAspect
+            : cameraAspect;
+
+    // ① 촬영본 → 프리뷰 표면. 플러그인이 중앙에서 잘라준다고 본다.
+    var w = 1.0;
+    var h = 1.0;
+    if (camera < imageAspect) {
+      // 프리뷰가 더 좁다 → 촬영본의 좌우가 잘려 있었다.
+      w = camera / imageAspect;
+    } else if (camera > imageAspect) {
+      // 프리뷰가 더 넓다 → 촬영본의 위아래가 잘려 있었다.
+      h = imageAspect / camera;
     }
-    if (imageAspect > previewAspect) {
-      // 사진이 더 넓다 → 좌우를 자른다.
-      final w = previewAspect / imageAspect;
-      return Rel((1 - w) / 2, 0, w, 1);
+
+    // ② 프리뷰 표면 → 화면 프레임. 위젯의 BoxFit.cover 가 잘라낸 몫.
+    if (camera < previewAspect) {
+      h *= camera / previewAspect;
+    } else if (camera > previewAspect) {
+      w *= previewAspect / camera;
     }
-    // 사진이 더 좁다(길다) → 위아래를 자른다.
-    final h = imageAspect / previewAspect;
-    return Rel(0, (1 - h) / 2, 1, h);
+
+    w = w.clamp(0.0, 1.0);
+    h = h.clamp(0.0, 1.0);
+    if (w >= 0.999 && h >= 0.999) return const Rel(0, 0, 1, 1);
+    return Rel((1 - w) / 2, (1 - h) / 2, w, h);
   }
 
   /// 편집 결과 바이트를 `XFile` 로 감싼다.

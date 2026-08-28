@@ -742,6 +742,17 @@ class _ScanCameraDsScreenState extends State<ScanCameraDsScreen>
       final bytes = await shot.readAsBytes();
       if (bytes.isEmpty) return shot;
 
+      // 🔴 프리뷰 표면 비율을 반드시 함께 넘긴다.
+      //    이걸 빼면 "찍을 때랑 찍고 나서 배율이 다르다" 가 그대로 돌아온다.
+      //    안드로이드 ResolutionPreset.high 는 프리뷰를 16:9 로 요청하는데
+      //    사진은 4:3 으로 찍힐 수 있어서, 프리뷰가 이미 촬영본의 중앙
+      //    일부만 보여주고 있다. coverCropRect 가 그 몫까지 계산한다.
+      final c = _controller;
+      final double? cameraAspect =
+          (c != null && c.value.isInitialized && c.value.previewSize != null)
+              ? 1 / c.value.aspectRatio
+              : null;
+
       final size = await ReceiptImageEditor.measure(bytes);
       if (size == null) return shot;
 
@@ -749,6 +760,7 @@ class _ScanCameraDsScreenState extends State<ScanCameraDsScreen>
         imageWidth: size.width,
         imageHeight: size.height,
         previewAspect: frameAspect,
+        cameraAspect: cameraAspect,
       );
       // 이미 비율이 같으면(거의 없다) 손대지 않는다.
       if (rect.isFull) return shot;

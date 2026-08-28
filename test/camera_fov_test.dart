@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flow_note/services/receipt_image_editor.dart';
 
 /// 🔴 #101 — 카메라 화각(FOV) 불일치 회귀 방지
 ///
@@ -179,5 +180,125 @@ void main() {
         reason: '좌상단 안내문 여백이 브래킷을 침범한다');
     // 프리뷰 사각형 계산이 살아있는지
     expect(src.contains('1 / _controller!.value.aspectRatio'), isTrue);
+  });
+
+  // ─────────────────────────────────────────────────────────────
+  // 🔴 #105 "찍을 때랑 찍고나서 배율이 달라진다" 회귀 방어
+  //
+  // 원인: 화각이 어긋나는 지점이 두 곳인데 한 곳만 계산했다.
+  //   ① 촬영본 → 프리뷰 표면 : 카메라 플러그인이 잘라준다
+  //        (안드로이드 ResolutionPreset.high 는 프리뷰를 16:9 로 요청,
+  //         사진은 4:3 으로 찍힐 수 있다)
+  //   ② 프리뷰 표면 → 화면 프레임 : 위젯의 BoxFit.cover 가 잘라낸다
+  // 예전 코드는 ②만 계산해서 실제 상황에서 가로 화각이 1.1022배 어긋났다.
+  // ─────────────────────────────────────────────────────────────
+
+  test('🔴 프리뷰가 16:9, 사진이 4:3 일 때 화면과 저장이 같아야 한다', () {
+    const frame = 0.62;
+    const imgW = 3000, imgH = 4000; // 4:3 세로 → 0.75
+    const previewAspect = 720 / 1280; // 16:9 세로 → 0.5625
+
+    final rect = ReceiptImageEditor.coverCropRect(
+      imageWidth: imgW,
+      imageHeight: imgH,
+      previewAspect: frame,
+      cameraAspect: previewAspect,
+    );
+
+    // 화면이 실제로 보여준 화각:
+    //   프리뷰 표면은 촬영본 가로의 (0.5625/0.75)=75% 만 담고 있고,
+    //   거기서 cover 가 세로를 (0.5625/0.62)=90.7% 로 잘라 보여줬다.
+    expect(rect.width, closeTo(0.75, 1e-9),
+        reason: '가로는 촬영본의 75% 여야 한다 (프리뷰가 이미 잘라 준 몫)');
+    expect(rect.height, closeTo(0.5625 / 0.62, 1e-9),
+        reason: '세로는 cover 가 잘라낸 몫이어야 한다');
+
+    // 잘라낸 결과 비율이 화면 프레임과 정확히 같아야 한다.
+    final outAspect = (imgW * rect.width) / (imgH * rect.height);
+    expect(outAspect, closeTo(frame, 1e-9),
+        reason: '저장 비율이 화면 프레임(0.62)과 달라지면 배율이 어긋난다');
+
+    // 중앙 정렬이어야 한다.
+    expect(rect.left, closeTo((1 - rect.width) / 2, 1e-9));
+    expect(rect.top, closeTo((1 - rect.height) / 2, 1e-9));
+  });
+
+  test('🔴 예전 계산은 이 상황에서 1.10배 어긋났다 (되돌리지 말 것)', () {
+    // 예전 코드: cameraAspect 를 안 넘겼다 = 프리뷰와 촬영본 비율이 같다고 가정
+    final wrong = ReceiptImageEditor.coverCropRect(
+      imageWidth: 3000,
+      imageHeight: 4000,
+      previewAspect: 0.62,
+    );
+    final right = ReceiptImageEditor.coverCropRect(
+      imageWidth: 3000,
+      imageHeight: 4000,
+      previewAspect: 0.62,
+      cameraAspect: 720 / 1280,
+    );
+    expect(wrong.width, closeTo(0.62 / 0.75, 1e-9)); // 0.8267
+    expect(right.width, closeTo(0.75, 1e-9));
+    expect(wrong.width / right.width, closeTo(1.1022, 1e-3),
+        reason: '이 차이가 사장님이 본 "약간 확대돼서 찍힌다" 였다');
+  });
+
+  test('🔴 프리뷰와 촬영본 비율이 같으면 예전 계산과 결과가 같다', () {
+    final a = ReceiptImageEditor.coverCropRect(
+      imageWidth: 3000, imageHeight: 4000, previewAspect: 0.62);
+    final b = ReceiptImageEditor.coverCropRect(
+      imageWidth: 3000, imageHeight: 4000, previewAspect: 0.62,
+      cameraAspect: 0.75);
+    expect(b.width, closeTo(a.width, 1e-9));
+    expect(b.height, closeTo(a.height, 1e-9));
+  });
+
+  test('🔴 어떤 프리뷰/촬영본 조합에서도 저장 비율은 프레임 비율이 된다', () {
+    const frame = 0.62;
+    const combos = [
+      (3000, 4000, 0.5625), // 4:3 사진 + 16:9 프리뷰
+      (3000, 4000, 0.75), // 4:3 + 4:3
+      (1080, 1920, 0.75), // 16:9 사진 + 4:3 프리뷰
+      (1080, 1920, 0.5625), // 16:9 + 16:9
+      (3000, 4000, 0.5), // 아주 긴 프리뷰
+      (4000, 3000, 0.75), // 가로 사진(방향 처리 실패 대비)
+    ];
+    for (final (w, h, cam) in combos) {
+      final r = ReceiptImageEditor.coverCropRect(
+        imageWidth: w, imageHeight: h, previewAspect: frame, cameraAspect: cam);
+      final out = (w * r.width) / (h * r.height);
+      expect(out, closeTo(frame, 1e-9),
+          reason: '$w x $h / 프리뷰 $cam 에서 저장 비율이 $out 이 됐다');
+      expect(r.width, inInclusiveRange(0.0, 1.0));
+      expect(r.height, inInclusiveRange(0.0, 1.0));
+    }
+  });
+
+  test('🔴 두 카메라 화면이 프리뷰 비율(cameraAspect)을 반드시 넘긴다', () {
+    for (final path in const [
+      'lib/screens/ds/scan_camera_ds_screen.dart',
+      'lib/screens/in_app_camera_screen.dart',
+    ]) {
+      final src = File(path).readAsStringSync();
+      expect(src.contains('cameraAspect: cameraAspect,'), isTrue,
+          reason: '$path 가 coverCropRect 에 프리뷰 비율을 안 넘긴다 — '
+              '찍을 때와 저장될 때 배율이 어긋난다(#105 재발)');
+      expect(src.contains('1 / c.value.aspectRatio'), isTrue,
+          reason: '$path 가 컨트롤러의 프리뷰 비율을 읽지 않는다');
+    }
+  });
+
+  test('🔴 리사이즈는 1200px 자동이다 — 고르는 UI 가 없어야 한다', () {
+    final eng = File('lib/services/receipt_image_editor.dart').readAsStringSync();
+    expect(eng.contains('static const int defaultMaxDimension = 1200;'), isTrue,
+        reason: '자동 저장 크기 기준이 1200px 이어야 한다');
+    expect(eng.contains('resizeChoices'), isFalse,
+        reason: '리사이즈 선택 목록이 되살아났다');
+
+    final crop = File('lib/screens/ds/receipt_crop_ds_screen.dart').readAsStringSync();
+    for (final gone in const ['_resizeRow', 'Widget _chip(', "'원본'", "'높음'", "'보통'", "'작게'"]) {
+      expect(crop.contains(gone), isFalse, reason: '크롭 화면에 $gone 이 남았다');
+    }
+    expect(crop.contains('_maxDim = ReceiptImageEditor.defaultMaxDimension'), isTrue,
+        reason: '크롭 화면이 고정 저장 크기를 쓰지 않는다');
   });
 }

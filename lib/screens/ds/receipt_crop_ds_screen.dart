@@ -39,13 +39,9 @@ class ReceiptCropDsScreen extends StatefulWidget {
   const ReceiptCropDsScreen({
     super.key,
     required this.file,
-    this.initialMaxDimension = ReceiptImageEditor.defaultMaxDimension,
   });
 
   final XFile file;
-
-  /// 처음 선택되어 있을 리사이즈 단계(긴 변 px).
-  final int? initialMaxDimension;
 
   @override
   State<ReceiptCropDsScreen> createState() => _ReceiptCropDsScreenState();
@@ -68,7 +64,9 @@ class _ReceiptCropDsScreenState extends State<ReceiptCropDsScreen> {
   Rel _rect = const Rel(0.06, 0.06, 0.88, 0.88);
 
   int _turns = 0;
-  int? _maxDim;
+
+  /// 저장 시 긴 변 길이. **고정값이다** — 사용자가 고르지 않는다.
+  static const int _maxDim = ReceiptImageEditor.defaultMaxDimension;
   bool _working = false;
 
   /// 드래그 중인 손잡이. null 이면 없음.
@@ -77,7 +75,6 @@ class _ReceiptCropDsScreenState extends State<ReceiptCropDsScreen> {
   @override
   void initState() {
     super.initState();
-    _maxDim = widget.initialMaxDimension;
     _load();
   }
 
@@ -116,14 +113,12 @@ class _ReceiptCropDsScreenState extends State<ReceiptCropDsScreen> {
     final baseH = rotated ? _imgW : _imgH;
     var w = (baseW * _rect.width).round();
     var h = (baseH * _rect.height).round();
-    final cap = _maxDim;
-    if (cap != null) {
-      final longest = w > h ? w : h;
-      if (longest > cap) {
-        final k = cap / longest;
-        w = (w * k).round();
-        h = (h * k).round();
-      }
+    // 긴 변을 고정 상한(_maxDim)으로 줄인다. 원본이 더 작으면 키우지 않는다.
+    final longest = w > h ? w : h;
+    if (longest > _maxDim) {
+      final k = _maxDim / longest;
+      w = (w * k).round();
+      h = (h * k).round();
     }
     return (w: w < 1 ? 1 : w, h: h < 1 ? 1 : h);
   }
@@ -288,8 +283,6 @@ class _ReceiptCropDsScreenState extends State<ReceiptCropDsScreen> {
           children: [
             Expanded(child: _stage()),
             const SizedBox(height: 14),
-            _resizeRow(),
-            const SizedBox(height: 8),
             _sizeLine(),
             const SizedBox(height: 14),
             Row(
@@ -399,54 +392,19 @@ class _ReceiptCropDsScreenState extends State<ReceiptCropDsScreen> {
     );
   }
 
-  Widget _resizeRow() {
-    return Row(
-      children: [
-        for (final c in ReceiptImageEditor.resizeChoices) ...[
-          Expanded(child: _chip(c.label, c.maxDimension)),
-          if (c != ReceiptImageEditor.resizeChoices.last)
-            const SizedBox(width: 8),
-        ],
-      ],
-    );
-  }
-
-  Widget _chip(String label, int? dim) {
-    final on = _maxDim == dim;
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: () => setState(() => _maxDim = dim),
-      child: Container(
-        height: 38,
-        alignment: Alignment.center,
-        decoration: BoxDecoration(
-          color: on ? _rose : const Color(0x14FFFFFF),
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(
-            color: on ? _rose : const Color(0x33FFFFFF),
-          ),
-        ),
-        child: Text(
-          label,
-          style: TextStyle(
-            fontFamily: 'Pretendard',
-            fontSize: 13.5,
-            fontWeight: FontWeight.w600,
-            color: on ? Colors.white : _hintFg,
-          ),
-        ),
-      ),
-    );
-  }
-
+  /// 저장 크기 안내 한 줄.
+  ///
+  /// 🔴 예전에는 원본/높음/보통/작게 칩 네 개를 두고 사장님이 고르게 했다.
+  ///    이제 선택을 없애고 [ReceiptImageEditor.defaultMaxDimension] (1200px)
+  ///    로 자동 변환한다. 고를 게 없어졌으니 "이렇게 저장됩니다" 만 보여준다.
   Widget _sizeLine() {
     final o = _outSize;
     final text = o.w == 0
         ? '크기를 확인하고 있어요'
-        : '저장 크기 ${o.w} × ${o.h} px'
-            '${_maxDim == null ? ' · 원본 유지' : ''}';
+        : '저장 크기 ${o.w} × ${o.h} px · 자동으로 알맞게 줄여서 저장해요';
     return Text(
       text,
+      textAlign: TextAlign.center,
       style: const TextStyle(
         fontFamily: 'Pretendard',
         fontSize: 12,
