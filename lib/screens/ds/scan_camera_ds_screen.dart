@@ -520,9 +520,14 @@ class _ScanCameraDsScreenState extends State<ScanCameraDsScreen>
           child: Container(color: _frameFill, child: child),
         ),
         // 시안: 왼쪽 위 안내문 (`문서 경계 자동 감지 중`)
+        //
+        // 🔴 left 는 브래킷을 피해야 한다. 브래킷은 inset 10 + 폭 34 이므로
+        //    x 10~44 를 차지한다. 예전에 left: 18 로 뒀더니 안내문이
+        //    브래킷 세로선에 닿아서 시안과 달라 보였다(E2E 스크린샷으로 확인).
+        //    44 + 여백 8 = 52 부터 시작한다.
         if (topHint != null)
           Positioned(
-            left: 18,
+            left: 52,
             top: 22,
             child: Text(
               topHint,

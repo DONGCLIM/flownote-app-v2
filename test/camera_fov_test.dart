@@ -173,6 +173,10 @@ void main() {
     // 시안 요소들이 살아있는지 (모서리 브래킷 / 스캔 라인)
     expect(src.contains('_Bracket'), isTrue, reason: '모서리 브래킷이 사라졌다');
     expect(src.contains('0.46'), isTrue, reason: '스캔 라인 위치(46%)가 사라졌다');
+    // 🔴 좌상단 안내문은 브래킷(x 10~44)을 피해야 한다.
+    //    left: 18 이면 브래킷 세로선에 닿는다 — E2E 스크린샷으로 확인했다.
+    expect(src.contains('left: 52,'), isTrue,
+        reason: '좌상단 안내문 여백이 브래킷을 침범한다');
     // 프리뷰 사각형 계산이 살아있는지
     expect(src.contains('1 / _controller!.value.aspectRatio'), isTrue);
   });
