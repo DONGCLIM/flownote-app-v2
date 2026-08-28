@@ -12,7 +12,6 @@ import '../providers/receipt_provider.dart';
 import '../services/subscription_service.dart';
 import '../services/notification_service.dart';
 import 'scan/scan_flow.dart';
-import 'gemini_key_screen.dart';
 import 'paywall_screen.dart';
 import 'insight/insight_hub.dart';
 
@@ -96,15 +95,8 @@ class ScanScreenState extends State<ScanScreen>
                     ],
                   ),
                 ),
-                FnIconButton(
-                  icon: Icons.tune_rounded,
-                  tooltip: 'AI 설정',
-                  onPressed: () => Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                        builder: (_) => const GeminiKeyScreen()),
-                  ),
-                ),
+                // 🔴 AI 설정 톱니 버튼 제거 (사장님 요청).
+                //    화면 파일과 저장된 키/프롬프트/모델은 그대로 살아 있다.
               ],
             ),
             const SizedBox(height: FnSpace.x24),

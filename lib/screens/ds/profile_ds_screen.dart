@@ -8,7 +8,6 @@ import '../../design/fn_badge_ds.dart';
 import '../../design/fn_button.dart';
 import '../../providers/auth_provider.dart';
 import '../../services/pwa_install.dart';
-import '../gemini_key_screen.dart';
 import 'add_to_home_sheet.dart';
 import 'auth_ds_screens.dart';
 import 'legal_doc_ds_screen.dart';
@@ -242,14 +241,15 @@ class _ProfileDsScreenState extends State<ProfileDsScreen> {
                     MaterialPageRoute(builder: (_) => const PaywallDsScreen()),
                   ),
             ),
-            // 영수증 OCR 은 Gemini API 키가 있어야 동작한다.
-            // 리디자인 과정에서 진입 경로가 사라져 있었으므로 다시 노출한다.
-            (
-              'AI 인식(Gemini) API 키 설정',
-              () => Navigator.of(context).push(
-                    MaterialPageRoute(builder: (_) => const GeminiKeyScreen()),
-                  ),
-            ),
+            // 🔴 'AI 인식(Gemini) API 키 설정' 진입 경로를 의도적으로 뺐다.
+            //    (사장님 요청 — 앱/웹 어디서도 이 화면에 못 들어가게)
+            //
+            //    ⚠️ 지우지 말 것: 화면 파일과 저장된 API 키·프롬프트·모델
+            //       설정은 **그대로 살아 있다**. 영수증 OCR 은
+            //       `ApiKeyService` 가 저장소에서 직접 읽어 쓰기 때문에,
+            //       입구만 막아도 인식 기능은 정상 동작한다.
+            //       다시 열어야 하면 gemini_key_screen.dart 를 import 하고
+            //       이 자리에 항목 한 줄을 되살리면 된다.
             ('알림 설정', () => _todo(context, '알림 설정')),
             // 웹(PWA) 에서만 의미가 있다. 설치된 앱이거나 이미 홈 화면에서
             // 실행 중이면 `shouldGuide` 가 false 라 아예 안 보여준다.

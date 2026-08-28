@@ -6,7 +6,6 @@ import '../providers/receipt_provider.dart';
 import '../theme/app_theme.dart';
 import '../models/user_model.dart';
 import 'login_screen.dart';
-import 'gemini_key_screen.dart';
 import 'insight/insight_hub.dart';
 import 'paywall_screen.dart';
 import 'settlement/settlement_screen.dart';
@@ -561,19 +560,8 @@ class ProfileScreen extends StatelessWidget {
                 );
               },
             ),
-            const Divider(height: 1, indent: 56),
-            _SettingsTile(
-              icon: Icons.key_outlined,
-              label: 'AI 설정',
-              onTap: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => const GeminiKeyScreen(),
-                  ),
-                );
-              },
-            ),
+            // 🔴 'AI 설정' 진입 경로 제거 (사장님 요청).
+            //    화면 파일과 저장된 키/프롬프트/모델은 그대로 살아 있다.
             const Divider(height: 1, indent: 56),
             _SettingsTile(
               icon: Icons.notifications_outlined,
