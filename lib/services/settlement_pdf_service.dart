@@ -1,6 +1,6 @@
 import 'dart:typed_data';
 
-import 'package:flutter/foundation.dart' show debugPrint;
+import 'package:flutter/foundation.dart' show debugPrint, kIsWeb;
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
@@ -852,6 +852,15 @@ class SettlementPdfService {
   ///
   /// 실패하면 `null` — 사진 한 장 때문에 정산서 생성 전체가 실패하면 안 된다.
   /// 사진이 많으면 시간이 걸리므로 한 장당 제한을 둔다.
+  ///
+  /// 🔴 웹에서는 여기도 CORS 에 걸린다.
+  ///    `package:http` 는 웹에서 결국 브라우저 XHR 로 나가기 때문에,
+  ///    버킷에 CORS 규칙이 없으면 200 응답이어도 바이트를 못 읽는다.
+  ///    (화면의 `ReceiptPhoto` 가 안 뜨던 것과 똑같은 원인이다)
+  ///    버킷에 CORS 를 넣어 해결했지만, 화면과 달리 PDF 는 HTML <img>
+  ///    로 대체할 수 없다 — 진짜 바이트가 필요하다. 그래서 실패했을 때
+  ///    원인을 로그에 분명히 남긴다. 조용히 사진 없는 정산서가 나오면
+  ///    무엇이 잘못됐는지 알 수 없다.
   Future<Uint8List?> _fetchRemote(String url) async {
     try {
       final res = await http
@@ -861,9 +870,17 @@ class SettlementPdfService {
         debugPrint('[settle] 사진 내려받기 실패 status=${res.statusCode}');
         return null;
       }
+      if (res.bodyBytes.isEmpty) {
+        debugPrint('[settle] 사진 내려받기 결과가 0바이트다 — CORS 차단 의심');
+        return null;
+      }
       return res.bodyBytes;
     } catch (e) {
-      debugPrint('[settle] 사진 내려받기 예외(건너뜀): $e');
+      // 웹에서 CORS 로 막히면 여기로 온다 (ClientException / XMLHttpRequest error).
+      debugPrint(kIsWeb
+          ? '[settle] 사진 내려받기 실패(건너뜀). 웹이면 Storage 버킷의 CORS '
+              '설정을 확인해야 한다: $e'
+          : '[settle] 사진 내려받기 예외(건너뜀): $e');
       return null;
     }
   }

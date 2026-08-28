@@ -74,8 +74,34 @@ class ReceiptPhoto extends StatelessWidget {
         fit: fit,
         width: width,
         height: height,
+        // 🔴 웹에서 이 사진이 안 뜨던 진짜 이유는 인터넷이 아니라 CORS 였다.
+        //
+        //    Flutter 웹은 `Image.network` 를 그릴 때 XHR/fetch 로 바이트를
+        //    직접 읽는다. 그런데 Firebase Storage 버킷에 CORS 설정이
+        //    아예 없어서, 브라우저가 응답을 우리 코드에 넘겨주지 않았다.
+        //
+        //    실제로 배포된 주소에서 재 본 값:
+        //      fetch(url)                → 실패 (Failed to fetch)
+        //      <img src=url>             → 정상 1200x1600
+        //      <img crossOrigin=...>     → 실패
+        //      HTTP 응답 헤더             → 200 OK, 720400 바이트,
+        //                                  Access-Control-Allow-Origin 없음
+        //    즉 사진은 멀쩡히 살아 있었고 브라우저만 막고 있었다.
+        //
+        //    해결은 두 겹으로 했다.
+        //    ① 버킷에 CORS 규칙을 넣었다(서버 쪽 근본 원인).
+        //    ② 그래도 혹시 막히면 HTML <img> 요소로 그리게 한다(아래).
+        //       Flutter 문서가 이 상황을 위해 만들어 둔 장치다.
+        //       (image.dart 주석: "images are hosted on a CDN or from
+        //        arbitrary URLs ... set the webHtmlElementStrategy")
+        //       fallback = 바이트 읽기를 먼저 시도하고, 안 되면 <img>.
+        //    앱(안드로이드)에는 아무 영향이 없다.
+        webHtmlElementStrategy: WebHtmlElementStrategy.fallback,
+        // 안내문도 고쳤다. 예전 문구('인터넷 연결을 확인해주세요')는
+        // 원인을 잘못 짚어서, 사장님이 와이파이만 계속 확인하게 만들었다.
         errorBuilder: (_, __, ___) => err('사진을 불러오지 못했어요',
-            '인터넷 연결을 확인해주세요', Icons.wifi_off_rounded),
+            '사진 서버 설정 문제일 수 있어요.\n잠시 뒤 다시 열어보세요.',
+            Icons.image_not_supported_outlined),
         loadingBuilder: (_, child, ev) {
           if (ev == null) return child;
           return SizedBox(
@@ -100,6 +126,8 @@ class ReceiptPhoto extends StatelessWidget {
           fit: fit,
           width: width,
           height: height,
+          // blob URL 도 같은 이유로 막힐 수 있다. 같은 장치를 붙여 둔다.
+          webHtmlElementStrategy: WebHtmlElementStrategy.fallback,
           errorBuilder: (_, __, ___) => err(
             '사진이 저장되지 않았어요',
             '이 영수증을 저장할 때 사진 업로드가 실패했어요.\n수정 화면에서 사진을 다시 붙여주세요.',

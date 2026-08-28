@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -116,6 +118,15 @@ class _FnAutoCompleteState extends State<FnAutoComplete> {
   ///  남아 화면 위에 유령 드롭다운이 떠 있을 수 있다)
   bool _disposed = false;
 
+  /// 포커스가 빠진 뒤 드롭다운을 닫기까지의 지연 타이머.
+  ///
+  /// 🔴 `Future.delayed` 를 쓰면 안 된다. 취소할 수단이 없어서
+  ///    위젯이 사라진 뒤에도 타이머가 남는다. 실제로 그렇게 썼다가
+  ///    기존 테스트 4개가 'A Timer is still pending even after the
+  ///    widget tree was disposed.' 로 깨졌다. 릴리즈 빌드에서는
+  ///    조용히 넘어가지만, 화면을 떠난 뒤 콜백이 도는 건 그냥 버그다.
+  Timer? _closeTimer;
+
   bool get _open => _entry != null;
 
   @override
@@ -128,6 +139,8 @@ class _FnAutoCompleteState extends State<FnAutoComplete> {
   @override
   void dispose() {
     _disposed = true;
+    _closeTimer?.cancel();
+    _closeTimer = null;
     widget.controller.removeListener(_onText);
     _focus.removeListener(_onFocus);
     // setState 를 타지 않는 경로로 Overlay 만 정리한다.
@@ -140,11 +153,35 @@ class _FnAutoCompleteState extends State<FnAutoComplete> {
 
   void _onFocus() {
     if (_focus.hasFocus) {
+      // 포커스가 돌아왔으면 예약된 닫기는 무효다.
+      _closeTimer?.cancel();
+      _closeTimer = null;
       _refresh(show: true);
     } else {
-      // 후보를 탭하는 순간에도 포커스가 빠지므로 프레임 하나를 기다린다.
-      // (즉시 닫으면 탭 이벤트가 소실된다)
-      WidgetsBinding.instance.addPostFrameCallback((_) {
+      // 🔴 여기서 즉시 _remove() 를 부르면 후보 탭이 소실된다.
+      //
+      //    드롭다운은 스크롤 부모의 ClipRect 를 벗어나기 위해 OverlayEntry
+      //    로 그린다. 그래서 TextField 의 탭 영역 **밖**이다.
+      //    후보에 손가락이 닿는 순간 TapRegionSurface 가 "밖을 눌렀다" 고
+      //    판정하고, EditableText 의 onTapOutside 가 포커스를 뺏는다.
+      //    (editable_text.dart:6692 `_EditableTextTapOutsideAction`)
+      //
+      //    측정한 순서 — 웹/데스크톱 경로:
+      //      pointer down 직후    hasFocus=false  드롭다운=true
+      //      32ms 후 (떼기 직전)  hasFocus=false  드롭다운=false  ← 사라짐
+      //      결과                 선택 안 됨
+      //
+      //    프레임 하나만 기다리는 예전 방식은 "손가락을 아주 빨리 떼면
+      //    운 좋게 된다" 는 뜻이라 사장님이 "갑자기 안 된다" 고 느낀다.
+      //
+      //    근본 해결은 드롭다운을 TextFieldTapRegion 으로 감싸서
+      //    애초에 포커스가 빠지지 않게 하는 것이다(_buildDropdown 참고).
+      //    이 지연은 그 뒤에도 남겨 둔다 — 다른 경로(웹 브라우저의
+      //    독자적인 blur 등)로 포커스가 빠질 수 있고, 한 프레임보다는
+      //    넉넉해야 안전하다.
+      _closeTimer?.cancel();
+      _closeTimer = Timer(const Duration(milliseconds: 180), () {
+        _closeTimer = null;
         if (_disposed || !mounted) return;
         if (!_focus.hasFocus) _remove();
       });
@@ -373,6 +410,20 @@ class _FnAutoCompleteState extends State<FnAutoComplete> {
 
     return Positioned(
       width: w,
+      // 🔴 TextFieldTapRegion 이 반드시 있어야 한다.
+      //
+      //    이 드롭다운은 OverlayEntry 로 그려서 TextField 위젯 트리
+      //    바깥에 있다. 그대로 두면 후보에 손가락이 닿는 순간
+      //    TapRegionSurface 가 "텍스트필드 밖을 눌렀다" 고 판정해
+      //    EditableText 가 포커스를 뺏고(editable_text.dart:6692),
+      //    그 바람에 오버레이가 손가락을 떼기 전에 사라진다.
+      //    → GestureDetector.onTap 이 갈 곳이 없어 선택이 소실된다.
+      //
+      //    TextFieldTapRegion 은 groupId 가 EditableText 라서, 이걸로
+      //    감싸면 드롭다운이 텍스트필드와 **한 덩어리**로 취급된다.
+      //    즉 후보를 누르는 건 "안을 누른 것" 이 되고 포커스가 유지된다.
+      //    Flutter 자신의 RawAutocomplete 도 똑같이 한다
+      //    (autocomplete.dart:561, 628).
       child: CompositedTransformFollower(
         link: _link,
         showWhenUnlinked: false,
@@ -381,7 +432,15 @@ class _FnAutoCompleteState extends State<FnAutoComplete> {
         offset: Offset(0, below ? 6 : -6),
         child: Material(
           type: MaterialType.transparency,
-          child: Container(
+          // 🔴 TextFieldTapRegion 은 CompositedTransformFollower **안쪽**에
+          //    있어야 한다. 바깥에 두면 TapRegion 의 RenderBox 가 변환 전
+          //    좌표에 놓여서, 실제로 그려지는 자리와 히트 박스가 어긋난다.
+          //    (직접 측정: 바깥에 뒀을 때 히트 경로에 RenderTapRegion 이
+          //     아예 들어오지 않았다)
+          //    Flutter 자신의 RawAutocomplete 도 Transform 안쪽에 넣는다
+          //    (autocomplete.dart:560).
+          child: TextFieldTapRegion(
+            child: Container(
             constraints: BoxConstraints(maxHeight: avail),
             padding: const EdgeInsets.all(6),
             decoration: BoxDecoration(
@@ -417,6 +476,7 @@ class _FnAutoCompleteState extends State<FnAutoComplete> {
               ],
             ),
           ),
+          ),
         ),
       ),
     );
@@ -426,6 +486,11 @@ class _FnAutoCompleteState extends State<FnAutoComplete> {
     final on = i == _focused;
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
+      // 🔴 onTapDown 이 아니라 onTap 을 쓰는 이유
+      //    onTapDown 은 스크롤하려고 손가락을 올리기만 해도 선택돼버린다.
+      //    (후보가 10개면 드롭다운 안에서 스크롤을 한다)
+      //    그래서 onTap 을 유지하고, 대신 위쪽 TextFieldTapRegion 으로
+      //    "떼기 전에 오버레이가 사라지는" 원인을 없앴다.
       onTap: () => _select(it),
       child: Container(
         width: double.infinity,

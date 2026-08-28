@@ -1,7 +1,7 @@
 name: flow_note
 description: FlowNote - 꽃 거래 장부 앱
 publish_to: 'none'
-version: 1.0.0+35
+version: 1.0.0+36
 
 environment:
   sdk: '>=3.0.0 <4.0.0'
