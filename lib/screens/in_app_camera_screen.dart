@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:camera/camera.dart';
 import 'package:permission_handler/permission_handler.dart';
 import '../services/file_saver.dart';
+import '../services/camera_quality.dart';
 import '../services/receipt_image_editor.dart';
 import '../theme/app_theme.dart';
 
@@ -103,16 +104,13 @@ class _InAppCameraScreenState extends State<InAppCameraScreen>
 
       await _controller?.dispose();
 
-      final controller = CameraController(
-        description,
-        ResolutionPreset.high,
-        enableAudio: false,
-        imageFormatGroup: ImageFormatGroup.jpeg,
-      );
+      // 🔴 ScanCameraDsScreen 과 반드시 같은 방식으로 열어야 한다.
+      //    한쪽만 고치면 캘린더/사업자 등록 경로에서만 화질이 나빠진다.
+      //    ResolutionPreset.high 를 박아 두면 안 되는 이유는
+      //    CameraQuality 문서 주석에 정리해 뒀다.
+      final controller = await CameraQuality.open(description);
 
       _controller = controller;
-
-      await controller.initialize();
       if (!mounted) return;
 
       // 플래시 초기 설정
@@ -548,7 +546,7 @@ class _InAppCameraScreenState extends State<InAppCameraScreen>
       if (bytes.isEmpty) return shot;
       // 🔴 프리뷰 표면 비율을 반드시 함께 넘긴다.
       //    이걸 빼면 "찍을 때랑 찍고 나서 배율이 다르다" 가 그대로 돌아온다.
-      //    안드로이드 ResolutionPreset.high 는 프리뷰를 16:9 로 요청하는데
+      //    프리셋에 따라 프리뷰가 사진과 다른 비율일 수 있다. 예를 들어
       //    사진은 4:3 으로 찍힐 수 있어서, 프리뷰가 이미 촬영본의 중앙
       //    일부만 보여주고 있다. coverCropRect 가 그 몫까지 계산한다.
       final c = _controller;

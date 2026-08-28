@@ -11,6 +11,7 @@ import '../../design/fn_sheet.dart';
 import '../../design/fn_feedback.dart';
 import '../../services/file_saver.dart';
 import '../../services/gallery_intake.dart';
+import '../../services/camera_quality.dart';
 import '../../services/receipt_image_editor.dart';
 import 'receipt_crop_ds_screen.dart';
 import '../../widgets/xfile_image.dart';
@@ -177,14 +178,15 @@ class _ScanCameraDsScreenState extends State<ScanCameraDsScreen>
               orElse: () => _cameras.first);
 
       await _controller?.dispose();
-      final c = CameraController(
-        desc,
-        ResolutionPreset.high,
-        enableAudio: false,
-        imageFormatGroup: ImageFormatGroup.jpeg,
-      );
+
+      // 🔴 해상도 프리셋을 여기서 직접 정하지 않는다.
+      //    CameraQuality.open 이 max -> veryHigh -> high 순서로 시도한다.
+      //    예전에는 여기에 ResolutionPreset.high 를 박아 뒀는데, 그게
+      //    센서 4:3 을 16:9 로 잘라서(가로 25% 손실 = 1.333배 확대)
+      //    "찍을 때 확대돼 보인다" 와 "화질이 안 좋다" 를 동시에 만들었다.
+      //    자세한 근거는 CameraQuality 문서 주석에 적어 뒀다.
+      final c = await CameraQuality.open(desc);
       _controller = c;
-      await c.initialize();
       if (!mounted) return;
 
       // 🔴 플래시 설정은 "실패해도 되는" 작업이다. 절대 초기화를 막으면 안 된다.
@@ -744,7 +746,7 @@ class _ScanCameraDsScreenState extends State<ScanCameraDsScreen>
 
       // 🔴 프리뷰 표면 비율을 반드시 함께 넘긴다.
       //    이걸 빼면 "찍을 때랑 찍고 나서 배율이 다르다" 가 그대로 돌아온다.
-      //    안드로이드 ResolutionPreset.high 는 프리뷰를 16:9 로 요청하는데
+      //    프리셋에 따라 프리뷰가 사진과 다른 비율일 수 있다. 예를 들어
       //    사진은 4:3 으로 찍힐 수 있어서, 프리뷰가 이미 촬영본의 중앙
       //    일부만 보여주고 있다. coverCropRect 가 그 몫까지 계산한다.
       final c = _controller;

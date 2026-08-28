@@ -301,4 +301,66 @@ void main() {
     expect(crop.contains('_maxDim = ReceiptImageEditor.defaultMaxDimension'), isTrue,
         reason: '크롭 화면이 고정 저장 크기를 쓰지 않는다');
   });
+
+  // ────────────────────────────────────────────────────────────────
+  // #106 촬영 화질 · 화각 회귀 방지
+  // ────────────────────────────────────────────────────────────────
+
+  test('🔴 두 카메라 화면은 CameraQuality.open 으로만 카메라를 연다', () {
+    for (final path in const [
+      'lib/screens/ds/scan_camera_ds_screen.dart',
+      'lib/screens/in_app_camera_screen.dart',
+    ]) {
+      final src = File(path).readAsStringSync();
+      expect(src.contains('CameraQuality.open('), isTrue,
+          reason: '$path 가 CameraQuality.open 을 쓰지 않는다');
+      expect(src.contains('CameraController('), isFalse,
+          reason: '$path 에서 CameraController 를 직접 만들면 '
+              '프리셋이 화면마다 갈라진다(한쪽만 고치는 사고의 원인)');
+      expect(src.contains('ResolutionPreset.high,'), isFalse,
+          reason: '$path 에 ResolutionPreset.high 가 되살아났다. '
+              '센서 4:3 을 16:9 로 잘라서 가로 25% 를 버리고 '
+              '해상도도 1280x720 으로 묶는다');
+    }
+  });
+
+  test('🔴 CameraQuality 는 max 를 첫 후보로 두고 안전망을 갖는다', () {
+    final src = File('lib/services/camera_quality.dart').readAsStringSync();
+
+    final i = src.indexOf('presets = <ResolutionPreset>[');
+    expect(i, greaterThan(0), reason: 'presets 목록이 없어졌다');
+    final list = src.substring(i, src.indexOf('];', i));
+
+    final max = list.indexOf('ResolutionPreset.max');
+    final very = list.indexOf('ResolutionPreset.veryHigh');
+    final high = list.indexOf('ResolutionPreset.high');
+
+    expect(max, greaterThanOrEqualTo(0), reason: 'max 가 목록에 없다');
+    expect(max, lessThan(very),
+        reason: 'max 가 veryHigh 보다 앞에 있어야 한다. '
+            'max 만 aspectRatioStrategy 를 안 넘겨서 센서 비율(4:3)을 '
+            '그대로 쓴다 = 기본 카메라 앱과 같은 화각');
+    expect(very, lessThan(high), reason: 'veryHigh 가 high 보다 앞이어야 한다');
+
+    // 오래된 기기에서 max 가 실패해도 화면이 죽지 않아야 한다.
+    expect(src.contains('await controller.dispose()'), isTrue,
+        reason: '실패한 컨트롤러를 정리하지 않으면 카메라가 잠긴다');
+  });
+
+  test('🔴 리사이즈는 cubic 이어야 한다 (기본값 nearest 는 글자를 깎는다)', () {
+    final src = File('lib/services/receipt_image_editor.dart').readAsStringSync();
+
+    // copyResize 호출 개수 = cubic 지정 개수. 하나라도 빠지면 실패.
+    final calls = 'img.copyResize('.allMatches(src).length;
+    final cubic = 'img.Interpolation.cubic'.allMatches(src).length;
+    expect(calls, greaterThan(0), reason: 'copyResize 호출이 사라졌다');
+    expect(cubic, calls,
+        reason: 'copyResize $calls 개 중 cubic 지정은 $cubic 개다. '
+            'interpolation 을 안 적으면 image 패키지 기본값인 '
+            'Interpolation.nearest 가 쓰여서 얇은 글자 획이 사라진다');
+
+    // #105 에서 사장님이 못박은 값. 조용히 올리지 말 것.
+    expect(src.contains('static const int defaultMaxDimension = 1200;'), isTrue,
+        reason: '저장 상한 1200px 은 #105 에서 정한 값이다');
+  });
 }
