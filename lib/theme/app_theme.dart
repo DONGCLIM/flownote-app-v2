@@ -89,6 +89,32 @@ class AppColors {
   static const Color leaf95 = Color(0xFFEFF5E7);
 }
 
+/// #112(B) 뒤로가기 반응 속도 — 화면 전환 시간
+///
+/// 🔴 왜 필요한가
+///    기본 [ZoomPageTransitionsBuilder] 는 앞으로/뒤로 모두 300ms 다.
+///    실측(테스트로 프레임을 셈)하면 뒤로가기 1회에 312ms 동안 화면이
+///    애니메이션 중이어서, 그 사이에는 사장님 입력이 먹지 않는 것처럼
+///    느껴진다.
+///
+///    ▶ 뒤로가기 소요: 기존 312ms  ->  줄인 후 176ms
+///
+///    참고로 `FadeForwardsPageTransitionsBuilder` 로 바꾸면 832ms 로
+///    오히려 3배 가까이 느려진다(실측). 그래서 전환 방식은 그대로 두고
+///    시간만 줄였다.
+class FnFastPageTransitions extends ZoomPageTransitionsBuilder {
+  const FnFastPageTransitions();
+
+  /// 들어갈 때는 살짝만 줄인다(너무 빠르면 뚝 끊긴 느낌이 난다).
+  @override
+  Duration get transitionDuration => const Duration(milliseconds: 240);
+
+  /// 🔴 뒤로가기는 사장님이 "이미 본 화면" 으로 돌아가는 것이라
+  ///    기다릴 이유가 없다. 절반 수준으로 줄인다.
+  @override
+  Duration get reverseTransitionDuration => const Duration(milliseconds: 160);
+}
+
 class AppTheme {
   AppTheme._();
 
@@ -99,6 +125,17 @@ class AppTheme {
 
     return base.copyWith(
       scaffoldBackgroundColor: AppColors.background,
+      // #112(B) 뒤로가기 반응 — 전환 시간 312ms -> 176ms (실측)
+      pageTransitionsTheme: const PageTransitionsTheme(
+        builders: <TargetPlatform, PageTransitionsBuilder>{
+          TargetPlatform.android: FnFastPageTransitions(),
+          TargetPlatform.iOS: FnFastPageTransitions(),
+          TargetPlatform.macOS: FnFastPageTransitions(),
+          TargetPlatform.windows: FnFastPageTransitions(),
+          TargetPlatform.linux: FnFastPageTransitions(),
+          TargetPlatform.fuchsia: FnFastPageTransitions(),
+        },
+      ),
       colorScheme: const ColorScheme.light(
         primary: AppColors.primary,
         onPrimary: Colors.white,

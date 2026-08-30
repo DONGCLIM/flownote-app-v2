@@ -8,6 +8,7 @@ import '../services/receipt_parser.dart';
 import '../services/training_data_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/receipt_photo.dart';
+import '../widgets/pan_zoom_photo.dart';
 import '../widgets/flower_name_field.dart';
 import '../widgets/flower_price_line.dart';
 
@@ -697,21 +698,16 @@ class _ReceiptEditScreenState extends State<ReceiptEditScreen> {
               ],
             ),
           ),
-          // ── 이미지 본체 (핀치줌 가능) ──
-          InteractiveViewer(
-            minScale: 1.0,
-            maxScale: 5.0,
-            child: Container(
-              constraints: const BoxConstraints(maxHeight: 260),
-              width: double.infinity,
-              color: AppColors.surfaceVariant,
-              child: RotatedBox(
-                quarterTurns: _imageRotation,
-                // 상세 화면과 같은 이유로 `ReceiptPhoto` 를 쓴다.
-                // (웹의 `blob:` 경로가 Image.file 로 흘러가면 터진다)
-                child: ReceiptPhoto(path, fit: BoxFit.fitWidth, onDark: false),
-              ),
-            ),
+          // ── 이미지 본체 (핀치줌 + 배율1에서도 밀어서 이동) ──
+          // 🔴 예전 `InteractiveViewer` 는 배율 1 에서 이동량이 0 이었다.
+          PanZoomPhoto(
+            height: 260,
+            background: AppColors.surfaceVariant,
+            quarterTurns: _imageRotation,
+            imageProvider: ReceiptPhoto.providerFor(path),
+            // 상세 화면과 같은 이유로 `ReceiptPhoto` 를 쓴다.
+            // (웹의 `blob:` 경로가 Image.file 로 흘러가면 터진다)
+            image: ReceiptPhoto(path, fit: BoxFit.fill, onDark: false),
           ),
         ],
       ),

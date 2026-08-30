@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../design/fn_shell.dart';
+import '../../widgets/lazy_tabs.dart';
 import '../../providers/receipt_provider.dart';
 import 'calendar_ds_screen.dart';
 import 'home_ds_screen.dart';
@@ -40,12 +41,17 @@ class _MainDsScreenState extends State<MainDsScreen> {
   /// profile → '프로필'(AppH7)
   static const _titles = ['홈', '구매 내역', '스캔', '구매 캘린더', '프로필'];
 
-  late final List<Widget> _pages = [
-    const HomeDsScreen(),
-    const SettleDsScreen(),
-    ScanDsScreen(key: _scanKey),
-    const CalendarDsScreen(),
-    const ProfileDsScreen(),
+  /// 탭 본문을 **필요할 때** 만든다.
+  ///
+  /// 리스트로 미리 만들어 두면 앱을 켜는 순간 5화면이 전부 build 돼서
+  /// 첫 진입이 느려진다. 열어 본 탭만 만들고, 한 번 만든 뒤에는
+  /// `_LazyTabs` 가 그대로 들고 있으므로 스크롤 위치·입력값은 유지된다.
+  late final List<Widget Function()> _pageBuilders = [
+    () => const HomeDsScreen(),
+    () => const SettleDsScreen(),
+    () => ScanDsScreen(key: _scanKey),
+    () => const CalendarDsScreen(),
+    () => const ProfileDsScreen(),
   ];
 
   @override
@@ -81,7 +87,17 @@ class _MainDsScreenState extends State<MainDsScreen> {
       tabs: fnTabs,
       activeTab: fnTabs[_index].key,
       onTabChange: _onTab,
-      child: IndexedStack(index: _index, children: _pages),
+      // 🔴 예전에는 `IndexedStack(index: _index, children: _pages)` 였다.
+      //    IndexedStack 은 안 보이는 자식도 트리에 살려 두는데, 그 자식들이
+      //    `context.watch<ReceiptProvider>()` 를 하고 있었다. 그래서
+      //    영수증을 저장하고 뒤로 나올 때 `notifyListeners()` 한 번에
+      //    **5개 탭이 전부 다시 build** 됐다. (직접 셌다: 재build 5/5,
+      //    트리에 살아있던 Element 7,141개)
+      //
+      //    화면 전환 애니메이션이 도는 중에 그 일이 겹치니까 뒤로가기
+      //    직후가 유난히 굼떴다. `_LazyTabs` 는 (1) 한 번이라도 열어 본
+      //    탭만 만들고, (2) 지금 보이지 않는 탭은 rebuild 를 건너뛴다.
+      child: LazyTabs(index: _index, builders: _pageBuilders),
     );
   }
 }

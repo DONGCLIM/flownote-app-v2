@@ -18,6 +18,7 @@ import 'ds/receipt_crop_ds_screen.dart';
 import '../services/vendor_tax_service.dart';
 import '../widgets/flower_name_field.dart';
 import '../widgets/receipt_photo.dart';
+import '../widgets/pan_zoom_photo.dart';
 import '../widgets/flower_price_line.dart';
 
 /// 저장된 영수증 상세 / 수정 화면.
@@ -412,27 +413,16 @@ class _ReceiptDetailScreenState extends State<ReceiptDetailScreen> {
               ],
             ),
           ),
-          InteractiveViewer(
-            minScale: 1,
-            maxScale: 5,
-            child: GestureDetector(
-              onTap: () => _showFull(path, isNetwork),
-              child: Container(
-                constraints: const BoxConstraints(maxHeight: 260),
-                width: double.infinity,
-                color: const Color(0xFF33363D),
-                child: RotatedBox(
-                  quarterTurns: _imageRotation,
-                  // 🔴 예전에는 `isNetwork` 하나로만 갈랐다. 그래서 웹에서
-                  //    `blob:` 경로가 `Image.file(File('blob:...'))` 로
-                  //    흘러가 통째로 실패했다(웹의 dart:io 는 전부
-                  //    UnsupportedError 를 던지는 스텁이다).
-                  //    `ReceiptPhoto` 가 http / 기기경로 / blob 세 가지를
-                  //    모두 처리하고, 못 그릴 때는 이유까지 알려준다.
-                  child: ReceiptPhoto(path, fit: BoxFit.fitWidth),
-                ),
-              ),
-            ),
+          // 🔴 배율 1 에서도 사진을 밀어서 볼 수 있어야 한다.
+          //    (예전 `InteractiveViewer` 기본값은 이동량이 0 이었다)
+          PanZoomPhoto(
+            height: 260,
+            background: const Color(0xFF33363D),
+            quarterTurns: _imageRotation,
+            imageProvider: ReceiptPhoto.providerFor(path),
+            onTap: () => _showFull(path, isNetwork),
+            // 바깥에서 원본 비율대로 크기를 잡으므로 fill 이다.
+            image: ReceiptPhoto(path, fit: BoxFit.fill),
           ),
         ],
       ),

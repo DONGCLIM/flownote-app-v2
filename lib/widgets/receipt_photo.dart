@@ -63,6 +63,27 @@ class ReceiptPhoto extends StatelessWidget {
   /// 클라우드에 올라가 있어서 어디서든 보이는 사진인가.
   static bool isPermanent(String? p) => (p ?? '').startsWith('http');
 
+  /// 이 경로를 그리는 데 쓰이는 [ImageProvider].
+  ///
+  /// `PanZoomPhoto` 가 사진의 **원본 픽셀 크기**를 알아내야 하는데,
+  /// 그러려면 실제로 그리는 것과 똑같은 provider 가 필요하다.
+  /// 여기서 만들어 주지 않으면 화면마다 경로 분기를 또 베껴야 하고,
+  /// 그러면 언젠가 어긋난다 (`blob:` 을 `Image.file` 로 보냈던
+  /// 과거의 실수가 정확히 그 경우였다).
+  ///
+  /// 그릴 수 없는 경로면 `null` 을 준다. 그때는 이동 없이 예전처럼
+  /// 보여 주면 된다.
+  static ImageProvider? providerFor(String? p) {
+    final s = p ?? '';
+    if (s.isEmpty) return null;
+    if (s.startsWith('http')) return NetworkImage(s);
+    if (kIsWeb) {
+      // 웹에서 기기 경로는 그릴 수 없다. blob 은 네트워크처럼 읽는다.
+      return s.startsWith('blob:') ? NetworkImage(s) : null;
+    }
+    return FileImage(io.File(s));
+  }
+
   @override
   Widget build(BuildContext context) {
     final err = _error();

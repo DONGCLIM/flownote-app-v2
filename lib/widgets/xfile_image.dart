@@ -31,6 +31,17 @@ class XFileImage extends StatelessWidget {
   final double? height;
   final ImageErrorWidgetBuilder? errorBuilder;
 
+  /// 이 `XFile` 을 그리는 데 쓰이는 [ImageProvider].
+  ///
+  /// `PanZoomPhoto` 가 원본 픽셀 크기를 알아내는 데 쓴다.
+  /// 웹에서는 `XFile.path` 가 `blob:` URL 이라 네트워크로 읽는다.
+  static ImageProvider providerOf(XFile f) {
+    // 🔴 삼항 연산자로 쓰면 안 된다. NetworkImage 와 FileImage 의
+    //    공통 상위형을 dart 가 Object 로 추론해서 컴파일이 깨진다.
+    if (kIsWeb) return NetworkImage(f.path);
+    return FileImage(io.File(f.path));
+  }
+
   @override
   Widget build(BuildContext context) {
     final fallback = errorBuilder ??

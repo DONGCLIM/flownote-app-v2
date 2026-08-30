@@ -18,6 +18,7 @@ import 'scan_done_ds_screen.dart';
 import '../../widgets/flower_name_field.dart';
 import '../../widgets/flower_price_line.dart';
 import '../../widgets/xfile_image.dart';
+import '../../widgets/pan_zoom_photo.dart';
 
 /// 인식 결과 확인 화면 — 시안 `AppH7 scan-review` 1:1
 ///
@@ -711,29 +712,25 @@ class _DraftPaneState extends State<_DraftPane> {
               ],
             ),
           ),
-          // ── 이미지 본체 (핀치줌) ──
-          InteractiveViewer(
-            minScale: 1,
-            maxScale: 5,
-            child: GestureDetector(
-              onTap: _showFull,
-              child: Container(
-                constraints: const BoxConstraints(maxHeight: 260),
-                width: double.infinity,
-                color: widget.viewerBg,
-                child: RotatedBox(
-                  quarterTurns: _rotation,
-                  // 웹에서도 실제로 찍은 사진을 보여준다.
-                  // 예전에는 kIsWeb 이면 가짜 종이 그림(_PaperMock)만 띄웠는데,
-                  // 그러면 사장님이 인식 결과를 원본 영수증과 비교할 수 없다.
-                  child: XFileImage(
-                    d.file,
-                    fit: BoxFit.fitWidth,
-                    errorBuilder: (_, __, ___) =>
-                        const Center(child: _PaperMock()),
-                  ),
-                ),
-              ),
+          // ── 이미지 본체 (핀치줌 + 배율1에서도 밀어서 이동) ──
+          //
+          // 🔴 예전에는 `InteractiveViewer(constrained: true)` 기본값이라
+          //    배율 1 에서 이동량이 정확히 0 이었다. 핀치줌을 해야 비로소
+          //    이동이 됐다 — 사장님이 신고한 그 증상이다.
+          //    `PanZoomPhoto` 가 사진 원본 비율대로 자식 크기를 잡아서
+          //    배율 1 에서도 넘치는 부분을 밀어 볼 수 있게 한다.
+          PanZoomPhoto(
+            height: 260,
+            background: widget.viewerBg,
+            quarterTurns: _rotation,
+            imageProvider: XFileImage.providerOf(d.file),
+            onTap: _showFull,
+            // 바깥에서 원본 비율대로 크기를 잡아 주므로 여기선 fill 이다.
+            // fitWidth 로 두면 이중 계산이 돼서 여백이 생긴다.
+            image: XFileImage(
+              d.file,
+              fit: BoxFit.fill,
+              errorBuilder: (_, __, ___) => const Center(child: _PaperMock()),
             ),
           ),
         ],
