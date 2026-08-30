@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../design/fn_tokens.dart';
 import '../../design/fn_shell.dart';
+import '../../design/fn_tab_intent.dart';
 import '../../design/fn_card.dart';
 import '../../design/fn_controls_ds.dart';
 import '../scan/scan_draft.dart';
@@ -59,21 +60,23 @@ class _ScanDoneDsScreenState extends State<ScanDoneDsScreen>
     super.dispose();
   }
 
-  void _home() {
-    if (widget.onGoHome != null) {
-      widget.onGoHome!();
-    } else {
-      Navigator.of(context).popUntil((r) => r.isFirst);
+  /// 루트(5탭 화면)로 돌아가면서 [tabKey] 탭을 열어 달라고 남긴다.
+  ///
+  /// 🔴 예전에는 `_home()` 과 `_calendar()` 가 **똑같이** 루트까지
+  ///    pop 만 했다. 그래서 '캘린더 보기' 를 눌러도 스캔 탭으로
+  ///    되돌아갈 뿐, 캘린더로 전환되지 않았다.
+  void _leaveTo(String tabKey, VoidCallback? override) {
+    if (override != null) {
+      override();
+      return;
     }
+    FnTabIntent.request(tabKey);
+    Navigator.of(context).popUntil((r) => r.isFirst);
   }
 
-  void _calendar() {
-    if (widget.onGoCalendar != null) {
-      widget.onGoCalendar!();
-    } else {
-      Navigator.of(context).popUntil((r) => r.isFirst);
-    }
-  }
+  void _home() => _leaveTo('home', widget.onGoHome);
+
+  void _calendar() => _leaveTo('calendar', widget.onGoCalendar);
 
   @override
   Widget build(BuildContext context) {

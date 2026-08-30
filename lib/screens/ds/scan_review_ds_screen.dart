@@ -15,6 +15,7 @@ import '../../services/vendor_tax_service.dart';
 import '../scan/scan_draft.dart';
 import 'fn_data.dart';
 import 'scan_done_ds_screen.dart';
+import 'scan_confirm_list_ds_screen.dart';
 import '../../widgets/flower_name_field.dart';
 import '../../widgets/flower_price_line.dart';
 import '../../widgets/xfile_image.dart';
@@ -96,46 +97,87 @@ class _ScanReviewDsScreenState extends State<ScanReviewDsScreen> {
   int get _blockedCount =>
       _drafts.where((d) => !d.excluded && d.blocksSave).length;
 
+  /// 저장 대상 (제외되지 않고 금액이 있는 건)
+  List<ScanDraft> get _liveDrafts =>
+      _drafts.where((d) => !d.excluded && d.total > 0).toList();
+
   Future<void> _confirm() async {
     _d.reviewed = true;
     if (_index < _drafts.length - 1) {
       setState(() {});
       _go(_index + 1);
-    } else {
-      await _save();
+      return;
     }
+
+    // 🔴 #113(C) 마지막 장까지 확인했다. 2건 이상이면 저장 전에
+    //    목록으로 한 번 더 보여준다. 여러 장을 연속으로 넘기다 보면
+    //    앞에 뭘 확인했는지 기억이 안 난다는 요청.
+    //    1건뿐이면 방금 그 화면이 곧 목록이므로 건너뛴다.
+    final live = _liveDrafts;
+    if (live.length > 1) {
+      await Navigator.of(context).push<void>(
+        MaterialPageRoute(
+          builder: (_) => ScanConfirmListDsScreen(
+            drafts: live,
+            // 목록 자체가 최종 확인이므로 다시 묻지 않는다.
+            // pop 하지 않는다 — 저장 끝에서 이 목록까지 한 번에 치운다.
+            onSaveAll: () => _save(ask: false),
+            onEdit: (i) {
+              Navigator.of(context).pop();
+              _go(_drafts.indexOf(live[i]));
+            },
+          ),
+        ),
+      );
+      return;
+    }
+    await _save();
   }
 
-  Future<void> _save() async {
-    final live = _drafts.where((d) => !d.excluded && d.total > 0).toList();
+  /// [ask] 가 false 면 확인 다이얼로그를 건너뛴다.
+  /// (인식 결과 확인 목록에서 '모두 저장하기' 를 누른 경우)
+  Future<void> _save({bool ask = true}) async {
+    final live = _liveDrafts;
     if (live.isEmpty) {
       showFnToast(context, '저장할 영수증이 없어요', type: FnToastType.warning);
       return;
     }
-    final ok = await showFnAlert(
-      context,
-      title: '${live.length}건을 저장할까요?',
-      message: '합계 ${FnDemo.won(live.fold(0.0, (s, d) => s + d.total))}',
-      icon: Icons.save_alt_rounded,
-      confirmLabel: '저장',
-      cancelLabel: '더 볼게요',
-    );
-    if (!ok || !mounted) return;
+    if (ask) {
+      final ok = await showFnAlert(
+        context,
+        title: '${live.length}건을 저장할까요?',
+        message: '합계 ${FnDemo.won(live.fold(0.0, (s, d) => s + d.total))}',
+        icon: Icons.save_alt_rounded,
+        confirmLabel: '저장',
+        cancelLabel: '더 볼게요',
+      );
+      if (!ok || !mounted) return;
+    }
 
     setState(() => _saving = true);
     final provider = context.read<ReceiptProvider>();
-    for (final d in live) {
-      await provider.addReceipt(d.toReceipt());
-      await SubscriptionService.instance.recordScan();
-    }
+    // 🔴 #113(A) batch 로 감싼다. 예전에는 4장을 저장하면
+    //    notifyListeners 가 4번 나서 홈·내역·캘린더가 각각 4번씩
+    //    다시 그려졌다. 이제 끝에 한 번만 알린다.
+    await provider.batch(() async {
+      for (final d in live) {
+        await provider.addReceipt(d.toReceipt());
+        await SubscriptionService.instance.recordScan();
+      }
+    });
     if (!mounted) return;
     setState(() => _saving = false);
 
-    Navigator.pushReplacement(
+    // 🔴 pushReplacement 가 아니라 pushAndRemoveUntil 이다.
+    //    확인 목록을 거쳐 왔을 수도 있어서(확인 목록 -> 검토 -> 처리 -> 촬영),
+    //    루트(5탭 화면)까지 전부 치우고 완료 화면만 올린다.
+    //    그래야 완료 화면에서 '캘린더 보기' 를 눌렀을 때 곧바로 루트로 간다.
+    Navigator.pushAndRemoveUntil(
       context,
       MaterialPageRoute(
         builder: (_) => ScanDoneDsScreen(summary: ScanSummary.of(live)),
       ),
+      (r) => r.isFirst,
     );
   }
 

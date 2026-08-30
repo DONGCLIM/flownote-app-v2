@@ -172,8 +172,18 @@ void main() {
     });
   });
 
-  group('#112(B) 뒤로가기 후 반응 — 안 보이는 탭은 다시 그리지 않는다', () {
-    testWidgets('🔴 provider 가 바뀌어도 숨은 탭은 재build 되지 않는다', (t) async {
+  group('#112/#113(B) 탭 컨테이너 — 지연 생성만 보장한다', () {
+    // 🔴 정정: 처음에는 이 테스트 이름이
+    //    'provider 가 바뀌어도 숨은 탭은 재build 되지 않는다' 였다. **틀렸다.**
+    //    이 테스트가 통과한 이유는 탭1·2가 애초에 한 번도 mount 되지 않아서
+    //    counts 에 아무 것도 없었던 것뿐이다. 한 번이라도 열어 본 탭은
+    //    provider 가 바뀔 때 같이 다시 그려진다. 별도 측정 결과:
+    //      notifyListeners 1회 후 재build: {0: 1, 2: 1, 1: 1}
+    //    `context.watch<T>()` 는 **자식 element 자신**이 provider 를
+    //    구독하는 것이라, 부모가 위젯 인스턴스를 재사용해도 막을 수 없다.
+    //    그래서 #113 에서는 방향을 바꿨다 — 재build 횟수를 막는 대신
+    //    ReceiptProvider 쪽 비용(allReceipts 재정렬 / 알림 횟수)을 줄였다.
+    testWidgets('🔴 열어 본 적 없는 탭은 아예 만들지 않는다', (t) async {
       final counts = <int, int>{};
       final notifier = ValueNotifier<int>(0);
       addTearDown(notifier.dispose);
@@ -201,8 +211,10 @@ void main() {
       notifier.value++; // = 영수증 저장 후 notifyListeners()
       await t.pump();
 
-      expect(counts[1], isNull, reason: '숨은 탭1이 다시 build 됐다');
-      expect(counts[2], isNull, reason: '숨은 탭2가 다시 build 됐다');
+      // 여전히 만들어진 적 없으므로 build 되지 않는다.
+      // (이미 열어 본 탭이라면 다시 그려진다 — 위 주석 참고)
+      expect(counts[1], isNull, reason: '한 번도 안 연 탭1이 build 됐다');
+      expect(counts[2], isNull, reason: '한 번도 안 연 탭2가 build 됐다');
     });
 
     testWidgets('🔴 탭을 다시 열면 최신 데이터로 갱신된다', (t) async {

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../design/fn_shell.dart';
+import '../../design/fn_tab_intent.dart';
 import '../../widgets/lazy_tabs.dart';
 import '../../providers/receipt_provider.dart';
 import 'calendar_ds_screen.dart';
@@ -67,6 +68,34 @@ class _MainDsScreenState extends State<MainDsScreen> {
       await receipts.restoreFromCloud();
       await receipts.pushAllToCloud();
     });
+
+    // 저장 완료 화면의 '캘린더 보기' 처럼, 깊은 화면에서 남긴
+    // 탭 이동 요청을 받는다. (#113)
+    FnTabIntent.pending.addListener(_onTabIntent);
+  }
+
+  @override
+  void dispose() {
+    FnTabIntent.pending.removeListener(_onTabIntent);
+    super.dispose();
+  }
+
+  void _onTabIntent() {
+    if (FnTabIntent.pending.value == null) return;
+    // pop 애니메이션이 끝난 뒤에 바꿔야 전환이 자연스럽다.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _applyTabIntent();
+    });
+  }
+
+
+  /// 저장 완료 화면 등에서 "이 탭을 열어라" 고 남긴 요청을 처리한다.
+  void _applyTabIntent() {
+    final key = FnTabIntent.take();
+    if (key == null) return;
+    final i = fnTabs.indexWhere((t) => t.key == key);
+    if (i < 0 || i == _index) return;
+    setState(() => _index = i);
   }
 
   void _onTab(String key) {
