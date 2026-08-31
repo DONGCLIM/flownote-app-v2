@@ -145,18 +145,36 @@ class SettleLiveData {
   ///    분모를 "보이는 목록의 합"으로 하지는 **않는다**. 그러면 검색어나
   ///    과세 필터를 건드릴 때마다 같은 거래처의 %가 달라져서 숫자를
   ///    믿을 수 없게 된다.
-  List<ReceiptModel> scopedReceipts(String monthFilter) {
+  /// [receiptWhere] 는 **영수증 한 건 단위** 추가 조건이다.
+  ///
+  /// 🔴 종합소득세용(5월) 보기 때문에 필요해졌다. 그 보기는 "3만원 이하
+  ///    영수증만" 을 뜻하므로, 거래처를 걸러내는 것으로는 부족하다.
+  ///    조건을 여기(=기간 산출 지점)에 넣어야 **헤더 금액 · 건수 ·
+  ///    점유율 분모 · 목록**이 한꺼번에 같은 기준으로 맞는다.
+  ///    한 곳만 고치면 "헤더는 500만원인데 목록 합은 30만원" 같은
+  ///    모순이 생기고, 그러면 사장님이 숫자를 못 믿는다.
+  List<ReceiptModel> scopedReceipts(
+    String monthFilter, {
+    bool Function(ReceiptModel r)? receiptWhere,
+  }) {
     final m = monthNumberOf(monthFilter);
-    if (m == null) return receipts;
-    return receipts.where((r) => r.date.month == m).toList();
+    return receipts.where((r) {
+      if (m != null && r.date.month != m) return false;
+      if (receiptWhere != null && !receiptWhere(r)) return false;
+      return true;
+    }).toList();
   }
 
   /// 헤더 금액 = 점유율의 분모.
-  double periodTotal(String monthFilter) =>
-      scopedReceipts(monthFilter).fold<double>(0, (s, r) => s + r.totalAmount);
+  double periodTotal(String monthFilter,
+          {bool Function(ReceiptModel r)? receiptWhere}) =>
+      scopedReceipts(monthFilter, receiptWhere: receiptWhere)
+          .fold<double>(0, (s, r) => s + r.totalAmount);
 
   /// 헤더의 `N건`.
-  int periodCount(String monthFilter) => scopedReceipts(monthFilter).length;
+  int periodCount(String monthFilter,
+          {bool Function(ReceiptModel r)? receiptWhere}) =>
+      scopedReceipts(monthFilter, receiptWhere: receiptWhere).length;
 
   /// `'7월'` → `7`, `'전체'` → `null`.
   static int? monthNumberOf(String monthFilter) {
@@ -174,11 +192,13 @@ class SettleLiveData {
     String? query,
     TaxType? tax,
     bool Function(String vendor)? vendorWhere,
+    bool Function(ReceiptModel r)? receiptWhere,
     String monthFilter = '전체',
   }) {
     final q = (query ?? '').trim();
 
-    final matched = scopedReceipts(monthFilter).where((r) {
+    final matched =
+        scopedReceipts(monthFilter, receiptWhere: receiptWhere).where((r) {
       final name = _vendorKey(r);
       if (q.isNotEmpty && !name.contains(q)) return false;
       if (tax != null && taxOf(name) != tax) return false;
@@ -211,11 +231,12 @@ class SettleLiveData {
     TaxType? tax,
     String sortBy = 'amountDesc',
     bool Function(String vendor)? vendorWhere,
+    bool Function(ReceiptModel r)? receiptWhere,
     String monthFilter = '전체',
   }) {
     final q = (query ?? '').trim();
 
-    final scoped = scopedReceipts(monthFilter);
+    final scoped = scopedReceipts(monthFilter, receiptWhere: receiptWhere);
     // 🔴 분모는 헤더와 **동일한** 기간 합계다. 검색·과세·전송 필터가
     //    아무리 걸려도 이 값은 변하지 않으므로 개별 %가 흔들리지 않는다.
     final denom = scoped.fold<double>(0, (s, r) => s + r.totalAmount);

@@ -9,6 +9,7 @@ import 'package:provider/provider.dart';
 //    `SettleSegmented`(settle_views_ds.dart)를 따로 둔다.
 import '../../design/fn_tokens.dart';
 import '../../design/fn_controls_ds.dart';
+import '../../models/receipt_model.dart';
 import '../../providers/receipt_provider.dart';
 import '../../services/vendor_tax_service.dart';
 import 'fn_data.dart';
@@ -193,8 +194,10 @@ class _SettleDsScreenState extends State<SettleDsScreen> {
             // 시안: `2026년 7월 총 매입` / `₩1,184,000` `9건`
             SettleTotalHeader(
               label: _headerLabel(year),
-              total: data.periodTotal(_filterMonth),
-              count: data.periodCount(_filterMonth),
+              total: data.periodTotal(_filterMonth,
+                  receiptWhere: _receiptWhere),
+              count: data.periodCount(_filterMonth,
+                  receiptWhere: _receiptWhere),
             ),
             const SizedBox(height: 14),
 
@@ -244,9 +247,12 @@ class _SettleDsScreenState extends State<SettleDsScreen> {
   ///    금액은 `periodTotal(_filterMonth)` 이고, 그 값이 그대로
   ///    업체별 점유율의 분모다. 세 숫자(문구 / 헤더 금액 /
   ///    개별 퍼센트)가 항상 서로 맞는다.
-  String _headerLabel(String year) => _filterMonth == '전체'
-      ? '$year년 총 매입'
-      : '$year년 $_filterMonth 총 매입';
+  String _headerLabel(String year) {
+    final period = _filterMonth == '전체' ? '$year년' : '$year년 $_filterMonth';
+    // 🔴 소액만 보고 있을 때 그냥 '총 매입' 이라고 쓰면 사장님이 그 금액을
+    //    전체 매입으로 오해한다. 무엇을 더한 값인지 문구에 박아 둔다.
+    return _taxSeason ? '$period 3만원 이하 매입' : '$period 총 매입';
+  }
 
   // ── 날짜별 보기 ─────────────────────────────────────────────
   Widget _dateView(SettleLiveData data) {
@@ -254,6 +260,7 @@ class _SettleDsScreenState extends State<SettleDsScreen> {
       query: _queryCtl.text,
       tax: _taxFilterType,
       vendorWhere: _vendorWhere(data),
+      receiptWhere: _receiptWhere,
       monthFilter: _filterMonth,
     );
     if (groups.isEmpty) {
@@ -269,6 +276,7 @@ class _SettleDsScreenState extends State<SettleDsScreen> {
       tax: _taxFilterType,
       sortBy: _sortBy,
       vendorWhere: _vendorWhere(data),
+      receiptWhere: _receiptWhere,
       monthFilter: _filterMonth,
     );
 
@@ -425,7 +433,8 @@ class _SettleDsScreenState extends State<SettleDsScreen> {
               fontWeight: FontWeight.w400,
               onTap: () => _openOnly('send'),
             ),
-            // 종합소득세용(5월) — 켜면 직전 연도 전체로 맞춘다.
+            // 종합소득세용(5월) — 3만원 이하 영수증만 남긴다.
+            // 기간은 건드리지 않는다(원본 `smallOnly`).
             FnDsChip(
               label: '종합소득세용(5월)',
               outlined: true,
@@ -555,20 +564,21 @@ class _SettleDsScreenState extends State<SettleDsScreen> {
         _ => null,
       };
 
-  /// 3만원 이하 결제가 있는 거래처만 남기는 조건 — 원본 `smallOnly`.
+  /// 거래처명 기준 조건 — 지금은 전송 상태만 여기서 거른다.
+  bool Function(String)? _vendorWhere(SettleLiveData data) => _sendFilterWhere;
+
+  /// 종합소득세용(5월) — **영수증 한 건 단위** 조건.
   ///
-  /// 전송 상태 조건과 **함께** 걸릴 수 있으므로 둘을 합성해서 넘긴다.
-  bool Function(String)? _vendorWhere(SettleLiveData data) {
-    final send = _sendFilterWhere;
-    if (!_taxSeason) return send;
-    final small = <String>{
-      for (final r in data.receipts)
-        if (r.totalAmount > 0 && r.totalAmount <= kSmallPayLimit)
-          r.storeName.trim(),
-    };
-    if (send == null) return (v) => small.contains(v.trim());
-    return (v) => send(v) && small.contains(v.trim());
-  }
+  /// 🔴 예전 구현은 "3만원 이하 건이 있는 거래처" 만 걸러냈다. 그래서 칩을
+  ///    켜도 카드 안 금액 · 거래 목록 · 헤더 총액에는 3만원을 넘는 건이
+  ///    그대로 섞여 나왔다. 5월 신고에서 필요한 건 **3만원 이하 영수증
+  ///    그 자체**이므로 조건을 영수증 단위로 내린다.
+  ///
+  ///    `receiptWhere` 로 넘기면 헤더 금액 · 건수 · 점유율 분모 · 날짜별 ·
+  ///    업체별이 전부 같은 기준으로 계산된다.
+  bool Function(ReceiptModel)? get _receiptWhere => _taxSeason
+      ? (r) => r.totalAmount > 0 && r.totalAmount <= kSmallPayLimit
+      : null;
 
   List<FnDropdownItem> _yearMenuItems(String year, List<String> years) {
     // 실제 데이터에 연도가 없으면 적어도 올해는 골를 수 있게 한다.

@@ -922,7 +922,12 @@ class _VendorShareCard extends StatelessWidget {
         const SizedBox(height: 12), // 원본 `paddingTop: 12`
         ...rows,
 
-        if (small.isNotEmpty) _smallBlock(small),
+        // #115: 이제 상위(`SettleLiveData.scopedReceipts`)에서 3만원
+        //    이하만 남기므로, 칩을 켜면 `small` 이 `share.receipts` 와
+        //    완전히 같아진다. 그대로 둔으면 또같은 내역이 밑에 한번 더
+        //    반복된다. 목록과 달라질 때만 별도 바록으로 보여준다.
+        if (small.isNotEmpty && small.length != share.receipts.length)
+          _smallBlock(small),
 
         const SizedBox(height: 8), // 원본 버튼 `marginTop: 8`
         // 원본 `alignSelf: 'flex-start'`.
