@@ -121,9 +121,16 @@ void main() {
           reason: '글로우 판은 FnAppMark(glow: true) 로만 쓴다');
     });
 
-    test('🔴 앱아이콘 원본(assets/icon/app_icon.png)은 그대로다', () {
+    test('🔴 앱아이콘 원본은 정사각 1024 이고 글로우가 없다', () {
       // 런처 아이콘 · 파비콘 · 스플래시는 tool/gen_icons.py 가 이 파일에서
-      // 만든다. 이번 요청은 "로그인 페이지 아이콘" 이므로 여기는 손대지 않는다.
+      // 만든다.
+      //
+      // 요청 #117 로 이 파일은 사용자가 준 글로우 그림에서 다시 만들어졌다.
+      // 다만 🔴 **글로우는 벗겨냈다.** 정사각으로 잘리고 마스크가
+      // 씌워지는 자리(런처 · 파비콘 · maskable)에서는 사방의 반투명
+      // 여백이 살아남을 수 없기 때문이다. 그대로 넣으면 한 변이 떨어진
+      // 네모로 보이거나, 글로우를 안에 넣으려고 그림을 줄여서 홈 화면의
+      // 다른 앱보다 아이콘만 작아 보인다.
       expect(io.File('assets/icon/app_icon.png').existsSync(), isTrue);
       final s = _pngSize('assets/icon/app_icon.png');
       expect(s.w, 1024);
