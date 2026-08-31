@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../design/fn_brand.dart';
 import '../../design/fn_controls_ds.dart';
 import '../../design/fn_feedback.dart';
 import '../../design/fn_shell.dart';
@@ -221,43 +222,19 @@ class _SplashDsScreenState extends State<SplashDsScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // 로고 — img 84x84 r22 shadow, marginBottom 14 + 부모 gap
-            Center(
-              child: Container(
-                width: 84,
-                height: 84,
-                margin: const EdgeInsets.only(bottom: 14),
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(22),
-                  boxShadow: const [
-                    BoxShadow(
-                      color: Color(0x38EE7686), // rgba(238,118,134,.22)
-                      blurRadius: 18,
-                      offset: Offset(0, 6),
-                    ),
-                  ],
-                ),
-                clipBehavior: Clip.antiAlias,
-                child: Image.asset(
-                  'assets/icon/app_icon.png',
-                  width: 84,
-                  height: 84,
-                  fit: BoxFit.cover,
-                ),
+            // 로고(심볼) — 새 앱로고는 스쿼클이 이미 그려져 있어서
+            // 따로 잘라내지 않는다. `FnAppMark` 참고.
+            const Center(
+              child: Padding(
+                padding: EdgeInsets.only(bottom: 14),
+                child: FnAppMark(size: 84),
               ),
             ),
             const SizedBox(height: 16),
-            const Text(
-              'FlowNote',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                fontFamily: 'Pretendard',
-                fontSize: 33,
-                fontWeight: FontWeight.w700,
-                letterSpacing: -0.99, // -0.03em × 33
-                color: FnColors.rose50,
-              ),
-            ),
+            // 텍스트로고(워드마크) — 예전에는 Pretendard 33/w700 로
+            // 그린 `Text('FlowNote')` 였다. 확정된 워드마크 그림으로 바꾼다.
+            // 높이 33 은 예전 글자 크기와 같게 맞춘 값이다.
+            const Center(child: FnWordmark(height: 33)),
             const SizedBox(height: 16),
             const Text(
               '꽃집 사장님을 위한 영수증 매입 정산 노트',

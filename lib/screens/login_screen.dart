@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../design/fn_brand.dart';
 import '../design/fn_tokens.dart';
 import '../design/fn_button.dart';
 import '../design/fn_input.dart';
@@ -92,34 +93,14 @@ class _LoginScreenState extends State<LoginScreen>
                     FnSpace.x24, FnSpace.x32, FnSpace.x24, FnSpace.x32),
                 children: [
                   // 로고 — 시안 `__resources.fnLogo`
-                  // img { width:84, height:84, borderRadius:22,
-                  //        boxShadow:'0 6px 18px rgba(238,118,134,.22)' }
-                  Align(
+                  // 로고(심볼). 그림에 스쿼클이 있어 다시 자르지 않는다.
+                  const Align(
                     alignment: Alignment.centerLeft,
-                    child: Container(
-                      width: 84,
-                      height: 84,
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(22),
-                        boxShadow: const [
-                          BoxShadow(
-                            color: Color(0x38EE7686),
-                            blurRadius: 18,
-                            offset: Offset(0, 6),
-                          ),
-                        ],
-                      ),
-                      clipBehavior: Clip.antiAlias,
-                      child: Image.asset(
-                        'assets/icon/app_icon.png',
-                        width: 84,
-                        height: 84,
-                        fit: BoxFit.cover,
-                      ),
-                    ),
+                    child: FnAppMark(size: 84),
                   ),
                   const SizedBox(height: FnSpace.x20),
-                  Text('FlowNote', style: FnType.display2),
+                  // 텍스트로고(워드마크). display2 글자 크기에 맞춘 높이.
+                  const FnWordmark(height: 28),
                   const SizedBox(height: FnSpace.x6),
                   Text(
                     '꽃 영수증을 찍기만 하면\n매입 장부가 완성돼요',

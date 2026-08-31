@@ -7,6 +7,7 @@ import 'package:firebase_core/firebase_core.dart';
 
 import 'firebase_options.dart';
 import 'models/receipt_model.dart';
+import 'design/fn_brand.dart';
 import 'providers/auth_provider.dart';
 import 'providers/receipt_provider.dart';
 import 'services/auth_service.dart';
@@ -236,13 +237,7 @@ class _AppEntry extends StatelessWidget {
     if (auth.isBootstrapping) {
       return const Scaffold(
         backgroundColor: Color(0xFFFFFCFA),
-        body: Center(
-          child: SizedBox(
-            width: 84,
-            height: 84,
-            child: Image(image: AssetImage('assets/icon/app_icon.png')),
-          ),
-        ),
+        body: Center(child: FnAppMark(size: 84, shadow: false)),
       );
     }
 

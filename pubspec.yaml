@@ -1,7 +1,7 @@
 name: flow_note
 description: FlowNote - 꽃 거래 장부 앱
 publish_to: 'none'
-version: 1.0.0+39
+version: 1.0.0+40
 
 environment:
   sdk: '>=3.0.0 <4.0.0'
@@ -138,6 +138,8 @@ flutter:
     # 아니라 android/.../mipmap-*/launch_image.png (네이티브) 를 쓴다.
     - assets/icons/
     - assets/icon/
+    # 텍스트로고(워드마크). 심볼과 다른 자산이므로 폴더를 나눠 둔다.
+    - assets/brand/
     # 꽃 표준 이름 사전 (화훼공판장 경매 데이터 기반, 150품목/1084품종)
     - assets/data/flower_names.json
     - assets/data/flower_season.json
