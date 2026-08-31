@@ -1,10 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../providers/auth_provider.dart';
-import '../theme/app_theme.dart';
-import 'signup_screen.dart';
-import 'main_screen.dart';
 
+import '../design/fn_brand.dart';
+import '../design/fn_tokens.dart';
+import '../design/fn_button.dart';
+import '../design/fn_input.dart';
+import '../design/fn_feedback.dart';
+import '../providers/auth_provider.dart';
+import 'signup_screen.dart';
+import 'ds/main_ds_screen.dart';
+
+/// [구버전] 로그인 화면. DS 앱은 `SignInDsScreen` 을 사용한다.
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
 
@@ -14,396 +20,285 @@ class LoginScreen extends StatefulWidget {
 
 class _LoginScreenState extends State<LoginScreen>
     with SingleTickerProviderStateMixin {
-  final _formKey = GlobalKey<FormState>();
-  final _emailCtrl = TextEditingController();
-  final _passwordCtrl = TextEditingController();
-  bool _obscurePassword = true;
-  late AnimationController _animController;
-  late Animation<double> _fadeIn;
+  final _email = TextEditingController();
+  final _password = TextEditingController();
 
-  @override
-  void initState() {
-    super.initState();
-    _animController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 900),
-    );
-    _fadeIn = Tween<double>(begin: 0, end: 1).animate(
-      CurvedAnimation(parent: _animController, curve: Curves.easeOut),
-    );
-    _animController.forward();
-  }
+  bool _obscure = true;
+  bool _showEmailForm = false;
+  String? _emailError;
+  String? _pwError;
+
+  late final AnimationController _anim = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 700),
+  )..forward();
 
   @override
   void dispose() {
-    _animController.dispose();
-    _emailCtrl.dispose();
-    _passwordCtrl.dispose();
+    _anim.dispose();
+    _email.dispose();
+    _password.dispose();
     super.dispose();
   }
 
-  Future<void> _login() async {
-    if (!_formKey.currentState!.validate()) return;
-    final auth = context.read<AuthProvider>();
-    final success = await auth.signIn(
-      email: _emailCtrl.text.trim(),
-      password: _passwordCtrl.text,
+  void _enter() {
+    Navigator.pushAndRemoveUntil(
+      context,
+      MaterialPageRoute(builder: (_) => const MainDsScreen()),
+      (r) => false,
     );
-    if (success && mounted) {
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (_) => const MainScreen()),
-      );
+  }
+
+  Future<void> _login() async {
+    setState(() {
+      _emailError = _email.text.trim().isEmpty
+          ? '이메일을 입력해 주세요'
+          : (!_email.text.contains('@') ? '올바른 이메일 형식이 아니에요' : null);
+      _pwError = _password.text.isEmpty ? '비밀번호를 입력해 주세요' : null;
+    });
+    if (_emailError != null || _pwError != null) return;
+
+    final auth = context.read<AuthProvider>();
+    final ok = await auth.signIn(
+      email: _email.text.trim(),
+      password: _password.text,
+    );
+    if (!mounted) return;
+    if (ok) {
+      _enter();
+    } else {
+      showFnToast(context, auth.error ?? '로그인에 실패했어요',
+          type: FnToastType.error);
     }
   }
 
-  /// 테스트 계정으로 즉시 시작 (회원가입 불필요)
-  Future<void> _loginAsGuest() async {
-    final auth = context.read<AuthProvider>();
-    await auth.signInAsGuest();
-    if (mounted) {
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (_) => const MainScreen()),
-      );
-    }
+  void _social(String provider) {
+    showFnToast(context, '$provider 로그인은 준비 중이에요',
+        type: FnToastType.normal);
   }
 
   @override
   Widget build(BuildContext context) {
+    final loading = context.watch<AuthProvider>().isLoading;
+
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: FnColors.backgroundApp,
       body: SafeArea(
-        child: FadeTransition(
-          opacity: _fadeIn,
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 20),
-            child: Form(
-              key: _formKey,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+        child: Stack(
+          children: [
+            FadeTransition(
+              opacity: _anim,
+              child: ListView(
+                padding: const EdgeInsets.fromLTRB(
+                    FnSpace.x24, FnSpace.x32, FnSpace.x24, FnSpace.x32),
                 children: [
-                  const SizedBox(height: 40),
-                  _buildHeader(),
-                  const SizedBox(height: 36),
-
-                  // ── 테스트 계정 카드 (가장 눈에 띄게 상단 배치) ──
-                  _buildGuestCard(),
-                  const SizedBox(height: 28),
-
-                  _buildDivider('이메일로 로그인'),
-                  const SizedBox(height: 24),
-
-                  _buildEmailField(),
-                  const SizedBox(height: 16),
-                  _buildPasswordField(),
-                  const SizedBox(height: 8),
-                  _buildForgotPassword(),
-                  const SizedBox(height: 24),
-                  _buildLoginButton(),
-                  const SizedBox(height: 24),
-                  _buildSignUpRow(),
-                  const SizedBox(height: 20),
-                  _buildErrorWidget(),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildHeader() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Container(
-          width: 64,
-          height: 64,
-          decoration: BoxDecoration(
-            color: AppColors.primary.withValues(alpha: 0.1),
-            borderRadius: BorderRadius.circular(20),
-          ),
-          child: const Center(
-            child: Text('🌸', style: TextStyle(fontSize: 32)),
-          ),
-        ),
-        const SizedBox(height: 20),
-        const Text(
-          'FlowNote',
-          style: TextStyle(
-            fontSize: 32,
-            fontWeight: FontWeight.w700,
-            color: AppColors.textPrimary,
-            letterSpacing: -0.5,
-          ),
-        ),
-        const SizedBox(height: 8),
-        const Text(
-          '꽃 영수증을 스마트하게 관리하세요',
-          style: TextStyle(
-            fontSize: 15,
-            color: AppColors.textSecondary,
-            height: 1.4,
-          ),
-        ),
-      ],
-    );
-  }
-
-  /// 테스트 계정 카드 - 회원가입 없이 바로 시작
-  Widget _buildGuestCard() {
-    return Consumer<AuthProvider>(
-      builder: (context, auth, _) {
-        return GestureDetector(
-          onTap: auth.isLoading ? null : _loginAsGuest,
-          child: Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(20),
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [
-                  AppColors.primary.withValues(alpha: 0.12),
-                  AppColors.secondary.withValues(alpha: 0.08),
-                ],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(
-                color: AppColors.primary.withValues(alpha: 0.3),
-                width: 1.5,
-              ),
-            ),
-            child: Row(
-              children: [
-                // 아이콘
-                Container(
-                  width: 52,
-                  height: 52,
-                  decoration: BoxDecoration(
-                    color: AppColors.primary.withValues(alpha: 0.15),
-                    borderRadius: BorderRadius.circular(16),
+                  // 로고 — 시안 `__resources.fnLogo`
+                  // 로고(심볼). 그림에 스쿼클이 있어 다시 자르지 않는다.
+                  const Align(
+                    alignment: Alignment.centerLeft,
+                    child: FnAppMark(size: 84),
                   ),
-                  child: const Center(
-                    child: Text('⚡', style: TextStyle(fontSize: 26)),
+                  const SizedBox(height: FnSpace.x20),
+                  // 텍스트로고(워드마크). display2 글자 크기에 맞춘 높이.
+                  const FnWordmark(height: 28),
+                  const SizedBox(height: FnSpace.x6),
+                  Text(
+                    '꽃 영수증을 찍기만 하면\n매입 장부가 완성돼요',
+                    style: FnType.body1
+                        .copyWith(color: FnColors.labelAlternative),
                   ),
-                ),
-                const SizedBox(width: 16),
-                // 텍스트
-                const Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                  const SizedBox(height: FnSpace.x40),
+
+                  // 소셜 로그인
+                  _SocialButton(
+                    label: '카카오로 3초 만에 시작',
+                    background: const Color(0xFFFEE500),
+                    foreground: const Color(0xFF191600),
+                    icon: Icons.chat_bubble_rounded,
+                    onTap: () => _social('카카오'),
+                  ),
+                  const SizedBox(height: FnSpace.x8),
+                  _SocialButton(
+                    label: '네이버로 시작하기',
+                    background: const Color(0xFF03C75A),
+                    foreground: Colors.white,
+                    icon: Icons.navigation_rounded,
+                    onTap: () => _social('네이버'),
+                  ),
+                  const SizedBox(height: FnSpace.x8),
+                  _SocialButton(
+                    label: 'Google로 시작하기',
+                    background: Colors.white,
+                    foreground: FnColors.labelNormal,
+                    icon: Icons.g_mobiledata_rounded,
+                    bordered: true,
+                    onTap: () => _social('Google'),
+                  ),
+
+                  const SizedBox(height: FnSpace.x24),
+                  Row(
                     children: [
-                      Text(
-                        '테스트 계정으로 시작하기',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w700,
-                          color: AppColors.primary,
-                        ),
+                      const Expanded(
+                          child: Divider(color: FnColors.lineNeutral)),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: FnSpace.x12),
+                        child: Text('또는',
+                            style: FnType.caption1
+                                .copyWith(color: FnColors.labelAssistive)),
                       ),
-                      SizedBox(height: 4),
-                      Text(
-                        '회원가입 없이 모든 기능 체험\n무제한 스캔 · 데이터 임시 저장',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: AppColors.textSecondary,
-                          height: 1.5,
+                      const Expanded(
+                          child: Divider(color: FnColors.lineNeutral)),
+                    ],
+                  ),
+                  const SizedBox(height: FnSpace.x20),
+
+                  // 이메일 로그인 (접힘)
+                  if (!_showEmailForm)
+                    Center(
+                      child: FnTextButton(
+                        label: '이메일로 로그인',
+                        color: FnColors.labelAlternative,
+                        onPressed: () =>
+                            setState(() => _showEmailForm = true),
+                      ),
+                    )
+                  else ...[
+                    FnTextField(
+                      label: '이메일',
+                      hint: 'flower@example.com',
+                      controller: _email,
+                      keyboardType: TextInputType.emailAddress,
+                      errorText: _emailError,
+                      onChanged: (_) {
+                        if (_emailError != null) {
+                          setState(() => _emailError = null);
+                        }
+                      },
+                    ),
+                    const SizedBox(height: FnSpace.x14),
+                    FnTextField(
+                      label: '비밀번호',
+                      hint: '••••••••',
+                      controller: _password,
+                      obscureText: _obscure,
+                      errorText: _pwError,
+                      onSubmitted: (_) => _login(),
+                      onChanged: (_) {
+                        if (_pwError != null) setState(() => _pwError = null);
+                      },
+                      suffix: IconButton(
+                        icon: Icon(
+                          _obscure
+                              ? Icons.visibility_off_rounded
+                              : Icons.visibility_rounded,
+                          size: 19,
+                          color: FnColors.labelAssistive,
+                        ),
+                        onPressed: () => setState(() => _obscure = !_obscure),
+                      ),
+                    ),
+                    const SizedBox(height: FnSpace.x20),
+                    FnButton(
+                      label: '로그인',
+                      size: FnButtonSize.large,
+                      expand: true,
+                      loading: loading,
+                      onPressed: _login,
+                    ),
+                    const SizedBox(height: FnSpace.x12),
+                    Center(
+                      child: FnTextButton(
+                        label: '접기',
+                        color: FnColors.labelAssistive,
+                        onPressed: () =>
+                            setState(() => _showEmailForm = false),
+                      ),
+                    ),
+                  ],
+
+                  const SizedBox(height: FnSpace.x24),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text('아직 계정이 없으신가요?',
+                          style: FnType.body2
+                              .copyWith(color: FnColors.labelAlternative)),
+                      const SizedBox(width: FnSpace.x4),
+                      FnTextButton(
+                        label: '회원가입',
+                        onPressed: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                              builder: (_) => const SignUpScreen()),
                         ),
                       ),
                     ],
                   ),
-                ),
-                // 화살표
-                auth.isLoading
-                    ? const SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: AppColors.primary,
-                        ),
-                      )
-                    : const Icon(
-                        Icons.arrow_forward_ios_rounded,
-                        color: AppColors.primary,
-                        size: 18,
-                      ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _buildEmailField() {
-    return TextFormField(
-      controller: _emailCtrl,
-      keyboardType: TextInputType.emailAddress,
-      decoration: const InputDecoration(
-        labelText: '이메일',
-        prefixIcon:
-            Icon(Icons.mail_outline_rounded, color: AppColors.textHint),
-      ),
-      validator: (v) {
-        if (v == null || v.isEmpty) return '이메일을 입력하세요';
-        if (!v.contains('@')) return '올바른 이메일 형식이 아닙니다';
-        return null;
-      },
-    );
-  }
-
-  Widget _buildPasswordField() {
-    return TextFormField(
-      controller: _passwordCtrl,
-      obscureText: _obscurePassword,
-      decoration: InputDecoration(
-        labelText: '비밀번호',
-        prefixIcon:
-            const Icon(Icons.lock_outline_rounded, color: AppColors.textHint),
-        suffixIcon: IconButton(
-          icon: Icon(
-            _obscurePassword
-                ? Icons.visibility_off_outlined
-                : Icons.visibility_outlined,
-            color: AppColors.textHint,
-          ),
-          onPressed: () =>
-              setState(() => _obscurePassword = !_obscurePassword),
-        ),
-      ),
-      validator: (v) {
-        if (v == null || v.isEmpty) return '비밀번호를 입력하세요';
-        if (v.length < 6) return '비밀번호는 6자 이상이어야 합니다';
-        return null;
-      },
-    );
-  }
-
-  Widget _buildForgotPassword() {
-    return Align(
-      alignment: Alignment.centerRight,
-      child: TextButton(
-        onPressed: () {},
-        child: const Text(
-          '비밀번호를 잊으셨나요?',
-          style: TextStyle(
-            fontSize: 13,
-            color: AppColors.textSecondary,
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildLoginButton() {
-    return Consumer<AuthProvider>(
-      builder: (context, auth, _) {
-        return SizedBox(
-          width: double.infinity,
-          child: ElevatedButton(
-            onPressed: auth.isLoading ? null : _login,
-            child: auth.isLoading
-                ? const SizedBox(
-                    height: 20,
-                    width: 20,
-                    child: CircularProgressIndicator(
-                      color: Colors.white,
-                      strokeWidth: 2,
-                    ),
-                  )
-                : const Text('로그인'),
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _buildDivider(String label) {
-    return Row(
-      children: [
-        const Expanded(child: Divider(color: AppColors.border)),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12),
-          child: Text(
-            label,
-            style: const TextStyle(
-              fontSize: 12,
-              color: AppColors.textHint,
-            ),
-          ),
-        ),
-        const Expanded(child: Divider(color: AppColors.border)),
-      ],
-    );
-  }
-
-  Widget _buildSignUpRow() {
-    return Center(
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          const Text(
-            '계정이 없으신가요? ',
-            style: TextStyle(
-              fontSize: 14,
-              color: AppColors.textSecondary,
-            ),
-          ),
-          GestureDetector(
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const SignUpScreen()),
-              );
-            },
-            child: const Text(
-              '회원가입',
-              style: TextStyle(
-                fontSize: 14,
-                color: AppColors.primary,
-                fontWeight: FontWeight.w600,
+                ],
               ),
             ),
-          ),
-        ],
+            if (loading && !_showEmailForm)
+              const FnLoadingOverlay(message: '들어가는 중...'),
+          ],
+        ),
       ),
     );
   }
+}
 
-  Widget _buildErrorWidget() {
-    return Consumer<AuthProvider>(
-      builder: (context, auth, _) {
-        if (auth.error == null) return const SizedBox.shrink();
-        return Container(
-          padding: const EdgeInsets.all(14),
+class _SocialButton extends StatelessWidget {
+  const _SocialButton({
+    required this.label,
+    required this.background,
+    required this.foreground,
+    required this.icon,
+    required this.onTap,
+    this.bordered = false,
+  });
+
+  final String label;
+  final Color background;
+  final Color foreground;
+  final IconData icon;
+  final VoidCallback onTap;
+  final bool bordered;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: background,
+      borderRadius: FnRadius.br12,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: FnRadius.br12,
+        child: Container(
+          height: 52,
           decoration: BoxDecoration(
-            color: AppColors.error.withValues(alpha: 0.08),
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(
-              color: AppColors.error.withValues(alpha: 0.3),
-            ),
+            borderRadius: FnRadius.br12,
+            border:
+                bordered ? Border.all(color: FnColors.lineNormal) : null,
           ),
-          child: Row(
+          child: Stack(
+            alignment: Alignment.center,
             children: [
-              const Icon(Icons.error_outline, color: AppColors.error, size: 18),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  auth.error!,
-                  style: const TextStyle(
-                    color: AppColors.error,
-                    fontSize: 13,
-                  ),
+              Positioned(
+                left: FnSpace.x16,
+                child: Icon(icon, size: 21, color: foreground),
+              ),
+              Text(
+                label,
+                style: TextStyle(
+                  fontFamily: 'Pretendard',
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                  color: foreground,
                 ),
               ),
             ],
           ),
-        );
-      },
+        ),
+      ),
     );
   }
 }

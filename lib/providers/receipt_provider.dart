@@ -1,6 +1,9 @@
 import 'package:flutter/foundation.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import '../models/receipt_model.dart';
+import '../services/auth_service.dart';
+import '../services/receipt_image_store.dart';
+import '../services/user_repository.dart';
 import 'dart:math';
 
 class ReceiptProvider extends ChangeNotifier {
@@ -8,6 +11,8 @@ class ReceiptProvider extends ChangeNotifier {
   bool _isLoading = false;
   String? _error;
   DateTime _selectedDay = DateTime.now();
+  /// [allReceipts] 결과 캐시. 목록이 바뀌면 null 로 버린다.
+  List<ReceiptModel>? _cache;
   DateTime _focusedDay = DateTime.now();
 
   bool get isLoading => _isLoading;
@@ -15,14 +20,57 @@ class ReceiptProvider extends ChangeNotifier {
   DateTime get selectedDay => _selectedDay;
   DateTime get focusedDay => _focusedDay;
 
+  /// 전체 영수증 (최신순)
+  ///
+  /// 🔴 결과를 캐시한다. 예전에는 getter 를 부를 때마다
+  ///    `_box.values.toList()` + 전체 정렬을 다시 했다. 홈·구매내역·
+  ///    캘린더 3개 탭이 각자 이 getter 를 여러 번 부르므로, 저장 한 번에
+  ///    수십 번씩 정렬이 돌았다.
+  ///
+  ///    실측: 1000건에서 12회 호출 = 25ms / 600회 호출 = 95ms
+  ///
+  ///    캐시는 영수증이 실제로 바뀔 때만 [_invalidate] 로 버린다.
+  ///    (날짜 선택 같은 UI 상태 변경으로는 버리지 않는다)
   List<ReceiptModel> get allReceipts {
+    final cached = _cache;
+    if (cached != null) return cached;
     final list = _box.values.toList();
     list.sort((a, b) => b.date.compareTo(a.date));
-    return list;
+    return _cache = List<ReceiptModel>.unmodifiable(list);
+  }
+
+  /// 영수증 목록이 바뀌었으니 캐시를 버린다.
+  void _invalidate() => _cache = null;
+
+  /// 여러 건을 저장할 때 알림을 한 번으로 묶기 위한 잠금.
+  bool _muted = false;
+
+  @override
+  void notifyListeners() {
+    if (_muted) return;
+    super.notifyListeners();
+  }
+
+  /// [body] 안에서 일어나는 알림을 모아 **끝에 한 번만** 보낸다.
+  ///
+  /// 🔴 왜 필요한가 — 영수증 4장을 저장하면 `addReceipt` 가 4번 돌면서
+  ///    `notifyListeners()` 도 4번 났다. 그때마다 화면 전체가 다시
+  ///    계산되니, 여러 장 스캔 후 뒤로 나올 때 특히 굼떴다.
+  Future<T> batch<T>(Future<T> Function() body) async {
+    if (_muted) return body();          // 중첩 호출 보호
+    _muted = true;
+    try {
+      return await body();
+    } finally {
+      _muted = false;
+      _invalidate();
+      notifyListeners();
+    }
   }
 
   Future<void> init() async {
     _box = await Hive.openBox<ReceiptModel>('receipts');
+    _invalidate();
     // Load sample data if empty
     if (_box.isEmpty) {
       await _loadSampleData();
@@ -157,6 +205,7 @@ class ReceiptProvider extends ChangeNotifier {
               createdAt: DateTime(year, month, day, 8 + rng.nextInt(10)),
             );
             await _box.put(receipt.id, receipt);
+            _invalidate();
             sampleIdx++;
           }
         }
@@ -286,25 +335,101 @@ class ReceiptProvider extends ChangeNotifier {
     return map;
   }
 
+  // ────────────────────────────────────────────────────────────
+  // 클라우드 백업 (오프라인 우선)
+  //
+  // 꽃시장에서는 인터넷이 불안정하므로 **Hive 가 항상 진실의 원천**이고
+  // Firestore 는 기기 변경용 백업이다. 업로드는 실패해도 무시한다.
+  // ────────────────────────────────────────────────────────────
+
+  String? get _uid => AuthService.instance.uid;
+
+  void _syncUp(ReceiptModel r) {
+    final uid = _uid;
+    if (uid == null) return;
+    // await 하지 않는다 — 저장 UX 를 네트워크가 붙잡으면 안 된다.
+    UserRepository.instance.backupReceipt(uid, r);
+  }
+
+  void _syncDelete(String id) {
+    final uid = _uid;
+    if (uid == null) return;
+    UserRepository.instance.deleteReceiptBackup(uid, id);
+  }
+
+  /// 로그인 직후 전체 영수증을 클라우드로 밀어올린다.
+  Future<int> pushAllToCloud() async {
+    final uid = _uid;
+    if (uid == null) return 0;
+    return UserRepository.instance.backupReceipts(uid, _box.values.toList());
+  }
+
+  /// 기기 변경 후 복원 — 로컬에 없는 영수증만 가져온다.
+  Future<int> restoreFromCloud() async {
+    final uid = _uid;
+    if (uid == null) return 0;
+    final remote = await UserRepository.instance.restoreReceipts(uid);
+    var added = 0;
+    for (final r in remote) {
+      if (_box.containsKey(r.id)) continue;
+      await _box.put(r.id, r);
+      added++;
+    }
+    if (added > 0) {
+      _invalidate();
+      notifyListeners();
+    }
+    return added;
+  }
+
+  /// 영수증을 저장한다.
+  ///
+  /// 🔴 저장 전에 사진을 **영구 폴더로 옮긴다.**
+  ///    카메라/갤러리는 결과 파일을 캐시 폴더에 떨구는데, 캐시는 안드로이드가
+  ///    예고 없이 비운다(저장공간 부족 · 캐시 삭제 · 앱 재설치).
+  ///    경로를 그대로 저장하면 몇 주 뒤 상세 화면과 정산서 PDF 에서
+  ///    '이미지를 불러올 수 없어요' 만 남는다.
+  ///
+  ///    저장 지점이 여러 곳(스캔·수동입력·캘린더)이라서 각 화면에서 처리하면
+  ///    한 곳을 빠뜨린다. 모든 경로가 반드시 지나가는 여기서 한 번만 한다.
   Future<void> addReceipt(ReceiptModel receipt) async {
+    receipt.imagePath = await ReceiptImageStore.instance
+        .persist(receipt.imagePath, receiptId: receipt.id);
     await _box.put(receipt.id, receipt);
+    _invalidate();
+    _syncUp(receipt);
     notifyListeners();
   }
 
   Future<void> updateReceipt(ReceiptModel receipt) async {
+    // 수정 화면에서 사진을 새로 붙였을 수도 있다. 캐시 경로면 옮긴다.
+    // (이미 영구 폴더면 persist 가 그대로 돌려준다)
+    receipt.imagePath = await ReceiptImageStore.instance
+        .persist(receipt.imagePath, receiptId: receipt.id);
     await _box.put(receipt.id, receipt);
+    _invalidate();
+    _syncUp(receipt);
     notifyListeners();
   }
 
   Future<void> deleteReceipt(String id) async {
+    // 영수증을 지울 때 보관 사진도 같이 지운다. 안 지우면 저장공간만 먹는다.
+    final r = _box.get(id);
+    if (r != null) await ReceiptImageStore.instance.remove(r.imagePath);
     await _box.delete(id);
+    _invalidate();
+    _syncDelete(id);
     notifyListeners();
   }
 
   Future<void> deleteReceipts(List<String> ids) async {
     for (final id in ids) {
+      final r = _box.get(id);
+      if (r != null) await ReceiptImageStore.instance.remove(r.imagePath);
       await _box.delete(id);
+      _syncDelete(id);
     }
+    _invalidate();
     notifyListeners();
   }
 

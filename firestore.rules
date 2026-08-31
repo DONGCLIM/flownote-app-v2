@@ -1,0 +1,88 @@
+rules_version = '2';
+
+// ════════════════════════════════════════════════════════════════
+//  FlowNote Firestore 보안 규칙
+//
+//  ⚠️ 배포 방법 (둘 중 하나)
+//   A) Firebase 콘솔 → Firestore Database → 규칙 탭 → 이 내용 붙여넣고 [게시]
+//   B) CLI:  firebase deploy --only firestore:rules
+//
+//  ⚠️ 중요: `training_data` 컬렉션은 OCR 학습데이터 수집용으로
+//     기존 앱이 **인증 없이도** 쓰고 있었다. 아래 규칙은 로그인 사용자에게만
+//     쓰기를 허용하도록 조인다. (게스트 모드를 없앴으므로 항상 로그인 상태)
+// ════════════════════════════════════════════════════════════════
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ── 헬퍼 ────────────────────────────────────────────────
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(uid) {
+      return isSignedIn() && request.auth.uid == uid;
+    }
+
+    // ── 사용자 개인정보 ──────────────────────────────────────
+    //   users/{uid}                  회원 정보 + 사업자 정보 + 동의 이력
+    //   users/{uid}/receipts/{id}    영수증 클라우드 백업
+    //   users/{uid}/consent_log/{id} 동의 이력 감사 로그 (append-only)
+    //
+    //   본인만 읽고 쓸 수 있다. 다른 사용자의 문서는 절대 접근 불가.
+    match /users/{uid} {
+      allow read: if isOwner(uid);
+      allow create: if isOwner(uid);
+      allow update: if isOwner(uid);
+      allow delete: if isOwner(uid);   // 회원 탈퇴
+
+      match /receipts/{receiptId} {
+        allow read, write: if isOwner(uid);
+      }
+
+      // 동의 이력은 수정/삭제 금지 (법적 증빙) — 단, 탈퇴 시 삭제는 허용
+      match /consent_log/{logId} {
+        allow read: if isOwner(uid);
+        allow create: if isOwner(uid);
+        allow update: if false;
+        allow delete: if isOwner(uid);
+      }
+
+      // 그 밖의 하위 컬렉션도 본인만
+      match /{document=**} {
+        allow read, write: if isOwner(uid);
+      }
+    }
+
+    // ── OCR 학습데이터 (기존 기능 유지) ──────────────────────
+    //   training_data/{docId}
+    //   `training_data_service.dart` 가 스캔 시점에 기록한다.
+    //   - 생성/수정: 로그인 사용자
+    //   - 읽기: 금지 (관리자만 콘솔에서 열람)
+    //   - 삭제: 금지
+    match /training_data/{docId} {
+      allow create: if isSignedIn();
+      allow update: if isSignedIn();
+      allow read: if false;
+      allow delete: if false;
+    }
+
+    // ── 양재 경매 시세 요약 (전체 공용, 읽기 전용) ────────────
+    //   market/yangjae_latest
+    //   `functions/index.js` 의 `updateFlowerPrices` 가 하루 한 번 쓴다.
+    //   Admin SDK 는 이 규칙을 우회하므로 클라이언트 쓰기는 전부 막는다.
+    //
+    //   읽기를 로그인 사용자로 제한하는 이유: 게스트 모드를 없앴으므로
+    //   앱 사용자는 항상 로그인 상태다. 공개로 열면 서비스키로 뽑은
+    //   데이터를 아무나 긁어갈 수 있다.
+    match /market/{docId} {
+      allow read: if isSignedIn();
+      allow write: if false;
+    }
+
+    // ── 그 외 모든 경로 차단 ─────────────────────────────────
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

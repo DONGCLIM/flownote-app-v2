@@ -16,23 +16,119 @@
   -->
   <base href="$FLUTTER_BASE_HREF">
 
+  <!--
+    PDF 미리보기용 pdf.js 위치.
+
+    🔴 `printing` 패키지는 기본값으로 `https://unpkg.com/pdfjs-dist@3.2.146/build/`
+       에서 pdf.js 를 내려받는다(printing_web.dart `_pdfJsCdnPath`).
+       외부 CDN 에 의존하면 ① 사내망/광고차단기에서 막히고 ② 오프라인에서
+       미리보기가 통째로 죽는다. 그래서 같은 버전 파일을 `web/pdfjs/` 에
+       직접 넣고 이 변수로 그쪽을 가리킨다.
+
+       버전을 올릴 때는 `printing` 의 `_pdfJsVersion` 과 반드시 맞춰야 한다.
+  -->
+  <script>window.dartPdfJsBaseUrl = "pdfjs/";</script>
+
   <meta charset="UTF-8">
   <meta content="IE=Edge" http-equiv="X-UA-Compatible">
-  <meta name="description" content="A new Flutter project.">
+  <meta name="description" content="꽃집 사장님을 위한 영수증 매입 정산 노트">
+
+  <!--
+    홈 화면에 추가했을 때 상단 상태바 색.
+    이게 없으면 안드로이드 크롬이 흰 상태바를 그려서 앱 배경과 경계가 생긴다.
+    manifest.json 의 theme_color 와 같은 값을 유지해야 한다.
+  -->
+  <meta name="theme-color" content="#EE7686">
 
   <!-- iOS meta tags & icons -->
   <meta name="mobile-web-app-capable" content="yes">
+  <!--
+    아이폰에서 홈 화면 아이콘으로 열 때 주소창 없는 전체화면으로 띄운다.
+    (mobile-web-app-capable 만으로는 구형 iOS 가 인식하지 못한다)
+  -->
+  <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black">
-  <meta name="apple-mobile-web-app-title" content="flora_scan">
-  <link rel="apple-touch-icon" href="icons/Icon-192.png">
+  <meta name="apple-mobile-web-app-title" content="FlowNote">
+  <!-- iOS 홈화면 아이콘은 알파가 있으면 뒤가 검게 깔린다. 알파를 뺀 전용 파일. -->
+  <link rel="apple-touch-icon" sizes="180x180" href="icons/Icon-apple-180.png">
 
   <!-- Favicon -->
   <link rel="icon" type="image/png" href="favicon.png"/>
 
-  <title>flora_scan</title>
+  <title>FlowNote — 꽃집 매입 정산 노트</title>
   <link rel="manifest" href="manifest.json">
 </head>
 <body>
+  <!--
+    🔴 새 코드가 배포됐는데 옛 코드가 계속 실행되는 문제를 막는다.
+    ────────────────────────────────────────────────────────────────
+    실측(같은 브라우저, 파이어베이스 호스팅과 같은 캐시 헤더):
+
+      [1차 방문] 실행된 코드 = BUILD-A
+      → 서버를 BUILD-B 로 교체 (= 새로 배포)
+      [2차 방문] 실행된 코드 = BUILD-A   ⚠️ 새로고침했는데 옛 코드
+      [3차 방문] 실행된 코드 = BUILD-B   ← 두 번 새로고침해야 새 코드
+
+    플러터가 만드는 서비스 워커는 기본이 "새 워커를 설치해두고 **다음 방문에**
+    적용" 이다. 그래서 배포 직후 한동안은 사장님 기기에서 옛 코드가 돈다.
+    같은 사진, 같은 동작인데 **어떤 버전의 코드가 실행되는지가 달라진다.**
+    고친 것이 적용된 적도 있고 안 된 적도 있었다는 뜻이다.
+
+    아래 코드는 새 워커가 설치되는 것을 감지하면 `skipWaiting` 을 보내
+    바로 승격시키고, 제어권이 넘어오는 순간 딱 한 번만 새로고침한다.
+    (`_fnReloaded` 로 무한 새로고침을 막는다)
+  -->
+  <script>
+  (function () {
+    if (!('serviceWorker' in navigator)) return;
+    var reloaded = false;
+
+    navigator.serviceWorker.addEventListener('controllerchange', function () {
+      if (reloaded) return;
+      reloaded = true;
+      console.log('[pwa] 새 버전으로 교체됨 — 새로고침합니다');
+      window.location.reload();
+    });
+
+    function promote(reg) {
+      if (!reg) return;
+      // 이미 대기 중인 새 워커가 있으면 즉시 승격시킨다.
+      if (reg.waiting) reg.waiting.postMessage('skipWaiting');
+      // 지금 설치 중인 워커가 있으면 설치가 끝나는 순간 승격시킨다.
+      if (reg.installing) {
+        var sw = reg.installing;
+        sw.addEventListener('statechange', function () {
+          if (sw.state === 'installed') sw.postMessage('skipWaiting');
+        });
+      }
+      reg.addEventListener('updatefound', function () {
+        var sw = reg.installing;
+        if (!sw) return;
+        sw.addEventListener('statechange', function () {
+          if (sw.state === 'installed') sw.postMessage('skipWaiting');
+        });
+      });
+    }
+
+    navigator.serviceWorker.getRegistration().then(promote);
+    // 플러터 부트스트랩이 등록을 마친 뒤에도 한 번 더 확인한다.
+    navigator.serviceWorker.ready.then(function (reg) {
+      promote(reg);
+      // 앱을 다시 열 때마다 최신 버전이 있는지 확인한다.
+      try { reg.update(); } catch (e) {}
+    });
+
+    // 홈 화면 아이콘으로 다시 들어올 때도 최신 버전을 확인한다.
+    document.addEventListener('visibilitychange', function () {
+      if (document.visibilityState !== 'visible') return;
+      navigator.serviceWorker.getRegistration().then(function (reg) {
+        if (!reg) return;
+        promote(reg);
+        try { reg.update(); } catch (e) {}
+      });
+    });
+  })();
+  </script>
   <script src="flutter_bootstrap.js" async></script>
 </body>
 </html>
