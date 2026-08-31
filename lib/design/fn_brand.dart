@@ -17,6 +17,16 @@ class FnBrand {
   static const String symbolAsset = 'assets/icon/app_icon.png';
   static const String wordmarkAsset = 'assets/brand/logo_wordmark.png';
 
+  /// 로그인 화면용 심볼 — 바깥으로 퍼지는 코랄 글로우가 **그림에**
+  /// 포함된 버전이다 (사용자 지정, 요청 #116).
+  ///
+  /// 🔴 `symbolAsset` 을 이것으로 바꿀 수 없다. 이 그림은 사방에
+  ///    반투명한 글로우 여백을 갖고 있어서, 정사각으로 잘리는 자리
+  ///    (런처 아이콘 · 파비콘 · maskable)에 넣으면 글로우가 잘리면서
+  ///    한 변이 떨어진 네모로 보이거나, 기기가 입힌 한 번 더 잘라낸다.
+  ///    그래서 화면 안 표기에만 사용한다.
+  static const String symbolGlowAsset = 'assets/brand/logo_symbol_glow.png';
+
   /// 심볼 그림에 이미 그려져 있는 스쿼클의 곡률 (280/1024, 실측값).
   ///
   /// 예전 코드는 `BorderRadius.circular(22)` 로 잘라냈다(= 84 기준 0.262).
@@ -31,23 +41,40 @@ class FnBrand {
 
 /// 앱 심볼(앱로고). 정사각 자리에 쓴다.
 class FnAppMark extends StatelessWidget {
-  const FnAppMark({super.key, this.size = 84, this.shadow = true});
+  const FnAppMark({
+    super.key,
+    this.size = 84,
+    this.shadow = true,
+    this.glow = false,
+  });
 
   final double size;
 
   /// 프로토타입의 `0 6px 18px rgba(238,118,134,.22)` 그림자.
+  ///
+  /// 🔴 [glow] 를 켜면 이 값은 무시된다. 글로우가 이미 그림에
+  ///    들어 있어서 위젯 그림자까지 얹으면 아래쪽만 두 겹으로 짙어진다.
   final bool shadow;
+
+  /// 글로우가 그려진 심볼(`FnBrand.symbolGlowAsset`)을 쓴다.
+  ///
+  /// 로그인 화면(요청 #116)에서 사용한다. 정사각으로 잘리는 자리에는
+  /// 쓰지 않는다 — `FnBrand.symbolGlowAsset` 주석 참고.
+  final bool glow;
 
   @override
   Widget build(BuildContext context) {
     final image = Image.asset(
-      FnBrand.symbolAsset,
+      glow ? FnBrand.symbolGlowAsset : FnBrand.symbolAsset,
       width: size,
       height: size,
       fit: BoxFit.contain,
       filterQuality: FilterQuality.medium,
     );
-    if (!shadow) return SizedBox(width: size, height: size, child: image);
+    // 글로우 판은 그림 자체가 번짐을 갖고 있으므로 그림자를 얹지 않는다.
+    if (!shadow || glow) {
+      return SizedBox(width: size, height: size, child: image);
+    }
     return Container(
       width: size,
       height: size,

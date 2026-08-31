@@ -96,7 +96,7 @@ class _LoginScreenState extends State<LoginScreen>
                   // 로고(심볼). 그림에 스쿼클이 있어 다시 자르지 않는다.
                   const Align(
                     alignment: Alignment.centerLeft,
-                    child: FnAppMark(size: 84),
+                    child: FnAppMark(size: 84, glow: true),
                   ),
                   const SizedBox(height: FnSpace.x20),
                   // 텍스트로고(워드마크). display2 글자 크기에 맞춘 높이.

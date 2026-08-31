@@ -224,10 +224,13 @@ class _SplashDsScreenState extends State<SplashDsScreen> {
           children: [
             // 로고(심볼) — 새 앱로고는 스쿼클이 이미 그려져 있어서
             // 따로 잘라내지 않는다. `FnAppMark` 참고.
+            //
+            // 요청 #116: 로그인 화면 아이콘은 글로우가 그려진 판을 쓴다.
+            // 글로우가 그림에 들어 있으므로 위젯 그림자는 자동으로 꺼진다.
             const Center(
               child: Padding(
                 padding: EdgeInsets.only(bottom: 14),
-                child: FnAppMark(size: 84),
+                child: FnAppMark(size: 84, glow: true),
               ),
             ),
             const SizedBox(height: 16),
