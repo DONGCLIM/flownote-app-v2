@@ -12,10 +12,12 @@ import '../../design/fn_feedback.dart';
 import '../../providers/receipt_provider.dart';
 import '../../services/subscription_service.dart';
 import '../../services/vendor_tax_service.dart';
+import '../../services/receipt_duplicate_service.dart';
 import '../scan/scan_draft.dart';
 import 'fn_data.dart';
 import 'scan_done_ds_screen.dart';
 import 'scan_confirm_list_ds_screen.dart';
+import 'scan_duplicate_ds_screen.dart';
 import '../../widgets/flower_name_field.dart';
 import '../../widgets/flower_price_line.dart';
 import '../../widgets/xfile_image.dart';
@@ -136,12 +138,39 @@ class _ScanReviewDsScreenState extends State<ScanReviewDsScreen> {
 
   /// [ask] 가 false 면 확인 다이얼로그를 건너뛴다.
   /// (인식 결과 확인 목록에서 '모두 저장하기' 를 누른 경우)
+  ///
+  /// 🔴 #118 저장 직전에 **중복 검사**를 한 번 통과한다.
+  ///    같은 가게의 같은 영수증을 두 번 찍으면 예전에는 두 건이 그대로
+  ///    쌓여서 매입 합계가 부풀었다. 이제 겹치는 게 있으면
+  ///    `ScanDuplicateDsScreen` 을 먼저 보여주고, 사장님이 고른 것만 넣는다.
+  ///    (막지는 않는다 — 같은 날 두 번 사는 일은 실제로 있다.)
   Future<void> _save({bool ask = true}) async {
     final live = _liveDrafts;
     if (live.isEmpty) {
       showFnToast(context, '저장할 영수증이 없어요', type: FnToastType.warning);
       return;
     }
+
+    final hits = ReceiptDuplicateService.check(
+      live,
+      context.read<ReceiptProvider>().allReceipts,
+    );
+    if (hits.isNotEmpty) {
+      await Navigator.of(context).push<void>(
+        MaterialPageRoute(
+          builder: (_) => ScanDuplicateDsScreen(
+            hits: hits,
+            totalCount: live.length,
+            // 중복 화면이 최종 확인이므로 다시 묻지 않는다.
+            onContinue: (skip) => _commit(
+              live.where((d) => !skip.contains(d.id)).toList(),
+            ),
+          ),
+        ),
+      );
+      return;
+    }
+
     if (ask) {
       final ok = await showFnAlert(
         context,
@@ -154,13 +183,22 @@ class _ScanReviewDsScreenState extends State<ScanReviewDsScreen> {
       if (!ok || !mounted) return;
     }
 
+    await _commit(live);
+  }
+
+  /// 실제 저장. [list] 는 중복 화면에서 걸러진 최종 목록이다.
+  Future<void> _commit(List<ScanDraft> list) async {
+    if (list.isEmpty) {
+      showFnToast(context, '저장할 영수증이 없어요', type: FnToastType.warning);
+      return;
+    }
     setState(() => _saving = true);
     final provider = context.read<ReceiptProvider>();
     // 🔴 #113(A) batch 로 감싼다. 예전에는 4장을 저장하면
     //    notifyListeners 가 4번 나서 홈·내역·캘린더가 각각 4번씩
     //    다시 그려졌다. 이제 끝에 한 번만 알린다.
     await provider.batch(() async {
-      for (final d in live) {
+      for (final d in list) {
         await provider.addReceipt(d.toReceipt());
         await SubscriptionService.instance.recordScan();
       }
@@ -175,7 +213,7 @@ class _ScanReviewDsScreenState extends State<ScanReviewDsScreen> {
     Navigator.pushAndRemoveUntil(
       context,
       MaterialPageRoute(
-        builder: (_) => ScanDoneDsScreen(summary: ScanSummary.of(live)),
+        builder: (_) => ScanDoneDsScreen(summary: ScanSummary.of(list)),
       ),
       (r) => r.isFirst,
     );
