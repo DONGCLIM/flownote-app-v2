@@ -161,7 +161,12 @@ class _ScanProcessingDsScreenState extends State<ScanProcessingDsScreen> {
                 const SizedBox(height: 28),
                 // 시안 Pro 혜택 카드. 이미 PRO 면 안내가 필요 없으므로
                 // 인식 결과를 고칠 수 있다는 팁으로 바꿔 보여준다.
-                sub.isPro ? _proTipCard() : _proCard(),
+                // 🔴 웹에서는 Pro 혜택 카드를 띄우지 않는다. (#120)
+                //    탭하면 구독 안내로 가는 카드라서, 입구를 감춘 웹에서는
+                //    팁 카드로 대체한다. 앱에서는 기존 동작 그대로다.
+                (sub.isPro || !SubscriptionService.showPaywallEntry)
+                    ? _proTipCard()
+                    : _proCard(),
                 const SizedBox(height: 20),
                 FnProgressBar(value: pct),
                 const SizedBox(height: 8),

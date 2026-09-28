@@ -8,6 +8,7 @@ import '../../design/fn_badge_ds.dart';
 import '../../design/fn_button.dart';
 import '../../providers/auth_provider.dart';
 import '../../services/pwa_install.dart';
+import '../../services/subscription_service.dart';
 import 'add_to_home_sheet.dart';
 import 'auth_ds_screens.dart';
 import 'legal_doc_ds_screen.dart';
@@ -235,12 +236,19 @@ class _ProfileDsScreenState extends State<ProfileDsScreen> {
               '사업자 정보 수정',
               () => BizReviewDsScreen.openEdit(context),
             ),
-            (
-              '구독 관리',
-              () => Navigator.of(context).push(
-                    MaterialPageRoute(builder: (_) => const PaywallDsScreen()),
-                  ),
-            ),
+            // 🔴 웹에서는 '구독 관리' 를 목록에서 **빼 버린다.**
+            //    (사장님 요청 #120 — 웹앱에서 구독료 화면을 감춘다)
+            //
+            //    ⚠️ 지우지 말 것: [PaywallDsScreen] 화면 파일은 그대로 살아
+            //       있다. 앱(APK)에서는 계속 보인다. 판단은
+            //       `SubscriptionService.showPaywallEntry` 한 곳에만 있다.
+            if (SubscriptionService.showPaywallEntry)
+              (
+                '구독 관리',
+                () => Navigator.of(context).push(
+                      MaterialPageRoute(builder: (_) => const PaywallDsScreen()),
+                    ),
+              ),
             // 🔴 'AI 인식(Gemini) API 키 설정' 진입 경로를 의도적으로 뺐다.
             //    (사장님 요청 — 앱/웹 어디서도 이 화면에 못 들어가게)
             //

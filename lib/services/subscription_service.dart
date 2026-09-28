@@ -66,6 +66,23 @@ class SubscriptionService extends ChangeNotifier {
   /// 때문이다. 조건문을 다 뜯어내면 그때 다시 심어야 한다.
   static const bool unlockEverything = true;
 
+  /// 🔴 웹에서는 **구독 안내 화면으로 가는 입구를 감춘다.**
+  ///
+  /// 사장님 요청(#120): "구독료 나오는 화면 웹앱에서 숨겨줄래" + "일단 A로".
+  /// 즉 **웹에서만** 감추고 앱(APK)에는 그대로 둔다.
+  ///
+  /// 화면 파일([PaywallDsScreen] / `PaywallScreen`)은 **지우지 않는다.**
+  /// AI 키 설정 화면과 같은 방식으로 **입구만** 막는다. 그래야 나중에
+  /// 결제를 붙일 때 화면을 다시 만들 필요가 없다.
+  ///
+  /// 앱에서도 감추고 싶어지면 [hidePaywallEverywhere] 를 true 로 바꾼다.
+  /// 판단이 이 한 곳에만 있으므로 화면을 다시 뒤질 필요가 없다.
+  static const bool hidePaywallEverywhere = false;
+
+  /// 구독 안내 입구를 보여줄지. 화면들은 이 값만 본다.
+  static bool get showPaywallEntry =>
+      !hidePaywallEverywhere && !kIsWeb;
+
   PlanTier get tier => _tier;
 
   /// 잠금 해제 기간에는 항상 PRO 로 취급한다.

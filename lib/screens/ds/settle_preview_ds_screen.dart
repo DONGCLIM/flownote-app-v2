@@ -112,9 +112,13 @@ class _SettlePreviewDsScreenState extends State<SettlePreviewDsScreen> {
         context,
         title: '🔒 이번 달 무료 내보내기 횟수(3/3회) 초과',
         desc: 'Pro 요금제 구독시 정산서 내보내기를 무제한으로 이용할 수 있어요',
-        onSubscribe: () => Navigator.of(context).push(
-          MaterialPageRoute(builder: (_) => const PaywallDsScreen()),
-        ),
+        // 🔴 웹에서는 구독 안내로 보내지 않는다. (#120)
+        //    입구를 감췄으므로 버튼도 주지 않는다. 앱에서는 그대로 동작한다.
+        onSubscribe: SubscriptionService.showPaywallEntry
+            ? () => Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const PaywallDsScreen()),
+                )
+            : null,
       );
       return;
     }
