@@ -237,22 +237,122 @@ void main() {
     });
   });
 
-  group('#126 일러스트가 잘리지 않는다', () {
-    testWidgets('🔴 contain 이라 한 픽셀도 안 잘린다', (t) async {
+  group('#127 좌우 여백이 0 이다', () {
+    // 🔴 사장님 지적: 폰에서 그림 좌우에 세로 흰 띠가 보였다.
+    //
+    // 원인은 그림칸 높이를 '남은 화면 높이의 63.7%' 로 잡은 것이었다.
+    // 노치가 클수록 남은 높이가 줄어 칸이 납작해지고, 칸 모양이 그림
+    // 모양과 달라지면서 contain 이 좌우에 여백을 남겼다.
+    //
+    // 이제는 칸 높이 = 폭 / 원본비율 이라 칸이 곧 그림 모양이다.
+    // 아래 테스트는 **실제로 그려진 그림의 폭**을 재서 화면 폭과 같은지
+    // 확인한다. 색이 아니라 기하를 보므로 에셋이 안 떠도 유효하다.
+
+    /// 기기별 (화면, 노치 위/아래) — 실제 값.
+    const cases = <(String, Size, EdgeInsets)>[
+      ('갤럭시 보급형', Size(360, 800), EdgeInsets.only(top: 24)),
+      ('아이폰 13 mini', Size(375, 812), EdgeInsets.only(top: 50, bottom: 34)),
+      ('아이폰 14', Size(390, 844), EdgeInsets.only(top: 47, bottom: 34)),
+      ('갤럭시 S', Size(412, 915), EdgeInsets.only(top: 24, bottom: 24)),
+      ('픽셀 7', Size(412, 892), EdgeInsets.only(top: 24, bottom: 24)),
+      ('아이폰 Pro Max', Size(430, 932), EdgeInsets.only(top: 59, bottom: 34)),
+    ];
+
+    for (final (name, size, pad) in cases) {
+      testWidgets('🔴 $name 에서 그림이 화면 폭을 꽉 채운다', (t) async {
+        await t.binding.setSurfaceSize(size);
+        addTearDown(() => t.binding.setSurfaceSize(null));
+
+        await t.pumpWidget(
+          MaterialApp(
+            home: MediaQuery(
+              data: MediaQueryData(size: size, padding: pad),
+              child: IntroDsScreen(onDone: () {}),
+            ),
+          ),
+        );
+        await t.pump(const Duration(milliseconds: 300));
+
+        final box = t.renderObject<RenderBox>(find.byType(Image).first);
+        expect(
+          box.size.width,
+          closeTo(size.width, 0.5),
+          reason: '$name: 그림 폭 ${box.size.width} != 화면 폭 ${size.width} '
+              '-> 좌우에 ${((size.width - box.size.width) / 2).toStringAsFixed(1)}px '
+              '씩 흰 띠가 생긴다',
+        );
+
+        // 칸 비율이 그림 비율과 같아야 잘림도 0 이다.
+        final ratio = box.size.width / box.size.height;
+        expect(ratio, closeTo(IntroSlide.artRatio, 0.01),
+            reason: '$name: 칸 비율 $ratio 가 그림 비율과 달라 잘린다');
+      });
+    }
+
+    // 🔴 짧은 화면에서도 그림은 깎이지 않는다 (대신 스크롤된다).
+    const shorties = <(String, Size, EdgeInsets)>[
+      ('아이폰 SE 2/3', Size(375, 667), EdgeInsets.only(top: 20)),
+      ('아이폰 8', Size(320, 568), EdgeInsets.only(top: 20)),
+    ];
+    for (final (name, size, pad) in shorties) {
+      testWidgets('🔴 $name 에서도 여백 0 · 잘림 0 (스크롤로 처리)', (t) async {
+        await t.binding.setSurfaceSize(size);
+        addTearDown(() => t.binding.setSurfaceSize(null));
+        await t.pumpWidget(
+          MaterialApp(
+            home: MediaQuery(
+              data: MediaQueryData(size: size, padding: pad),
+              child: IntroDsScreen(onDone: () {}),
+            ),
+          ),
+        );
+        await t.pump(const Duration(milliseconds: 300));
+        expect(t.takeException(), isNull, reason: '$name: 레이아웃이 터졌다');
+
+        final box = t.renderObject<RenderBox>(find.byType(Image).first);
+        expect(box.size.width, closeTo(size.width, 0.5),
+            reason: '$name: 좌우 여백이 생겼다');
+        expect(box.size.width / box.size.height,
+            closeTo(IntroSlide.artRatio, 0.01),
+            reason: '$name: 그림이 깎였다');
+        // 짧은 화면은 스크롤이 생겨야 글이 안 잘린다.
+        expect(find.byType(SingleChildScrollView), findsWidgets,
+            reason: '$name: 스크롤이 없으면 글이 잘린다');
+      });
+    }
+
+    testWidgets('🔴 글이 넘치지 않는다 (textMin 이 충분하다)', (t) async {
+      // textMin 이 모자라면 제목/본문이 잘려 노란 overflow 가 뜬다.
       await t.binding.setSurfaceSize(const Size(390, 844));
-      await t.pumpWidget(MaterialApp(home: IntroDsScreen(onDone: () {})));
+      addTearDown(() => t.binding.setSurfaceSize(null));
+      await t.pumpWidget(
+        MaterialApp(
+          home: MediaQuery(
+            data: const MediaQueryData(
+              size: Size(390, 844),
+              padding: EdgeInsets.only(top: 47, bottom: 34),
+            ),
+            child: IntroDsScreen(onDone: () {}),
+          ),
+        ),
+      );
       await t.pump(const Duration(milliseconds: 300));
-      final img = t.widget<Image>(find.byType(Image).first);
-      expect(img.fit, BoxFit.contain,
-          reason: 'cover 면 태블릿에서 40% 가까이 잘린다');
+      expect(t.takeException(), isNull);
+      expect(find.text('쌓이는 영수증,\n촬영으로 간편하게'), findsOneWidget);
     });
 
-    testWidgets('태블릿에서도 그림 비율이 유지된다', (t) async {
-      await t.binding.setSurfaceSize(const Size(768, 1024));
-      await t.pumpWidget(MaterialApp(home: IntroDsScreen(onDone: () {})));
-      await t.pump(const Duration(milliseconds: 300));
-      final img = t.widget<Image>(find.byType(Image).first);
-      expect(img.fit, BoxFit.contain);
+    test('🔴 그림칸이 화면 높이 비율이 아니라 원본 비율로 정해진다', () {
+      final code = io.File('lib/screens/ds/intro_ds_screen.dart')
+          .readAsLinesSync()
+          .where((l) => !l.trimLeft().startsWith('//'))
+          .join('\n');
+      // 옛 방식(높이 비율)이 남아 있으면 노치 기기에서 또 여백이 생긴다.
+      expect(code.contains('artHeightFactor'), isFalse,
+          reason: '높이 비율 방식이 남아 있다');
+      expect(code.contains('c.maxWidth / IntroSlide.artRatio'), isTrue,
+          reason: '그림칸을 원본 비율로 잡아야 여백이 0 이 된다');
+      expect(IntroSlide.textMin, greaterThanOrEqualTo(139.5),
+          reason: '글에 필요한 최소 높이(139.5)보다 작으면 글이 넘친다');
     });
   });
 }

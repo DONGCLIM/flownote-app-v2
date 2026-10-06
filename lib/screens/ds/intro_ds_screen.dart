@@ -41,8 +41,14 @@ class IntroSlide {
   /// 일러스트 원본 비율.
   static const double artRatio = 471 / 624;
 
-  /// 일러스트가 차지하는 화면 높이 비율. (624 / 980)
-  static const double artHeightFactor = 624 / 980;
+  /// 그림 아래에 반드시 남겨 둘 자리(제목·본문용).
+  ///
+  /// 그림칸은 **화면 폭 x 원본 비율**로 정한다. 그래야 좌우 여백이
+  /// 0 이 된다. 다만 아주 짧은 화면에서는 그러면 글자리가 모자라므로,
+  /// 이 값만큼은 글에 먼저 떼어 준다.
+  /// 계산: 제목 26x1.34x2줄(69.7) + 간격 14 + 본문 13.5x1.55x2줄(41.9)
+  /// + 위 패딩 14 = 139.5. 여유를 두어 148 로 둔다.
+  static const double textMin = 148.0;
 
   /// 좌우 여백 비율. (53 / 471)
   static const double sidePadFactor = 53 / 471;
@@ -290,36 +296,49 @@ class _Slide extends StatelessWidget {
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, c) {
-        // 시안에서 일러스트는 화면 높이의 63.7% 를 쓴다. 다만 화면이
-        // 짧으면 글이 잘리므로, 글에 필요한 자리를 먼저 떼고 남는 만큼만
-        // 그림에 준다.
-        const textRoom = 170.0;
-        final artH = (c.maxHeight * IntroSlide.artHeightFactor)
-            .clamp(0.0, (c.maxHeight - textRoom).clamp(0.0, c.maxHeight));
+        // 그림칸 높이 = 화면 폭 / 원본 비율.
+        //
+        // 이렇게 하면 그림칸이 그림과 **똑같은 모양**이 되어 좌우 여백도,
+        // 잘림도 0 이 된다. (예전에는 화면 높이의 63.7% 를 썼는데, 그러면
+        // 노치 크기에 따라 칸 모양이 그림과 달라져 좌우에 흰 띠가 생겼다.)
+        // 그림칸은 **언제나** 원본 비율. 줄이지 않는다.
+        final artH = c.maxWidth / IntroSlide.artRatio;
 
-        return Column(
+        // 그림(원본비율) + 글(textMin) 이 화면보다 길어지는 아주 짧은
+        // 기기에서는 화면을 **스크롤**로 넘긴다. 그림을 깎지 않겠다는
+        // 약속을 지키려면 이 길밖에 없다.
+        final needed = artH + IntroSlide.textMin;
+        final tight = needed > c.maxHeight;
+
+        final column = Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
+          mainAxisSize: tight ? MainAxisSize.min : MainAxisSize.max,
           children: [
             // ── 일러스트 ─────────────────────────────────────
             //
-            // 🔴 #126 꽉 채우기(cover)를 버리고 **전체가 보이게** 한다.
+            // 🔴 #127 **좌우 여백 0, 잘림 0.**
             //
-            // 측정해 보니 잘림이 이랬다.
-            //   아이폰 14    (390x844)  위아래  3.4%
-            //   갤럭시 S     (412x915)  위아래  0.3%
-            //   아이폰 ProMax(430x932)  위아래  2.5%
-            //   태블릿       (768x1024) 위아래 39.7%
+            // 위에서 그림칸을 그림과 똑같은 비율로 만들었으므로 cover 와
+            // contain 의 결과가 같다. 즉 꽉 차면서도 잘리지 않는다.
+            // cover 를 쓰는 이유는 소수점 반올림으로 1px 틈이 생기는 것을
+            // 막기 위해서다. (contain 은 틈을, cover 는 1px 잘림을 남기는데,
+            // 눈에 보이는 흰 띠보다 1px 이 안전하다.)
             //
-            // 휴대폰은 괜찮았지만 태블릿에서 40% 가까이 잘렸다. 영수증
-            // 금액처럼 중요한 부분이 사라질 수 있다. 그래서 contain 으로
-            // 바꿔 **한 픽셀도 안 잘리게** 한다. 남는 자리는 배경
-            // 그라디언트가 그대로 비쳐서 티가 나지 않는다.
+            // 기기별 결과 — 그림칸이 곧 그림 모양이라 전부 여백 0:
+            //   갤럭시 보급형(360x800)  0.00px
+            //   아이폰 14   (390x844)  0.00px
+            //   갤럭시 S    (412x915)  0.00px
+            //   아이폰ProMax(430x932)  0.00px
+            //
+            // 화면이 아주 짧은 기기(아이폰 SE 등)에서는 그림을 깎는 대신
+            // 화면 전체를 스크롤로 만든다. 그림은 어떤 기기에서도
+            // 잘리지 않는다.
             SizedBox(
               height: artH,
               child: Image.asset(
                 slide.art,
-                fit: BoxFit.contain,
-                alignment: Alignment.bottomCenter,
+                fit: BoxFit.cover,
+                alignment: Alignment.topCenter,
                 filterQuality: FilterQuality.high,
                 excludeFromSemantics: true,
                 errorBuilder: (_, __, ___) => const SizedBox.shrink(),
@@ -327,7 +346,7 @@ class _Slide extends StatelessWidget {
             ),
 
             // ── 제목 · 본문
-            Expanded(
+            Flexible(
               child: Padding(
                 padding: EdgeInsets.fromLTRB(sidePad, 14, sidePad, 0),
                 child: Column(
@@ -360,6 +379,13 @@ class _Slide extends StatelessWidget {
               ),
             ),
           ],
+        );
+
+        // 짧은 화면이면 스크롤, 아니면 그대로.
+        if (!tight) return column;
+        return SingleChildScrollView(
+          physics: const ClampingScrollPhysics(),
+          child: column,
         );
       },
     );
