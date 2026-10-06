@@ -34,9 +34,10 @@ void main() {
   }
 
   group('#124 에셋', () {
-    test('🔴 스플래시 1장 + 일러스트 3장이 실제 파일이다', () {
-      final paths = [IntroSlide.splashImage, ...IntroSlide.all.map((e) => e.art)];
-      expect(paths.length, 4);
+    test('🔴 일러스트 3장이 실제 파일이다', () {
+      // #126: 스플래시는 더 이상 그림이 아니다. 앱 화면으로 그린다.
+      final paths = IntroSlide.all.map((e) => e.art).toList();
+      expect(paths.length, 3);
       for (final a in paths) {
         expect(io.File(a).existsSync(), isTrue, reason: '$a 가 없다');
         expect(io.File(a).lengthSync(), greaterThan(20000), reason: '$a 가 너무 작다');
@@ -165,23 +166,93 @@ void main() {
     });
   });
 
-  group('#124 스플래시', () {
-    testWidgets('🔴 그림만 있고 버튼이 없다', (t) async {
+  group('#126 스플래시는 앱 화면이다', () {
+    testWidgets('🔴 그림이 아니라 로고·워드마크·태그라인 위젯이다', (t) async {
       await t.binding.setSurfaceSize(const Size(390, 844));
       await t.pumpWidget(const MaterialApp(
         home: Scaffold(body: IntroSplash()),
       ));
-      await t.pump(const Duration(milliseconds: 300));
-      expect(find.byType(Image), findsOneWidget);
+      await t.pump(const Duration(milliseconds: 700));
+
+      // 태그라인이 실제 글자로 있어야 한다. (그림이면 못 찾는다)
+      expect(find.text('꽃은 아름답게, 정산은 정확하게 플로우노트'), findsOneWidget);
+      // 로고 + 워드마크 = Image 2개. (시안 PNG 한 장이 아니다)
+      expect(find.byType(Image), findsNWidgets(2));
+      // 넘기는 화면이 아니므로 버튼이 없다.
       expect(find.text('건너뛰기'), findsNothing);
       expect(find.text('다음'), findsNothing);
+    });
+
+    testWidgets('🔴 떠오르는 애니메이션이 끝나면 완전히 보인다', (t) async {
+      await t.binding.setSurfaceSize(const Size(390, 844));
+      await t.pumpWidget(const MaterialApp(
+        home: Scaffold(body: IntroSplash()),
+      ));
+      // 시작 직후엔 아직 흐리다
+      await t.pump(const Duration(milliseconds: 16));
+      final early = t.widget<Opacity>(find.byType(Opacity).first).opacity;
+      // 애니메이션(620ms)이 끝나면 또렷하다
+      await t.pump(const Duration(milliseconds: 700));
+      final late_ = t.widget<Opacity>(find.byType(Opacity).first).opacity;
+      expect(early, lessThan(1.0));
+      expect(late_, 1.0);
+    });
+
+    testWidgets('🔴 넓은 화면에서도 글자 크기가 그대로다', (t) async {
+      // 위젯으로 그리므로 PNG 처럼 늘어나지 않는다.
+      await t.binding.setSurfaceSize(const Size(1024, 700));
+      await t.pumpWidget(const MaterialApp(
+        home: Scaffold(body: IntroSplash()),
+      ));
+      await t.pump(const Duration(milliseconds: 700));
+      final wide = t.widget<Text>(
+          find.text('꽃은 아름답게, 정산은 정확하게 플로우노트'));
+
+      await t.binding.setSurfaceSize(const Size(390, 844));
+      await t.pumpWidget(const MaterialApp(
+        home: Scaffold(body: IntroSplash()),
+      ));
+      await t.pump(const Duration(milliseconds: 700));
+      final phone = t.widget<Text>(
+          find.text('꽃은 아름답게, 정산은 정확하게 플로우노트'));
+
+      expect(wide.style!.fontSize, phone.style!.fontSize);
+    });
+
+    test('🔴 스플래시 PNG 를 더 이상 쓰지 않는다', () {
+      final code = io.File('lib/screens/ds/intro_ds_screen.dart')
+          .readAsLinesSync()
+          .where((l) => !l.trimLeft().startsWith('//'))
+          .join('\n');
+      expect(code.contains('splash.png'), isFalse);
+      expect(io.File('assets/onboarding/splash.png').existsSync(), isFalse,
+          reason: '쓰지 않는 그림은 앱 용량만 차지한다');
     });
 
     test('🔴 main.dart 가 스플래시를 잠깐 띄운다', () {
       final main = io.File('lib/main.dart').readAsStringSync();
       expect(main.contains('IntroSplash'), isTrue);
       expect(main.contains('milliseconds: 1400'), isTrue,
-          reason: '잠깐 띄우는 시간이 지정되어 있어야 한다');
+          reason: '잠깐 비춰지는 시간이 지정되어 있어야 한다');
+    });
+  });
+
+  group('#126 일러스트가 잘리지 않는다', () {
+    testWidgets('🔴 contain 이라 한 픽셀도 안 잘린다', (t) async {
+      await t.binding.setSurfaceSize(const Size(390, 844));
+      await t.pumpWidget(MaterialApp(home: IntroDsScreen(onDone: () {})));
+      await t.pump(const Duration(milliseconds: 300));
+      final img = t.widget<Image>(find.byType(Image).first);
+      expect(img.fit, BoxFit.contain,
+          reason: 'cover 면 태블릿에서 40% 가까이 잘린다');
+    });
+
+    testWidgets('태블릿에서도 그림 비율이 유지된다', (t) async {
+      await t.binding.setSurfaceSize(const Size(768, 1024));
+      await t.pumpWidget(MaterialApp(home: IntroDsScreen(onDone: () {})));
+      await t.pump(const Duration(milliseconds: 300));
+      final img = t.widget<Image>(find.byType(Image).first);
+      expect(img.fit, BoxFit.contain);
     });
   });
 }

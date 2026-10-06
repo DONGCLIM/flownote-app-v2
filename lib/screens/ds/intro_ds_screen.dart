@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../design/fn_brand.dart';
 import '../../design/fn_tokens.dart';
 
 /// 🔴 #124 — 로그인 **앞**에 붙는 인트로.
@@ -46,8 +47,6 @@ class IntroSlide {
   /// 좌우 여백 비율. (53 / 471)
   static const double sidePadFactor = 53 / 471;
 
-  static const String splashImage = 'assets/onboarding/splash.png';
-
   /// 시안 문구 그대로. (고해상도 PNG 에서 한 글자씩 옮겼다)
   static const List<IntroSlide> all = [
     IntroSlide(
@@ -76,6 +75,9 @@ class IntroColors {
   static const Color body = Color(0xFFA1A09E);
   static const Color dotOff = Color(0xFFD5D5D8);
   static const Color accent = FnColors.rose50;
+
+  /// 스플래시 태그라인. 시안 실측 #767676.
+  static const Color splashTagline = Color(0xFF767676);
 }
 
 const _bgGradient = LinearGradient(
@@ -85,28 +87,115 @@ const _bgGradient = LinearGradient(
   stops: [0.0, 0.66],
 );
 
-/// 스플래시 — `splash.png` 를 잠깐 띄운다.
+/// 스플래시 — **앱 화면으로 그린다.** (#126)
 ///
-/// 이것만 **그림 통째로** 쓴다. 로고·워드마크·태그라인이 한 덩어리로
-/// 디자인돼 있고 잠깐 스쳐 지나가는 화면이라 그대로 쓰는 게 맞다.
-class IntroSplash extends StatelessWidget {
+/// 사장님 지시:
+/// > "스플래쉬도 PNG 파일을 그대로 반영하는게 아니라, 앱 화면으로
+/// >  해주되 지금처럼 잠깐 비춰지는 이미지가 될 수 있도록"
+///
+/// 그래서 그림을 깔지 않고 배경·로고·워드마크·태그라인을 모두 위젯으로
+/// 그린다. '잠깐 비춰지는' 동작은 `main.dart` 가 1.4초 뒤 넘기는 것으로
+/// 그대로 유지한다. 여기에 **부드럽게 떠오르는 애니메이션**을 넣어
+/// 스쳐 지나가는 느낌을 살린다.
+///
+/// ## 시안에서 픽셀로 잰 값 (471 x 980 -> 390dp)
+/// ```
+///   배경      위 #FFEDE9 ~ 아래 #FEFDFB (위쪽이 따뜻한 복숭아색)
+///   로고      91dp (글로우 포함) · 워드마크 33dp · 태그라인 12dp
+///   간격      로고->워드마크 9dp · 워드마크->태그라인 17dp
+///   블록 중심 화면 세로의 0.471 (중앙보다 2.9% 위)
+/// ```
+class IntroSplash extends StatefulWidget {
   const IntroSplash({super.key});
+
+  @override
+  State<IntroSplash> createState() => _IntroSplashState();
+}
+
+class _IntroSplashState extends State<IntroSplash>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _c = AnimationController(
+    duration: const Duration(milliseconds: 620),
+    vsync: this,
+  );
+
+  late final Animation<double> _fade = CurvedAnimation(
+    parent: _c,
+    curve: Curves.easeOut,
+  );
+
+  late final Animation<double> _rise = Tween<double>(begin: 14, end: 0).animate(
+    CurvedAnimation(parent: _c, curve: Curves.easeOutCubic),
+  );
+
+  @override
+  void initState() {
+    super.initState();
+    _c.forward();
+  }
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     return DecoratedBox(
-      decoration: const BoxDecoration(gradient: _bgGradient),
+      // 시안 배경: 위쪽이 따뜻하고 아래로 가며 흰색이 된다.
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [
+            Color(0xFFFFEDE9),
+            Color(0xFFFFF3EF),
+            Color(0xFFFEFDFB),
+          ],
+          stops: [0.0, 0.34, 0.72],
+        ),
+      ),
       child: Center(
-        child: Image.asset(
-          IntroSlide.splashImage,
-          fit: BoxFit.contain,
-          filterQuality: FilterQuality.high,
-          semanticLabel: 'Flownote. 꽃은 아름답게, 정산은 정확하게 플로우노트',
-          errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+        // 시안의 블록 중심은 화면 중앙보다 2.9% 위에 있다.
+        child: FractionalTranslation(
+          translation: const Offset(0, -0.058),
+          child: AnimatedBuilder(
+            animation: _c,
+            builder: (context, _) => Opacity(
+              opacity: _fade.value,
+              child: Transform.translate(
+                offset: Offset(0, _rise.value),
+                child: child_,
+              ),
+            ),
+          ),
         ),
       ),
     );
   }
+
+  Widget get child_ => Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // 로고 — 글로우가 그려진 판을 쓴다. (요청 #116)
+          const FnAppMark(size: 92, glow: true),
+          const SizedBox(height: 6),
+          const FnWordmark(height: 33),
+          const SizedBox(height: 16),
+          Text(
+            '꽃은 아름답게, 정산은 정확하게 플로우노트',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontFamily: 'Pretendard',
+              fontSize: 13,
+              fontWeight: FontWeight.w400,
+              height: 1.4,
+              color: IntroColors.splashTagline,
+            ),
+          ),
+        ],
+      );
 }
 
 /// 1~3번 인트로 — **앱 화면으로 만들었다.**
@@ -211,13 +300,26 @@ class _Slide extends StatelessWidget {
         return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // ── 일러스트 (그림은 비율 그대로, 넘치는 쪽만 살짝 잘린다)
+            // ── 일러스트 ─────────────────────────────────────
+            //
+            // 🔴 #126 꽉 채우기(cover)를 버리고 **전체가 보이게** 한다.
+            //
+            // 측정해 보니 잘림이 이랬다.
+            //   아이폰 14    (390x844)  위아래  3.4%
+            //   갤럭시 S     (412x915)  위아래  0.3%
+            //   아이폰 ProMax(430x932)  위아래  2.5%
+            //   태블릿       (768x1024) 위아래 39.7%
+            //
+            // 휴대폰은 괜찮았지만 태블릿에서 40% 가까이 잘렸다. 영수증
+            // 금액처럼 중요한 부분이 사라질 수 있다. 그래서 contain 으로
+            // 바꿔 **한 픽셀도 안 잘리게** 한다. 남는 자리는 배경
+            // 그라디언트가 그대로 비쳐서 티가 나지 않는다.
             SizedBox(
               height: artH,
               child: Image.asset(
                 slide.art,
-                fit: BoxFit.cover,
-                alignment: Alignment.center,
+                fit: BoxFit.contain,
+                alignment: Alignment.bottomCenter,
                 filterQuality: FilterQuality.high,
                 excludeFromSemantics: true,
                 errorBuilder: (_, __, ___) => const SizedBox.shrink(),

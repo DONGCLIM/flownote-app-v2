@@ -229,7 +229,7 @@ class FlowNoteApp extends StatelessWidget {
 /// 🔴 #124 앱의 첫 화면을 고르는 곳.
 ///
 /// ```
-///   1) 스플래시 (splash.png)  — 1.4초, **매번** 보인다
+///   1) 스플래시 (IntroSplash 위젯)  — 1.4초, **매번** 보인다
 ///   2) 로그인됨   -> MainDsScreen
 ///   3) 비로그인   -> IntroDsScreen (1~3번) -> SplashDsScreen(로그인)
 /// ```
