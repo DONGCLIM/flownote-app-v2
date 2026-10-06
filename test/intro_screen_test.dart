@@ -52,6 +52,8 @@ void main() {
     });
 
     test('🔴 상태바를 잘라낸 크기다 (471 x 980)', () {
+      expect(IntroSlide.imageWidth, 471);
+      expect(IntroSlide.imageHeight, 980);
       // 원본은 471x1024. 상태바 44px 를 떼어 980 이 되어야 한다.
       // 그래야 기기의 진짜 상태바와 두 겹으로 겹치지 않는다.
       expect(IntroSlide.ratio, closeTo(471 / 980, 0.0001));
@@ -115,6 +117,58 @@ void main() {
       await t.tap(find.bySemanticsLabel('시작하기'));
       await settleAnim(t);
       expect(done, isTrue);
+    });
+
+    testWidgets('🔴 넓은 화면에서도 그림이 잘리지 않는다 (#123)', (t) async {
+      // 사장님이 본 화면: 가로로 넓은 브라우저(1024x500).
+      // 예전엔 꽉 채우기(cover) 때문에 이미지를 2.17배 확대해서
+      // **아래 23% 만** 보였다. 일러스트가 사라지고 버튼만 크게 보였다.
+      await t.binding.setSurfaceSize(const Size(1024, 500));
+      await t.pumpWidget(MaterialApp(home: IntroDsScreen(onDone: () {})));
+      await t.pump(const Duration(milliseconds: 300));
+
+      // 그림이 그려진 사각형을 찾는다. 비율이 원본과 같아야 한다.
+      final img = t.widget<Image>(find.byType(Image).first);
+      expect(img.fit, BoxFit.fill,
+          reason: '사각형을 직접 계산해 넣으므로 fill 이어야 한다');
+
+      final box = t.getRect(find.byType(Image).first);
+      final ar = box.width / box.height;
+      expect(ar, closeTo(IntroSlide.ratio, 0.02),
+          reason: '그림 비율이 원본(0.48)과 달라지면 찌그러졌거나 잘린 것이다');
+
+      // 화면 높이를 넘지 않아야 한다 (= 위아래가 잘리지 않았다).
+      expect(box.height, lessThanOrEqualTo(500.0 + 0.5));
+    });
+
+    testWidgets('🔴 넓은 화면에서 버튼이 그림 안에 있다 (#123)', (t) async {
+      await t.binding.setSurfaceSize(const Size(1024, 500));
+      await t.pumpWidget(MaterialApp(home: IntroDsScreen(onDone: () {})));
+      await t.pump(const Duration(milliseconds: 300));
+
+      final art = t.getRect(find.byType(Image).first);
+      final skip = t.getRect(find.bySemanticsLabel('건너뛰기'));
+      final next = t.getRect(find.bySemanticsLabel('다음'));
+
+      // 버튼이 그림 바깥에 생기면 눌러도 글자가 없는 곳이다.
+      for (final r in [skip, next]) {
+        expect(r.left, greaterThanOrEqualTo(art.left - 1));
+        expect(r.right, lessThanOrEqualTo(art.right + 1));
+        expect(r.top, greaterThanOrEqualTo(art.top - 1));
+        expect(r.bottom, lessThanOrEqualTo(art.bottom + 1));
+      }
+
+      // 버튼은 그림 아래쪽(88.8% 자리)에 있어야 한다.
+      final cy = (skip.center.dy - art.top) / art.height;
+      expect(cy, closeTo(0.888, 0.04));
+    });
+
+    testWidgets('휴대폰 화면에서도 그림 비율이 유지된다', (t) async {
+      await t.binding.setSurfaceSize(const Size(390, 844));
+      await t.pumpWidget(MaterialApp(home: IntroDsScreen(onDone: () {})));
+      await t.pump(const Duration(milliseconds: 300));
+      final box = t.getRect(find.byType(Image).first);
+      expect(box.width / box.height, closeTo(IntroSlide.ratio, 0.02));
     });
 
     testWidgets('그림이 3장 다 PageView 로 걸려 있다', (t) async {
