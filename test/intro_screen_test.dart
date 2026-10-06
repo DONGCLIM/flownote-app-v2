@@ -5,190 +5,183 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:flow_note/screens/ds/intro_ds_screen.dart';
 
-/// 🔴 #121/#122 — 로그인 앞 인트로.
+/// 🔴 #124 — 로그인 앞 인트로를 **앱 화면으로** 만들었다.
 ///
-/// 사장님 지시대로 **시안 PNG 를 통째로** 쓴다. 제목·본문·버튼 글자·
-/// 인디케이터가 모두 그림 안에 있으므로, 글자를 `find.text` 로 찾을
-/// 수 없다. 대신 이렇게 잠근다.
-///
-///  1. 그림 파일이 실제로 있고 pubspec 으로 묶여 나가는지
-///  2. 상태바가 잘려 있는지 (진짜 상태바와 겹치면 안 된다)
-///  3. 그림 위 투명 버튼이 눌리고 페이지가 넘어가는지
-///  4. 마지막 장에서 버튼 뜻이 '시작하기' 로 바뀌는지 (Semantics 로 확인)
+/// 사장님 지시:
+///  - 스플래시는 잠깐 띄워지는 이미지
+///  - 1~3번은 PNG 통째로가 아니라 **앱 화면으로 제작**
+///  - 건너뛰기 · 다음이 실제로 눌려 넘어갈 것
+///  - **일회성이 아니라 계속** 띄울 것
 ///
 /// ## 테스트 환경 주의
-/// `Image.asset` 이 테스트 바인딩에서 **영원히 미해결**이라
-/// `pumpAndSettle()` 을 쓰면 끝나지 않는다. `pump(Duration)` 을 쓴다.
+/// `Image.asset` 이 테스트 바인딩에서 영원히 미해결이라
+/// `pumpAndSettle()` 은 멈춘다. `pump(Duration)` 을 쓴다.
 void main() {
-  /// nextPage 애니메이션(260ms)을 끝까지 돌린다.
+  /// 페이지 전환 애니메이션(280ms)을 끝까지 돌린다.
   Future<void> settleAnim(WidgetTester t) async {
-    for (var i = 0; i < 12; i++) {
+    for (var i = 0; i < 14; i++) {
       await t.pump(const Duration(milliseconds: 50));
     }
   }
 
-  Future<void> pumpIntro(WidgetTester t, {VoidCallback? onDone}) async {
-    await t.binding.setSurfaceSize(const Size(390, 844));
+  Future<void> pumpIntro(WidgetTester t,
+      {VoidCallback? onDone, Size size = const Size(390, 844)}) async {
+    await t.binding.setSurfaceSize(size);
     await t.pumpWidget(MaterialApp(
       home: IntroDsScreen(onDone: onDone ?? () {}),
     ));
     await t.pump(const Duration(milliseconds: 300));
   }
 
-  group('#122 시안 그림을 그대로 쓴다', () {
-    test('🔴 슬라이드 3장 + 스플래시 1장이 모두 실제 파일이다', () {
-      final paths = [IntroSlide.splashImage, ...IntroSlide.all.map((e) => e.image)];
+  group('#124 에셋', () {
+    test('🔴 스플래시 1장 + 일러스트 3장이 실제 파일이다', () {
+      final paths = [IntroSlide.splashImage, ...IntroSlide.all.map((e) => e.art)];
       expect(paths.length, 4);
       for (final a in paths) {
         expect(io.File(a).existsSync(), isTrue, reason: '$a 가 없다');
-        // 빈 파일이면 화면이 비어 보인다.
         expect(io.File(a).lengthSync(), greaterThan(20000), reason: '$a 가 너무 작다');
       }
     });
 
-    test('🔴 pubspec 이 assets/onboarding/ 을 싣고 나간다', () {
+    test('🔴 일러스트는 글자가 없는 그림 영역이다', () {
+      // 전체 목업(471x980)이 아니라 일러스트(471x624)만 담겨야 한다.
+      // 전체를 넣으면 글자가 두 겹으로 보인다.
+      expect(IntroSlide.artRatio, closeTo(471 / 624, 0.0001));
+      for (final s in IntroSlide.all) {
+        expect(s.art, contains('/art_'));
+      }
+    });
+
+    test('pubspec 이 assets/onboarding/ 을 싣고 나간다', () {
       final y = io.File('pubspec.yaml').readAsStringSync();
       expect(y.contains('assets/onboarding/'), isTrue);
     });
+  });
 
-    test('🔴 상태바를 잘라낸 크기다 (471 x 980)', () {
-      expect(IntroSlide.imageWidth, 471);
-      expect(IntroSlide.imageHeight, 980);
-      // 원본은 471x1024. 상태바 44px 를 떼어 980 이 되어야 한다.
-      // 그래야 기기의 진짜 상태바와 두 겹으로 겹치지 않는다.
-      expect(IntroSlide.ratio, closeTo(471 / 980, 0.0001));
+  group('#124 문구 (시안 1:1)', () {
+    test('🔴 제목이 시안과 글자까지 같다', () {
+      expect(IntroSlide.all[0].title, '쌓이는 영수증,\n촬영으로 간편하게');
+      expect(IntroSlide.all[1].title, '우리 가게 지출을\n한눈에 확인해요');
+      expect(IntroSlide.all[2].title, '쌓인 기록으로\n다음 사입도 똑똑하게');
     });
 
-    test('코드로 글자를 다시 그리지 않는다', () {
-      // 시안 글자는 그림 안에 있다. 화면이 Text 위젯으로 제목을 또
-      // 그리면 두 겹으로 보인다. 그래서 `Text(` 자체가 없어야 한다.
-      //
-      // 단, `semantics:` 문구는 그림 속 글자를 화면 낭독기에 읽어
-      // 주려고 둔 것이라 남아 있는 게 맞다. (화면에 그려지지 않는다)
-      final code = io.File('lib/screens/ds/intro_ds_screen.dart')
-          .readAsLinesSync()
-          .where((l) => !l.trimLeft().startsWith('///'))
-          .where((l) => !l.trimLeft().startsWith('//'))
-          .join('\n');
-      expect(code.contains('Text('), isFalse,
-          reason: '제목·본문은 그림 안에 있다. Text 위젯으로 또 그리면 두 겹이 된다');
-      expect(code.contains('TextStyle'), isFalse);
-      expect(code.contains('Pretendard'), isFalse);
+    test('🔴 본문이 시안과 글자까지 같다', () {
+      expect(IntroSlide.all[0].body,
+          '꽃 사입 내역을 일일이 적지 않아도\n품목과 금액을 읽어 정리해 드려요.');
+      expect(IntroSlide.all[1].body,
+          '월별 지출부터 품목별 비중까지\n복잡한 사입 내역을 쉽게 파악해요.');
+      expect(IntroSlide.all[2].body,
+          '우리 가게에 맞는 사입 가이드로\n다음 꽃시장 방문을 준비해요.');
     });
   });
 
-  group('#122 그림 위 투명 버튼', () {
-    testWidgets('🔴 첫 장에는 건너뛰기와 다음 버튼이 있다', (t) async {
+  group('#124 앱 화면으로 그린다', () {
+    testWidgets('🔴 제목·본문이 실제 Text 위젯으로 보인다', (t) async {
       await pumpIntro(t);
-      expect(find.bySemanticsLabel('건너뛰기'), findsOneWidget);
-      expect(find.bySemanticsLabel('다음'), findsOneWidget);
-      expect(find.bySemanticsLabel('시작하기'), findsNothing);
+      expect(find.text('쌓이는 영수증,\n촬영으로 간편하게'), findsOneWidget);
+      expect(find.text('꽃 사입 내역을 일일이 적지 않아도\n품목과 금액을 읽어 정리해 드려요.'),
+          findsOneWidget);
     });
 
-    testWidgets('🔴 다음을 누르면 장이 넘어간다', (t) async {
+    testWidgets('🔴 건너뛰기·다음이 실제 글자로 있다', (t) async {
       await pumpIntro(t);
-      await t.tap(find.bySemanticsLabel('다음'));
-      await settleAnim(t);
-      // 2번 장도 아직 '다음'
-      expect(find.bySemanticsLabel('다음'), findsOneWidget);
-
-      await t.tap(find.bySemanticsLabel('다음'));
-      await settleAnim(t);
-      // 3번 장에서 '시작하기' 로 바뀐다
-      expect(find.bySemanticsLabel('시작하기'), findsOneWidget);
-      expect(find.bySemanticsLabel('다음'), findsNothing);
+      expect(find.text('건너뛰기'), findsOneWidget);
+      expect(find.text('다음'), findsOneWidget);
+      expect(find.text('시작하기'), findsNothing);
     });
 
-    testWidgets('🔴 건너뛰기를 누르면 바로 끝난다', (t) async {
+    testWidgets('인디케이터 점이 장 수만큼 있다', (t) async {
+      await pumpIntro(t);
+      expect(find.byType(AnimatedContainer), findsNWidgets(3));
+    });
+
+    testWidgets('🔴 넓은 화면에서도 글자가 안 늘어난다 (#123 회귀)', (t) async {
+      // 글자를 위젯으로 그리므로 화면이 넓어도 크기가 변하지 않는다.
+      await pumpIntro(t, size: const Size(1024, 500));
+      final small = t.widget<Text>(find.text('건너뛰기'));
+      await pumpIntro(t, size: const Size(390, 844));
+      final phone = t.widget<Text>(find.text('건너뛰기'));
+      expect(small.style!.fontSize, phone.style!.fontSize);
+    });
+  });
+
+  group('#124 버튼이 실제로 넘어간다', () {
+    testWidgets('🔴 다음을 누르면 2번 장으로 간다', (t) async {
+      await pumpIntro(t);
+      await t.tap(find.text('다음'));
+      await settleAnim(t);
+      expect(find.text('우리 가게 지출을\n한눈에 확인해요'), findsOneWidget);
+    });
+
+    testWidgets('🔴 마지막 장에서만 시작하기로 바뀐다', (t) async {
+      await pumpIntro(t);
+      await t.tap(find.text('다음'));
+      await settleAnim(t);
+      await t.tap(find.text('다음'));
+      await settleAnim(t);
+      expect(find.text('쌓인 기록으로\n다음 사입도 똑똑하게'), findsOneWidget);
+      expect(find.text('시작하기'), findsOneWidget);
+      expect(find.text('다음'), findsNothing);
+    });
+
+    testWidgets('🔴 건너뛰기를 누르면 끝난다', (t) async {
       var done = false;
       await pumpIntro(t, onDone: () => done = true);
-      await t.tap(find.bySemanticsLabel('건너뛰기'));
-      await settleAnim(t);
-      expect(done, isTrue, reason: '건너뛰기는 로그인으로 보내야 한다');
-    });
-
-    testWidgets('🔴 마지막에서 시작하기를 누르면 끝난다', (t) async {
-      var done = false;
-      await pumpIntro(t, onDone: () => done = true);
-      await t.tap(find.bySemanticsLabel('다음'));
-      await settleAnim(t);
-      await t.tap(find.bySemanticsLabel('다음'));
-      await settleAnim(t);
-      await t.tap(find.bySemanticsLabel('시작하기'));
+      await t.tap(find.text('건너뛰기'));
       await settleAnim(t);
       expect(done, isTrue);
     });
 
-    testWidgets('🔴 넓은 화면에서도 그림이 잘리지 않는다 (#123)', (t) async {
-      // 사장님이 본 화면: 가로로 넓은 브라우저(1024x500).
-      // 예전엔 꽉 채우기(cover) 때문에 이미지를 2.17배 확대해서
-      // **아래 23% 만** 보였다. 일러스트가 사라지고 버튼만 크게 보였다.
-      await t.binding.setSurfaceSize(const Size(1024, 500));
-      await t.pumpWidget(MaterialApp(home: IntroDsScreen(onDone: () {})));
-      await t.pump(const Duration(milliseconds: 300));
-
-      // 그림이 그려진 사각형을 찾는다. 비율이 원본과 같아야 한다.
-      final img = t.widget<Image>(find.byType(Image).first);
-      expect(img.fit, BoxFit.fill,
-          reason: '사각형을 직접 계산해 넣으므로 fill 이어야 한다');
-
-      final box = t.getRect(find.byType(Image).first);
-      final ar = box.width / box.height;
-      expect(ar, closeTo(IntroSlide.ratio, 0.02),
-          reason: '그림 비율이 원본(0.48)과 달라지면 찌그러졌거나 잘린 것이다');
-
-      // 화면 높이를 넘지 않아야 한다 (= 위아래가 잘리지 않았다).
-      expect(box.height, lessThanOrEqualTo(500.0 + 0.5));
+    testWidgets('🔴 시작하기를 누르면 끝난다', (t) async {
+      var done = false;
+      await pumpIntro(t, onDone: () => done = true);
+      await t.tap(find.text('다음'));
+      await settleAnim(t);
+      await t.tap(find.text('다음'));
+      await settleAnim(t);
+      await t.tap(find.text('시작하기'));
+      await settleAnim(t);
+      expect(done, isTrue);
     });
 
-    testWidgets('🔴 넓은 화면에서 버튼이 그림 안에 있다 (#123)', (t) async {
-      await t.binding.setSurfaceSize(const Size(1024, 500));
-      await t.pumpWidget(MaterialApp(home: IntroDsScreen(onDone: () {})));
-      await t.pump(const Duration(milliseconds: 300));
-
-      final art = t.getRect(find.byType(Image).first);
-      final skip = t.getRect(find.bySemanticsLabel('건너뛰기'));
-      final next = t.getRect(find.bySemanticsLabel('다음'));
-
-      // 버튼이 그림 바깥에 생기면 눌러도 글자가 없는 곳이다.
-      for (final r in [skip, next]) {
-        expect(r.left, greaterThanOrEqualTo(art.left - 1));
-        expect(r.right, lessThanOrEqualTo(art.right + 1));
-        expect(r.top, greaterThanOrEqualTo(art.top - 1));
-        expect(r.bottom, lessThanOrEqualTo(art.bottom + 1));
-      }
-
-      // 버튼은 그림 아래쪽(88.8% 자리)에 있어야 한다.
-      final cy = (skip.center.dy - art.top) / art.height;
-      expect(cy, closeTo(0.888, 0.04));
-    });
-
-    testWidgets('휴대폰 화면에서도 그림 비율이 유지된다', (t) async {
-      await t.binding.setSurfaceSize(const Size(390, 844));
-      await t.pumpWidget(MaterialApp(home: IntroDsScreen(onDone: () {})));
-      await t.pump(const Duration(milliseconds: 300));
-      final box = t.getRect(find.byType(Image).first);
-      expect(box.width / box.height, closeTo(IntroSlide.ratio, 0.02));
-    });
-
-    testWidgets('그림이 3장 다 PageView 로 걸려 있다', (t) async {
+    testWidgets('스와이프로도 넘어간다', (t) async {
       await pumpIntro(t);
-      final pv = t.widget<PageView>(find.byType(PageView));
-      expect(pv.childrenDelegate.estimatedChildCount, 3);
+      await t.fling(find.byType(PageView), const Offset(-350, 0), 1200);
+      await settleAnim(t);
+      expect(find.text('우리 가게 지출을\n한눈에 확인해요'), findsOneWidget);
     });
   });
 
-  group('#122 0번 로고 화면', () {
-    testWidgets('🔴 버튼이 없다 (넘기는 화면이 아니라 스플래시)', (t) async {
+  group('#124 일회성이 아니다', () {
+    test('🔴 봤는지 저장하는 코드가 없다', () {
+      // 사장님 지시: "일회성 말고 계속 띄워질 수 있도록"
+      final intro = io.File('lib/screens/ds/intro_ds_screen.dart')
+          .readAsStringSync();
+      final main = io.File('lib/main.dart').readAsStringSync();
+      expect(intro.contains('SharedPreferences'), isFalse);
+      expect(intro.contains('IntroPrefs'), isFalse);
+      expect(main.contains('IntroPrefs'), isFalse);
+      expect(main.contains('intro_seen'), isFalse);
+    });
+  });
+
+  group('#124 스플래시', () {
+    testWidgets('🔴 그림만 있고 버튼이 없다', (t) async {
       await t.binding.setSurfaceSize(const Size(390, 844));
       await t.pumpWidget(const MaterialApp(
         home: Scaffold(body: IntroSplash()),
       ));
       await t.pump(const Duration(milliseconds: 300));
-      expect(find.bySemanticsLabel('건너뛰기'), findsNothing);
-      expect(find.bySemanticsLabel('다음'), findsNothing);
-      // 그림은 깔려 있어야 한다.
       expect(find.byType(Image), findsOneWidget);
+      expect(find.text('건너뛰기'), findsNothing);
+      expect(find.text('다음'), findsNothing);
+    });
+
+    test('🔴 main.dart 가 스플래시를 잠깐 띄운다', () {
+      final main = io.File('lib/main.dart').readAsStringSync();
+      expect(main.contains('IntroSplash'), isTrue);
+      expect(main.contains('milliseconds: 1400'), isTrue,
+          reason: '잠깐 띄우는 시간이 지정되어 있어야 한다');
     });
   });
 }

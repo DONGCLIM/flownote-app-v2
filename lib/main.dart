@@ -226,18 +226,17 @@ class FlowNoteApp extends StatelessWidget {
   }
 }
 
-/// 🔴 #121 앱의 첫 화면을 고르는 곳.
+/// 🔴 #124 앱의 첫 화면을 고르는 곳.
 ///
 /// ```
-///   부트스트랩 중            -> IntroSplash  (0번 로고 · 매번 보인다)
-///   로그인됨                 -> MainDsScreen
-///   인트로를 본 적 없음      -> IntroDsScreen (1~3번 · 처음 한 번만)
-///   그 외                    -> SplashDsScreen (로그인)
+///   1) 스플래시 (splash.png)  — 1.4초, **매번** 보인다
+///   2) 로그인됨   -> MainDsScreen
+///   3) 비로그인   -> IntroDsScreen (1~3번) -> SplashDsScreen(로그인)
 /// ```
 ///
-/// 0번 로고는 '넘기는 화면' 이 아니라 스플래시다. 그래서 부트스트랩
-/// 화면을 그 디자인으로 바꿔 **매번** 보이게 하고, 실제로 넘기는
-/// 1~3번만 [IntroPrefs] 로 한 번만 보이게 했다.
+/// 사장님 지시대로 인트로는 **일회성이 아니다.** 앱을 열 때마다
+/// 보이고, `건너뛰기` 나 `시작하기` 를 누르면 로그인으로 넘어간다.
+/// (저장해 두고 건너뛰는 코드를 일부러 넣지 않았다)
 class _AppEntry extends StatefulWidget {
   const _AppEntry();
 
@@ -246,14 +245,19 @@ class _AppEntry extends StatefulWidget {
 }
 
 class _AppEntryState extends State<_AppEntry> {
-  /// null = 아직 모름(읽는 중)
-  bool? _introSeen;
+  /// 스플래시를 지나왔나.
+  bool _splashDone = false;
+
+  /// 인트로를 지나왔나. (이번 실행 동안만 기억한다 — 저장하지 않는다)
+  bool _introDone = false;
 
   @override
   void initState() {
     super.initState();
-    IntroPrefs.seen().then((v) {
-      if (mounted) setState(() => _introSeen = v);
+    // 스플래시는 '잠깐 띄워지는 이미지'다. 1.4초면 로고를 읽을 수 있고
+    // 기다린다는 느낌도 들지 않는다.
+    Future<void>.delayed(const Duration(milliseconds: 1400), () {
+      if (mounted) setState(() => _splashDone = true);
     });
   }
 
@@ -261,18 +265,18 @@ class _AppEntryState extends State<_AppEntry> {
   Widget build(BuildContext context) {
     final auth = context.watch<AuthProvider>();
 
-    // 세션 부트스트랩(토큰 갱신) 중엔 로그인화면이 잠깐 보이는 것을 막는다.
-    // 인트로 기록을 읽는 동안도 마찬가지다. 두 경우 모두 0번 로고를 보여준다.
-    if (auth.isBootstrapping || _introSeen == null) {
+    // 스플래시 중이거나, 세션 부트스트랩(토큰 갱신) 중이면 스플래시를
+    // 띄운다. 로그인 화면이 잠깐 번쩍이는 것을 막는다.
+    if (!_splashDone || auth.isBootstrapping) {
       return const Scaffold(body: IntroSplash());
     }
 
     if (auth.isLoggedIn) return const MainDsScreen();
 
-    // 아직 인트로를 못 봤으면 로그인 **앞**에 끼워 넣는다.
-    if (_introSeen == false) {
+    // 로그인 **앞**에 인트로를 끼운다. 매번 보인다.
+    if (!_introDone) {
       return IntroDsScreen(
-        onDone: () => setState(() => _introSeen = true),
+        onDone: () => setState(() => _introDone = true),
       );
     }
 
