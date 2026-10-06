@@ -2,9 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../design/fn_brand.dart';
-import '../../design/fn_controls_ds.dart';
 import '../../design/fn_feedback.dart';
-import '../../design/fn_shell.dart';
 import '../../design/fn_tokens.dart';
 import '../../providers/auth_provider.dart';
 import 'auth_ds_screens.dart';
@@ -197,6 +195,43 @@ class _SplashDsScreenState extends State<SplashDsScreen> {
     _leaveAfterSuccess();
   }
 
+  /// 🔴 #125 시안에 새로 생긴 '비밀번호를 잊으셨나요?'
+  ///
+  /// `AuthProvider.sendPasswordReset` 은 이미 있었는데 화면에서 닿을
+  /// 길이 없었다. 시안이 자리를 만들어 줬으니 연결한다.
+  ///
+  /// 이메일 칸이 비어 있으면 보낼 곳이 없다. 메일을 받을 주소를
+  /// 먼저 적어 달라고 안내한다. (조용히 아무 일도 안 하면 고장으로 보인다)
+  Future<void> _resetPassword() async {
+    FocusScope.of(context).unfocus();
+    final email = _email.text.trim();
+    if (email.isEmpty) {
+      showFnToast(context, '비밀번호를 재설정할 이메일을 먼저 입력해 주세요.',
+          type: FnToastType.warning);
+      return;
+    }
+    if (AuthUnavailableBanner.blocked) {
+      showFnToast(context, FirebaseStatus.userMessage,
+          type: FnToastType.error, duration: const Duration(seconds: 5));
+      return;
+    }
+    if (_busy) return;
+    setState(() => _busy = true);
+    final auth = context.read<AuthProvider>();
+    final ok = await auth.sendPasswordReset(email);
+    if (!mounted) return;
+    setState(() => _busy = false);
+
+    if (!ok) {
+      showFnToast(context, auth.error ?? '메일 발송에 실패했습니다.',
+          type: FnToastType.error);
+      auth.clearError();
+      return;
+    }
+    showFnToast(context, '$email 로 재설정 메일을 보냈어요.\n메일함을 확인해 주세요.',
+        duration: const Duration(seconds: 5));
+  }
+
   /// 로그인 성공 후 확실하게 홈으로 보낸다.
   ///
   /// 정상 경로에서는 루트 `_AppEntry` 가 `isLoggedIn` 변화를 감지해서
@@ -215,172 +250,188 @@ class _SplashDsScreenState extends State<SplashDsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return FnShell(
-      navTitle: '',
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            // 로고(심볼) — 새 앱로고는 스쿼클이 이미 그려져 있어서
-            // 따로 잘라내지 않는다. `FnAppMark` 참고.
-            //
-            // 요청 #116: 로그인 화면 아이콘은 글로우가 그려진 판을 쓴다.
-            // 글로우가 그림에 들어 있으므로 위젯 그림자는 자동으로 꺼진다.
-            const Center(
-              child: Padding(
-                padding: EdgeInsets.only(bottom: 14),
-                child: FnAppMark(size: 84, glow: true),
+    // 🔴 #125 시안을 앱 화면으로 옮겼다. PNG 를 깔지 않는다.
+    //
+    // 시안(473x1024)에서 픽셀로 잰 값을 390dp 기준으로 환산했다.
+    //   배경 #FEF9F5 / 입력칸 테두리 #E6E5E1 / 채움 #FBFBFB
+    //   로그인 버튼 #FD717A, 높이 62dp, r18
+    //   좌우 여백 24dp / SNS 버튼 높이 87dp, r20
+    return Scaffold(
+      backgroundColor: _IntroLogin.bg,
+      body: SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(24, 0, 24, 28),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // ── 로고 + 워드마크 ────────────────────────────────
+              const SizedBox(height: 56),
+              const Center(child: FnAppMark(size: 88, glow: true)),
+              const SizedBox(height: 8),
+              const Center(child: FnWordmark(height: 30)),
+
+              // 로그인 서버가 붙지 않았으면 사유를 그대로 보여준다.
+              // (정상이면 아무것도 그리지 않는다)
+              const SizedBox(height: 28),
+              const AuthUnavailableBanner(),
+
+              // ── 이메일 · 비밀번호 ──────────────────────────────
+              const SizedBox(height: 28),
+              _LoginField(
+                label: '이메일',
+                controller: _email,
+                placeholder: 'shop@flownote.kr',
+                keyboardType: TextInputType.emailAddress,
               ),
-            ),
-            const SizedBox(height: 16),
-            // 텍스트로고(워드마크) — 예전에는 Pretendard 33/w700 로
-            // 그린 `Text('FlowNote')` 였다. 확정된 워드마크 그림으로 바꾼다.
-            // 높이 33 은 예전 글자 크기와 같게 맞춘 값이다.
-            const Center(child: FnWordmark(height: 33)),
-            const SizedBox(height: 16),
-            const Text(
-              '꽃집 사장님을 위한 영수증 매입 정산 노트',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                fontFamily: 'Pretendard',
-                fontSize: 15,
-                fontWeight: FontWeight.w400,
-                height: 1.5,
-                color: FnColors.labelNeutral,
+              const SizedBox(height: 16),
+              _LoginField(
+                label: '비밀번호',
+                controller: _password,
+                placeholder: '비밀번호 입력',
+                obscureText: true,
               ),
-            ),
-            const SizedBox(height: 16),
-            // 로그인 서버가 붙지 않았으면 사유를 그대로 보여준다.
-            // (정상이면 아무것도 그리지 않는다)
-            const AuthUnavailableBanner(),
-            FnDsTextField(
-              label: '이메일',
-              controller: _email,
-              placeholder: 'shop@flownote.kr',
-              keyboardType: TextInputType.emailAddress,
-            ),
-            const SizedBox(height: 16),
-            FnDsTextField(
-              label: '비밀번호',
-              controller: _password,
-              placeholder: '••••••••',
-              obscureText: true,
-            ),
-            const SizedBox(height: 16),
-            if (_busy)
-              const Center(
-                child: Padding(
-                  padding: EdgeInsets.symmetric(vertical: 12),
-                  child: FnSpinner(),
-                ),
-              )
-            else ...[
-              // 주 동작 = 로그인 (이미 가입한 사장님이 매일 쓰는 버튼)
-              FnDsButton(
-                label: '로그인',
-                expand: true,
-                // 서버가 안 붙었으면 눌러도 성공할 수 없다 → 비활성화해서
-                // "눌렀는데 아무 일도 안 일어남" 을 원천 차단한다.
-                disabled: AuthUnavailableBanner.blocked,
-                onPressed: _signIn,
-              ),
-              const SizedBox(height: 10),
-              // 보조 동작 = 회원가입 (처음 한 번만 쓰는 버튼)
-              FnDsButton(
-                label: '회원가입',
-                expand: true,
-                variant: FnDsButtonVariant.outlined,
-                disabled: AuthUnavailableBanner.blocked,
-                onPressed: _signUp,
-              ),
-            ],
-            // div { row, gap:10, margin:'4px 0' }
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 20), // gap16 + margin4
-              child: Row(
-                children: [
-                  Expanded(
-                      child: Divider(
-                          height: 1,
-                          thickness: 1,
-                          color: FnColors.lineNeutral)),
-                  SizedBox(width: 10),
-                  Text(
-                    'SNS 계정으로 간편 시작',
-                    style: TextStyle(
-                      fontFamily: 'Pretendard',
-                      fontSize: 12,
-                      color: FnColors.labelAssistive,
+
+              // ── 비밀번호 찾기 ─────────────────────────────────
+              const SizedBox(height: 14),
+              Center(
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: _resetPassword,
+                  child: const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 4, horizontal: 8),
+                    child: Text(
+                      '비밀번호를 잊으셨나요?',
+                      style: TextStyle(
+                        fontFamily: 'Pretendard',
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
+                        color: _IntroLogin.hint,
+                        decoration: TextDecoration.underline,
+                        decorationColor: _IntroLogin.hint,
+                      ),
                     ),
                   ),
-                  SizedBox(width: 10),
-                  Expanded(
-                      child: Divider(
-                          height: 1,
-                          thickness: 1,
-                          color: FnColors.lineNeutral)),
-                ],
+                ),
               ),
-            ),
-            Row(
-              children: [
-                for (final s in _visibleSns) ...[
-                  if (s != _visibleSns.first) const SizedBox(width: 10),
-                  Expanded(child: _snsCard(s)),
-                ],
-              ],
-            ),
-            const SizedBox(height: 16),
-            // 약관 안내 (SNS 간편 가입 시에도 동의로 간주되므로 반드시 노출)
-            Center(
-              child: Wrap(
-                alignment: WrapAlignment.center,
-                crossAxisAlignment: WrapCrossAlignment.center,
-                children: [
-                  const Text('가입 시 ', style: _legalStyle),
-                  _legalLink('이용약관', () => _openDoc(LegalDocKind.terms)),
-                  const Text(' 및 ', style: _legalStyle),
-                  _legalLink(
-                      '개인정보 처리방침', () => _openDoc(LegalDocKind.privacy)),
-                  const Text('에 동의합니다', style: _legalStyle),
-                ],
-              ),
-            ),
 
-            // ── 홈 화면에 추가 안내 ─────────────────────────────────
-            //
-            // 🔴 왜 로그인 화면에 두는가
-            //
-            // 원래는 프로필 > 설정에만 있었다. 그런데 그 화면은 **로그인해야**
-            // 볼 수 있다. 로그인이 막힌 상태에서 "홈화면 추가 어떻게 해?" 를
-            // 물으셨는데, 정작 안내는 로그인 뒤에 숨어 있었던 것이다.
-            //
-            // 홈 화면 추가는 로그인과 아무 상관이 없는 기능이므로,
-            // 로그인 전에도 닿을 수 있어야 한다.
-            //
-            // 이미 홈 화면에서 실행 중이거나 네이티브 앱이면 `shouldGuide` 가
-            // false 라서 아예 그리지 않는다 — 쓸모없는 줄을 남기지 않는다.
-            if (pwaState().shouldGuide) ...[
+              // ── 로그인 버튼 ──────────────────────────────────
+              const SizedBox(height: 18),
+              if (_busy)
+                const Center(
+                  child: Padding(
+                    padding: EdgeInsets.symmetric(vertical: 18),
+                    child: FnSpinner(),
+                  ),
+                )
+              else
+                _PrimaryButton(
+                  label: '로그인',
+                  // 서버가 안 붙었으면 눌러도 성공할 수 없다 → 비활성화해서
+                  // "눌렀는데 아무 일도 안 일어남" 을 원천 차단한다.
+                  disabled: AuthUnavailableBanner.blocked,
+                  onTap: _signIn,
+                ),
+
+              // ── 회원가입 ────────────────────────────────────
               const SizedBox(height: 14),
-              Center(child: _addToHomeLink()),
+              Center(
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: AuthUnavailableBanner.blocked ? null : _signUp,
+                  child: Padding(
+                    padding:
+                        const EdgeInsets.symmetric(vertical: 6, horizontal: 8),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Text(
+                          '아직 회원이 아니신가요? ',
+                          style: TextStyle(
+                            fontFamily: 'Pretendard',
+                            fontSize: 13,
+                            fontWeight: FontWeight.w500,
+                            color: _IntroLogin.sub,
+                          ),
+                        ),
+                        Text(
+                          '회원가입',
+                          style: TextStyle(
+                            fontFamily: 'Pretendard',
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                            color: _IntroLogin.accent,
+                            decoration: TextDecoration.underline,
+                            decorationColor: _IntroLogin.accent,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+
+              // ── SNS ────────────────────────────────────────
+              const SizedBox(height: 44),
+              const Center(
+                child: Text(
+                  'SNS 계정으로 간편 시작해볼까요?',
+                  style: TextStyle(
+                    fontFamily: 'Pretendard',
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.w700,
+                    color: _IntroLogin.title,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  for (final s in _visibleSns) ...[
+                    if (s != _visibleSns.first) const SizedBox(width: 10),
+                    Expanded(child: _snsCard(s)),
+                  ],
+                ],
+              ),
+
+              // ── 약관 (SNS 간편 가입도 동의로 간주되므로 반드시 노출) ──
+              const SizedBox(height: 22),
+              Center(
+                child: Wrap(
+                  alignment: WrapAlignment.center,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    const Text('가입 시 ', style: _legalStyle),
+                    _legalLink('이용약관', () => _openDoc(LegalDocKind.terms)),
+                    const Text(' 및 ', style: _legalStyle),
+                    _legalLink(
+                        '개인정보 처리방침', () => _openDoc(LegalDocKind.privacy)),
+                    const Text('에 동의합니다', style: _legalStyle),
+                  ],
+                ),
+              ),
+
+              // ── 홈 화면에 추가 안내 ───────────────────────────
+              //
+              // 🔴 로그인 화면에 두는 이유: 프로필>설정은 **로그인해야**
+              // 볼 수 있다. 홈 화면 추가는 로그인과 무관한 기능이므로
+              // 로그인 전에도 닿을 수 있어야 한다.
+              if (pwaState().shouldGuide) ...[
+                const SizedBox(height: 14),
+                Center(child: _addToHomeLink()),
+              ],
             ],
-          ],
+          ),
         ),
       ),
     );
   }
 
   /// "앱처럼 쓰고 싶으세요? 홈 화면에 추가하기"
-  ///
-  /// 로그인 버튼들과 경쟁하지 않도록 약관 안내와 같은 급의 조용한 링크로 둔다.
-  /// 이게 주된 행동은 아니지만, 찾을 수 없으면 없는 것과 같다.
   Widget _addToHomeLink() => GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTap: () => AddToHomeSheet.open(context),
         child: Padding(
-          // 손가락으로 누를 수 있는 높이를 확보한다. 11pt 글자는
-          // 그대로 두면 탭 영역이 너무 얇아서 잘 안 눌린다.
+          // 손가락으로 누를 수 있는 높이를 확보한다.
           padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 8),
           child: Row(
             mainAxisSize: MainAxisSize.min,
@@ -429,64 +480,178 @@ class _SplashDsScreenState extends State<SplashDsScreen> {
         ),
       );
 
-  /// ```js
-  /// button { flex:1, height:76, borderRadius:14,
-  ///          boxShadow:'inset 0 0 0 1px line-normal-normal',
-  ///          background:background-normal-normal, column, center, gap:6 }
-  ///   span 34x34 r17 bg s.bg [+ inset 1px line-normal-neutral (dsIcon)] → 로고
-  ///   span 12/600 label-normal → s.name
-  /// ```
+  /// 시안 SNS 카드 — 색 판 위에 로고, 아래에 이름.
+  ///
+  /// 시안은 **버튼 전체가 브랜드 색**이다. (예전 디자인은 흰 카드 안에
+  /// 작은 색 동그라미였다) 구글만 흰 배경이라 테두리를 준다.
   Widget _snsCard(_Sns s) {
-    final (String name, Color bg, bool ring) = switch (s) {
-      _Sns.kakao => ('카카오', const Color(0xFFFEE500), false),
-      _Sns.naver => ('네이버', const Color(0xFF03C75A), false),
-      _Sns.google => ('구글', Colors.white, true),
-      _Sns.apple => ('애플', const Color(0xFF000000), false),
+    final (String name, Color bg, Color fg, bool ring) = switch (s) {
+      _Sns.kakao => ('카카오', const Color(0xFFFEE500), const Color(0xFF191600), false),
+      _Sns.naver => ('네이버', const Color(0xFF03C75A), Colors.white, false),
+      _Sns.google => ('구글', Colors.white, const Color(0xFF1F1F1F), true),
+      _Sns.apple => ('애플', const Color(0xFF000000), Colors.white, false),
     };
 
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: () => _sns(s),
       child: Container(
-        height: 76,
+        height: 86,
         decoration: BoxDecoration(
-          color: FnColors.backgroundNormal,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: FnColors.lineNormal),
+          color: bg,
+          borderRadius: BorderRadius.circular(20),
+          border: ring ? Border.all(color: _IntroLogin.border) : null,
         ),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Container(
-              width: 34,
-              height: 34,
-              decoration: BoxDecoration(
-                color: bg,
-                shape: BoxShape.circle,
-                border: ring ? Border.all(color: FnColors.lineNeutral) : null,
-              ),
-              alignment: Alignment.center,
-              child: CustomPaint(
-                size: switch (s) {
-                  _Sns.kakao => const Size(19, 19),
-                  _Sns.naver => const Size(15, 15),
-                  _Sns.google => const Size(19, 19),
-                  _Sns.apple => const Size(17, 20),
-                },
-                painter: _SnsLogoPainter(s),
-              ),
+            CustomPaint(
+              size: switch (s) {
+                _Sns.kakao => const Size(24, 24),
+                _Sns.naver => const Size(19, 19),
+                _Sns.google => const Size(24, 24),
+                _Sns.apple => const Size(21, 25),
+              },
+              painter: _SnsLogoPainter(s),
             ),
-            const SizedBox(height: 6),
+            const SizedBox(height: 9),
             Text(
               name,
-              style: const TextStyle(
+              style: TextStyle(
                 fontFamily: 'Pretendard',
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-                color: FnColors.labelNormal,
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+                color: fg,
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// 시안에서 뽑은 로그인 화면 색.
+class _IntroLogin {
+  static const Color bg = Color(0xFFFEF9F5);
+  static const Color fieldFill = Color(0xFFFBFBFB);
+  static const Color border = Color(0xFFE6E5E1);
+  static const Color title = Color(0xFF1A1A1A);
+  static const Color sub = Color(0xFF6B6B6B);
+  static const Color hint = Color(0xFFA6A6A6);
+  static const Color accent = Color(0xFFFD717A);
+}
+
+/// 시안 입력칸 — 라벨 + 흰 칸.
+class _LoginField extends StatelessWidget {
+  const _LoginField({
+    required this.label,
+    required this.controller,
+    required this.placeholder,
+    this.keyboardType,
+    this.obscureText = false,
+  });
+
+  final String label;
+  final TextEditingController controller;
+  final String placeholder;
+  final TextInputType? keyboardType;
+  final bool obscureText;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: const TextStyle(
+            fontFamily: 'Pretendard',
+            fontSize: 13.5,
+            fontWeight: FontWeight.w700,
+            color: _IntroLogin.title,
+          ),
+        ),
+        const SizedBox(height: 10),
+        Container(
+          height: 54,
+          decoration: BoxDecoration(
+            color: _IntroLogin.fieldFill,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: _IntroLogin.border),
+          ),
+          alignment: Alignment.center,
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: TextField(
+            controller: controller,
+            keyboardType: keyboardType,
+            obscureText: obscureText,
+            style: const TextStyle(
+              fontFamily: 'Pretendard',
+              fontSize: 14.5,
+              fontWeight: FontWeight.w500,
+              color: _IntroLogin.title,
+            ),
+            decoration: InputDecoration(
+              isDense: true,
+              border: InputBorder.none,
+              enabledBorder: InputBorder.none,
+              focusedBorder: InputBorder.none,
+              contentPadding: EdgeInsets.zero,
+              hintText: placeholder,
+              hintStyle: const TextStyle(
+                fontFamily: 'Pretendard',
+                fontSize: 14.5,
+                fontWeight: FontWeight.w400,
+                color: _IntroLogin.hint,
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// 시안 로그인 버튼 — 분홍 알약.
+class _PrimaryButton extends StatelessWidget {
+  const _PrimaryButton({
+    required this.label,
+    required this.onTap,
+    this.disabled = false,
+  });
+
+  final String label;
+  final VoidCallback onTap;
+  final bool disabled;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      button: true,
+      enabled: !disabled,
+      label: label,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: disabled ? null : onTap,
+        child: Container(
+          height: 62,
+          decoration: BoxDecoration(
+            color: disabled
+                ? _IntroLogin.accent.withValues(alpha: 0.4)
+                : _IntroLogin.accent,
+            borderRadius: BorderRadius.circular(18),
+          ),
+          alignment: Alignment.center,
+          child: Text(
+            label,
+            style: const TextStyle(
+              fontFamily: 'Pretendard',
+              fontSize: 16,
+              fontWeight: FontWeight.w700,
+              color: Colors.white,
+            ),
+          ),
         ),
       ),
     );
