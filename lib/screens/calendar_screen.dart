@@ -8,6 +8,7 @@ import '../providers/receipt_provider.dart';
 import '../providers/auth_provider.dart';
 import '../theme/app_theme.dart';
 import '../models/receipt_model.dart';
+import '../services/gallery_intake.dart';
 import '../services/gemini_ocr_service.dart';
 import '../services/receipt_parser.dart';
 import 'receipt_detail_screen.dart';
@@ -915,11 +916,22 @@ class _CalendarViewState extends State<_CalendarView> {
     await Permission.photos.request();
     await Permission.storage.request();
 
-    final picker = ImagePicker();
-    final picked = await picker.pickImage(
-        source: ImageSource.gallery, imageQuality: 90);
-    if (!mounted || picked == null) return;
-    await _runCalendarOcr(context, picked, fixedDate);
+    // 🔴 웹에서는 `image_picker` 를 **거치지 않는다.**
+    // 플러그인은 `blob:` URL 만 남기고 `File` 객체와 `<input>` 을 버린다.
+    // 그 URL 은 브라우저가 임의의 시점에 정리해버릴 수 있어서 같은 사진이
+    // 될 때도 있고 안 될 때도 있었다. `pickAndPrepare` 는 웹에서 `File` 을
+    // 직접 붙잡고 읽어 blob URL 을 아예 만들지 않는다.
+    final intake = await GalleryIntake.pickAndPrepare(multiple: false);
+    if (!mounted || intake == null) return; // 취소
+    if (intake.usable.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('사진 파일을 읽을 수 없어요. 갤러리에서 사진을 한 번 열어 '
+            '기기에 내려받은 뒤 다시 골라주세요.'),
+        backgroundColor: AppColors.error,
+      ));
+      return;
+    }
+    await _runCalendarOcr(context, intake.usable.first, fixedDate);
   }
 
   // ── OCR 처리 + 날짜 고정 후 편집 화면 ──

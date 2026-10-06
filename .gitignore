@@ -25,3 +25,15 @@ Thumbs.db
 # Keep lib/ directory for source code!
 
 
+
+# Design reference extraction (local work artifacts)
+.design_ref/
+
+# 빌드 시 주입하는 API 키 등 비밀값 (커밋 금지)
+secrets/*
+!secrets/*.example.json
+functions/node_modules/
+.fbkey/
+
+# Firebase Hosting 배포 캐시 (로컬 산출물)
+.firebase/

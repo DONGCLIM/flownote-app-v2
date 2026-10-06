@@ -57,5 +57,56 @@
 	<string>이 앱은 위치 정보를 사용하지 않습니다.</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
+	<!-- ══════════════════════════════════════════════════════════
+	     구글 로그인용 URL Scheme
+
+	     🔴 아래 REVERSED_CLIENT_ID 는 실제 값으로 반드시 교체해야 합니다.
+	        GoogleService-Info.plist 를 열어 REVERSED_CLIENT_ID 키의 값을
+	        복사해서 아래 <string> 안에 그대로 붙여넣으세요.
+	        형태: com.googleusercontent.apps.250664220370-xxxxxxxxxxxx
+
+	     교체하지 않으면 iOS 에서 구글 로그인 창이 열리지 않습니다.
+	     (애플 로그인은 URL Scheme 없이도 동작합니다)
+	     ══════════════════════════════════════════════════════════ -->
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>REPLACE_WITH_REVERSED_CLIENT_ID</string>
+			</array>
+		</dict>
+		<!-- ══════════════════════════════════════════════════════
+		     카카오 로그인 리다이렉트 스킴
+
+		     네이티브 앱 키 앞에 kakao 를 붙인 형태다.
+		     Android 는 build.gradle.kts 가 secrets/kakao.json 을 읽어
+		     자동 주입하지만, iOS 는 plist 가 빌드 설정을 참조할 수 없어
+		     여기에 직접 적는다. 키를 바꾸면 이 값도 함께 바꿔야 한다.
+
+		     이 값이 틀리면 카카오톡/사파리에서 로그인한 뒤 앱으로
+		     돌아오지 못하고 화면이 멈춘다.
+		     ══════════════════════════════════════════════════════ -->
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLName</key>
+			<string>kakao</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>kakao2c1d20c70fd56d166c29207079bd3d61</string>
+			</array>
+		</dict>
+	</array>
+	<!-- 카카오톡 설치 여부 확인용. iOS 는 여기에 적힌 스킴만 조회할 수
+	     있다. 없으면 카카오톡이 깔려 있어도 항상 사파리 로그인으로 빠진다. -->
+	<key>LSApplicationQueriesSchemes</key>
+	<array>
+		<string>kakaokompassauth</string>
+		<string>kakaolink</string>
+		<string>kakaoplus</string>
+	</array>
 </dict>
 </plist>

@@ -29,7 +29,7 @@
     <uses-feature android:name="android.hardware.camera.autofocus" android:required="false"/>
 
     <application
-        android:label="Flora Scan"
+        android:label="FlowNote"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
         android:usesCleartextTraffic="false"
@@ -59,6 +59,29 @@
             android:name="flutterEmbedding"
             android:value="2" />
 
+        <!-- ══════════════════════════════════════════════════════
+             카카오 로그인 리다이렉트 수신용 액티비티
+
+             카카오톡이 없는 기기에서는 브라우저(커스텀 탭)로 로그인한다.
+             로그인이 끝나면 카카오가 `kakao{네이티브앱키}://oauth` 로
+             우리 앱을 다시 호출하는데, 그 주소를 받아줄 창구가 필요하다.
+             이 액티비티가 없으면 브라우저 로그인 후 앱으로 돌아오지 못하고
+             화면이 그대로 멈춘다.
+
+             ${KAKAO_SCHEME} 는 build.gradle.kts 에서 채운다.
+             (키를 저장소에 두지 않기 위해)
+             ══════════════════════════════════════════════════════ -->
+        <activity
+            android:name="com.kakao.sdk.flutter.AuthCodeCustomTabsActivity"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <category android:name="android.intent.category.BROWSABLE"/>
+                <data android:scheme="${KAKAO_SCHEME}" android:host="oauth"/>
+            </intent-filter>
+        </activity>
+
         <!-- flutter_local_notifications receiver -->
         <receiver android:exported="false"
             android:name="com.dexterous.flutterlocalnotifications.ScheduledNotificationReceiver"/>
@@ -77,6 +100,10 @@
             <action android:name="android.intent.action.PROCESS_TEXT"/>
             <data android:mimeType="text/plain"/>
         </intent>
+        <!-- 카카오톡 설치 여부 확인 (Android 11+ 는 선언 없이는 못 본다).
+             선언이 없으면 카카오톡이 깔려 있어도 항상 브라우저 로그인으로
+             빠져서 사용자가 아이디/비밀번호를 직접 입력해야 한다. -->
+        <package android:name="com.kakao.talk"/>
     </queries>
 </manifest>
 

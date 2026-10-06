@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'dart:io';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import 'package:uuid/uuid.dart';
@@ -8,6 +7,10 @@ import '../models/receipt_model.dart';
 import '../services/receipt_parser.dart';
 import '../services/training_data_service.dart';
 import '../theme/app_theme.dart';
+import '../widgets/receipt_photo.dart';
+import '../widgets/pan_zoom_photo.dart';
+import '../widgets/flower_name_field.dart';
+import '../widgets/flower_price_line.dart';
 
 /// OCR 인식 결과를 보여주고 사용자가 수정한 뒤 저장하는 화면
 class ReceiptEditScreen extends StatefulWidget {
@@ -111,7 +114,9 @@ class _ReceiptEditScreenState extends State<ReceiptEditScreen> {
       items: validItems
           .map(
             (i) => FlowerItem(
-              name: i.nameCtrl.text,
+              // 입력한 그대로 저장한다. 표준화는 자동완성 제안에서만 하고,
+              // 저장 시점에 이름을 바꾸지 않는다. (강요 구조 제거)
+              name: i.nameCtrl.text.trim(),
               quantity: int.tryParse(i.qtyCtrl.text) ?? 1,
               unitPrice:
                   double.tryParse(i.priceCtrl.text.replaceAll(',', '')) ?? 0,
@@ -693,29 +698,16 @@ class _ReceiptEditScreenState extends State<ReceiptEditScreen> {
               ],
             ),
           ),
-          // ── 이미지 본체 (핀치줌 가능) ──
-          InteractiveViewer(
-            minScale: 1.0,
-            maxScale: 5.0,
-            child: Container(
-              constraints: const BoxConstraints(maxHeight: 260),
-              width: double.infinity,
-              color: AppColors.surfaceVariant,
-              child: RotatedBox(
-                quarterTurns: _imageRotation,
-                child: isNetwork
-                    ? Image.network(
-                        path,
-                        fit: BoxFit.fitWidth,
-                        errorBuilder: (_, __, ___) => _imagePlaceholder(),
-                      )
-                    : Image.file(
-                        File(path),
-                        fit: BoxFit.fitWidth,
-                        errorBuilder: (_, __, ___) => _imagePlaceholder(),
-                      ),
-              ),
-            ),
+          // ── 이미지 본체 (핀치줌 + 배율1에서도 밀어서 이동) ──
+          // 🔴 예전 `InteractiveViewer` 는 배율 1 에서 이동량이 0 이었다.
+          PanZoomPhoto(
+            height: 260,
+            background: AppColors.surfaceVariant,
+            quarterTurns: _imageRotation,
+            imageProvider: ReceiptPhoto.providerFor(path),
+            // 상세 화면과 같은 이유로 `ReceiptPhoto` 를 쓴다.
+            // (웹의 `blob:` 경로가 Image.file 로 흘러가면 터진다)
+            image: ReceiptPhoto(path, fit: BoxFit.fill, onDark: false),
           ),
         ],
       ),
@@ -802,24 +794,6 @@ class _ReceiptEditScreenState extends State<ReceiptEditScreen> {
     );
   }
 
-  Widget _imagePlaceholder() {
-    return Container(
-      width: double.infinity,
-      height: 100,
-      color: AppColors.surfaceVariant,
-      child: const Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(Icons.image_not_supported_outlined,
-              color: AppColors.textHint, size: 28),
-          SizedBox(height: 6),
-          Text('이미지를 불러올 수 없습니다',
-              style: TextStyle(fontSize: 11, color: AppColors.textHint)),
-        ],
-      ),
-    );
-  }
-
   Widget _buildSectionLabel(String label) {
     return Text(
       label,
@@ -850,15 +824,12 @@ class _ReceiptEditScreenState extends State<ReceiptEditScreen> {
               const Text('🌸', style: TextStyle(fontSize: 16)),
               const SizedBox(width: 6),
               Expanded(
-                child: TextFormField(
+                // 자동완성 + 표준명 보정. 힌트의 `튤립` 은 경매 표준 표기가
+                // `튜립` 이므로 예시를 실제 표준명으로 바꿨다.
+                child: FlowerNameField(
                   controller: item.nameCtrl,
-                  onChanged: (_) => setState(() {}),
-                  decoration: const InputDecoration(
-                    hintText: '꽃 이름 (예: 장미, 튤립)',
-                    isDense: true,
-                    contentPadding:
-                        EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                  ),
+                  hint: '꽃 이름 (예: 장미, 리시안사스)',
+                  onChanged: () => setState(() {}),
                 ),
               ),
               IconButton(
@@ -947,6 +918,9 @@ class _ReceiptEditScreenState extends State<ReceiptEditScreen> {
               ),
             ],
           ),
+
+          // 양재 경매 시세 — 이름이 확정된 뒤에만, 없으면 스스로 사라진다.
+          FlowerPriceLine(flowerName: item.nameCtrl.text),
 
           // 소계
           if (item.calcTotal > 0) ...[
@@ -1131,23 +1105,7 @@ class _FullReceiptImageViewerState extends State<_FullReceiptImageViewer> {
                   child: SizedBox(
                     width: imgW,
                     height: imgH,
-                    child: widget.isNetwork
-                        ? Image.network(
-                            widget.path,
-                            fit: BoxFit.contain,
-                            errorBuilder: (_, __, ___) => const Icon(
-                                Icons.broken_image,
-                                color: Colors.white,
-                                size: 64),
-                          )
-                        : Image.file(
-                            File(widget.path),
-                            fit: BoxFit.contain,
-                            errorBuilder: (_, __, ___) => const Icon(
-                                Icons.broken_image,
-                                color: Colors.white,
-                                size: 64),
-                          ),
+                    child: ReceiptPhoto(widget.path, fit: BoxFit.contain),
                   ),
                 ),
               ),

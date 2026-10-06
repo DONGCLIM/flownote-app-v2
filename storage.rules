@@ -1,0 +1,51 @@
+rules_version = '2';
+
+// ════════════════════════════════════════════════════════════════
+//  FlowNote Cloud Storage 보안 규칙
+//
+//  배포: Firebase 콘솔 → Storage → 규칙 탭 → 붙여넣고 [게시]
+//        또는  firebase deploy --only storage
+//
+//  `training_data_service.dart` 가 영수증 원본 이미지를 학습용으로 올린다.
+// ════════════════════════════════════════════════════════════════
+
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    // ── 학습용 영수증 이미지 ─────────────────────────────────
+    //   🔴 실제 업로드 경로는 `receipts/{docId}.jpg` 이다.
+    //      (training_data_service.dart `_uploadImage()` → _storage.ref('receipts/...'))
+    //      경로를 training_data/ 로 적어두면 업로드가 전부 거부되므로 주의.
+    //
+    //   - 쓰기: 로그인 사용자, 10MB 이하 이미지만
+    //   - 읽기: 업로드 직후 getDownloadURL() 을 호출하므로 로그인 사용자에게 허용
+    match /receipts/{allPaths=**} {
+      allow write: if isSignedIn()
+                   && request.resource.size < 10 * 1024 * 1024
+                   && request.resource.contentType.matches('image/.*');
+      allow read: if isSignedIn();
+    }
+
+    // 과거 경로 호환 (혹시 training_data/ 로 올라간 파일이 있을 경우)
+    match /training_data/{allPaths=**} {
+      allow write: if isSignedIn()
+                   && request.resource.size < 10 * 1024 * 1024
+                   && request.resource.contentType.matches('image/.*');
+      allow read: if isSignedIn();
+    }
+
+    // ── 사용자별 영수증 이미지 백업 ──────────────────────────
+    match /users/{uid}/{allPaths=**} {
+      allow read, write: if request.auth != null && request.auth.uid == uid;
+    }
+
+    // ── 그 외 차단 ───────────────────────────────────────────
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}
