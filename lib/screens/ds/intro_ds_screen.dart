@@ -185,9 +185,10 @@ class _IntroSplashState extends State<IntroSplash>
         mainAxisSize: MainAxisSize.min,
         children: [
           // 로고 — 글로우가 그려진 판을 쓴다. (요청 #116)
-          const FnAppMark(size: 92, glow: true),
+          // 🔴 #128 시안의 로고는 '판 없는 코랄 책'이다.
+          const FnBookMark(height: 75, glow: true),
           const SizedBox(height: 6),
-          const FnWordmark(height: 33),
+          const FnWordmark(height: 28, flat: true),
           const SizedBox(height: 16),
           Text(
             '꽃은 아름답게, 정산은 정확하게 플로우노트',

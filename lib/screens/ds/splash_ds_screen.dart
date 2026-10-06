@@ -252,10 +252,15 @@ class _SplashDsScreenState extends State<SplashDsScreen> {
   Widget build(BuildContext context) {
     // 🔴 #125 시안을 앱 화면으로 옮겼다. PNG 를 깔지 않는다.
     //
-    // 시안(473x1024)에서 픽셀로 잰 값을 390dp 기준으로 환산했다.
-    //   배경 #FEF9F5 / 입력칸 테두리 #E6E5E1 / 채움 #FBFBFB
-    //   로그인 버튼 #FD717A, 높이 62dp, r18
-    //   좌우 여백 24dp / SNS 버튼 높이 87dp, r20
+    // 🔴 #128 시안(473x1024)을 **다시** 재서 맞췄다. 비율 390/473=0.8245
+    // 이고, 시안 높이 1024 x 0.8245 = 844 — 즉 시안은 아이폰 14 크기다.
+    //
+    //   상단->로고 108.8 / 로고 h 75.0 / 간격 8.2 / 워드마크 h 28.0
+    //   워드마크->라벨 78.3 / 라벨 h 13.2 / 라벨->칸 11.5 / 칸 h 51.9
+    //   칸->라벨2 15.7 / 칸2 h 52.8 / ->찾기 14.0 / 찾기 h 10.7
+    //   ->버튼 31.3 / 버튼 h 58.5 · r 18.6 / ->가입 14.8
+    //   ->SNS제목 80.0 / 제목 h 14.0 / ->카드 17.3 / 카드 h 86.6
+    //   좌우 여백 23.9 / SNS 카드 폭 102.2 · 간격 18.1 · r 20.6
     return Scaffold(
       backgroundColor: _IntroLogin.bg,
       body: SafeArea(
@@ -265,10 +270,12 @@ class _SplashDsScreenState extends State<SplashDsScreen> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               // ── 로고 + 워드마크 ────────────────────────────────
-              const SizedBox(height: 56),
-              const Center(child: FnAppMark(size: 88, glow: true)),
+              // 🔴 로고는 '판 없는 코랄 책'이다. FnAppMark(코랄 판 +
+              //    흰 책)는 시안과 색이 반대라 쓰지 않는다.
+              const SizedBox(height: 92),
+              const Center(child: FnBookMark(height: 75, glow: true)),
               const SizedBox(height: 8),
-              const Center(child: FnWordmark(height: 30)),
+              const Center(child: FnWordmark(height: 28, flat: true)),
 
               // 로그인 서버가 붙지 않았으면 사유를 그대로 보여준다.
               // (정상이면 아무것도 그리지 않는다)
@@ -283,6 +290,7 @@ class _SplashDsScreenState extends State<SplashDsScreen> {
                 placeholder: 'shop@flownote.kr',
                 keyboardType: TextInputType.emailAddress,
               ),
+              // 시안 칸->라벨2 15.7dp
               const SizedBox(height: 16),
               _LoginField(
                 label: '비밀번호',
@@ -292,6 +300,7 @@ class _SplashDsScreenState extends State<SplashDsScreen> {
               ),
 
               // ── 비밀번호 찾기 ─────────────────────────────────
+              // 시안 칸->찾기 14.0dp
               const SizedBox(height: 14),
               Center(
                 child: GestureDetector(
@@ -305,9 +314,9 @@ class _SplashDsScreenState extends State<SplashDsScreen> {
                         fontFamily: 'Pretendard',
                         fontSize: 12,
                         fontWeight: FontWeight.w500,
-                        color: _IntroLogin.hint,
+                        color: _IntroLogin.faint,
                         decoration: TextDecoration.underline,
-                        decorationColor: _IntroLogin.hint,
+                        decorationColor: _IntroLogin.faint,
                       ),
                     ),
                   ),
@@ -315,7 +324,8 @@ class _SplashDsScreenState extends State<SplashDsScreen> {
               ),
 
               // ── 로그인 버튼 ──────────────────────────────────
-              const SizedBox(height: 18),
+              // 시안 찾기->버튼 31.3dp
+              const SizedBox(height: 31),
               if (_busy)
                 const Center(
                   child: Padding(
@@ -333,7 +343,8 @@ class _SplashDsScreenState extends State<SplashDsScreen> {
                 ),
 
               // ── 회원가입 ────────────────────────────────────
-              const SizedBox(height: 14),
+              // 시안 버튼->가입 14.8dp
+              const SizedBox(height: 15),
               Center(
                 child: GestureDetector(
                   behavior: HitTestBehavior.opaque,
@@ -359,9 +370,9 @@ class _SplashDsScreenState extends State<SplashDsScreen> {
                             fontFamily: 'Pretendard',
                             fontSize: 13,
                             fontWeight: FontWeight.w700,
-                            color: _IntroLogin.accent,
+                            color: _IntroLogin.link,
                             decoration: TextDecoration.underline,
-                            decorationColor: _IntroLogin.accent,
+                            decorationColor: _IntroLogin.link,
                           ),
                         ),
                       ],
@@ -371,7 +382,8 @@ class _SplashDsScreenState extends State<SplashDsScreen> {
               ),
 
               // ── SNS ────────────────────────────────────────
-              const SizedBox(height: 44),
+              // 시안 가입->SNS제목 80.0dp
+              const SizedBox(height: 62),
               const Center(
                 child: Text(
                   'SNS 계정으로 간편 시작해볼까요?',
@@ -383,11 +395,13 @@ class _SplashDsScreenState extends State<SplashDsScreen> {
                   ),
                 ),
               ),
-              const SizedBox(height: 16),
+              // 시안 제목->카드 17.3dp
+              const SizedBox(height: 17),
               Row(
                 children: [
                   for (final s in _visibleSns) ...[
-                    if (s != _visibleSns.first) const SizedBox(width: 10),
+                    // 시안 카드 사이 18.1dp
+                    if (s != _visibleSns.first) const SizedBox(width: 18),
                     Expanded(child: _snsCard(s)),
                   ],
                 ],
@@ -485,10 +499,12 @@ class _SplashDsScreenState extends State<SplashDsScreen> {
   /// 시안은 **버튼 전체가 브랜드 색**이다. (예전 디자인은 흰 카드 안에
   /// 작은 색 동그라미였다) 구글만 흰 배경이라 테두리를 준다.
   Widget _snsCard(_Sns s) {
+    // 🔴 #128 시안에서 실측한 색. 브랜드 공식색과 조금 다르지만
+    //    **시안을 따른다** (카카오 FDE500 / 네이버 02A94D).
     final (String name, Color bg, Color fg, bool ring) = switch (s) {
-      _Sns.kakao => ('카카오', const Color(0xFFFEE500), const Color(0xFF191600), false),
-      _Sns.naver => ('네이버', const Color(0xFF03C75A), Colors.white, false),
-      _Sns.google => ('구글', Colors.white, const Color(0xFF1F1F1F), true),
+      _Sns.kakao => ('카카오', const Color(0xFFFDE500), const Color(0xFF271B00), false),
+      _Sns.naver => ('네이버', const Color(0xFF02A94D), Colors.white, false),
+      _Sns.google => ('구글', Colors.white, const Color(0xFF161616), true),
       _Sns.apple => ('애플', const Color(0xFF000000), Colors.white, false),
     };
 
@@ -496,10 +512,12 @@ class _SplashDsScreenState extends State<SplashDsScreen> {
       behavior: HitTestBehavior.opaque,
       onTap: () => _sns(s),
       child: Container(
-        height: 86,
+        // 시안 SNS 카드 높이 86.6dp
+        height: 86.6,
         decoration: BoxDecoration(
           color: bg,
-          borderRadius: BorderRadius.circular(20),
+          // 시안 SNS 카드 모서리 20.6dp
+          borderRadius: BorderRadius.circular(20.6),
           border: ring ? Border.all(color: _IntroLogin.border) : null,
         ),
         child: Column(
@@ -532,14 +550,40 @@ class _SplashDsScreenState extends State<SplashDsScreen> {
 }
 
 /// 시안에서 뽑은 로그인 화면 색.
+/// 🔴 #128 시안(473x1024)에서 **다시** 픽셀로 잰 색.
+///
+/// 지난번에 눈대중으로 넣은 값이 몇 개 틀렸다. 아래는 모두 실측이다.
+/// (텍스트는 글자 속심 0.3% 를 평균 내어 안티앨리어싱을 걷어냈다)
 class _IntroLogin {
+  /// 배경 — 전체 픽셀의 63.7% 를 차지하는 단색.
   static const Color bg = Color(0xFFFEF9F5);
-  static const Color fieldFill = Color(0xFFFBFBFB);
-  static const Color border = Color(0xFFE6E5E1);
-  static const Color title = Color(0xFF1A1A1A);
-  static const Color sub = Color(0xFF6B6B6B);
-  static const Color hint = Color(0xFFA6A6A6);
-  static const Color accent = Color(0xFFFD717A);
+
+  /// 입력칸 채움 — 순백이었다. (예전 값 #FBFBFB 는 살짝 회색)
+  static const Color fieldFill = Color(0xFFFFFFFF);
+
+  /// 입력칸 테두리.
+  static const Color border = Color(0xFFE8E7E5);
+
+  /// 본문/제목 글자 — 'SNS 계정으로...' 속심이 #161311.
+  static const Color title = Color(0xFF161311);
+
+  /// 입력칸 라벨('이메일'/'비밀번호').
+  static const Color label = Color(0xFF524E4B);
+
+  /// '아직 회원이 아니신가요?' 안내 글자.
+  static const Color sub = Color(0xFF7A7572);
+
+  /// 입력칸 안내 글자(placeholder).
+  static const Color hint = Color(0xFF747474);
+
+  /// '비밀번호를 잊으셨나요?' — 더 연한 회색 + 밑줄.
+  static const Color faint = Color(0xFFAAA6A2);
+
+  /// 🔴 로그인 버튼 — 실측 #FF6D78. (예전 값 #FD717A 는 틀렸다)
+  static const Color accent = Color(0xFFFF6D78);
+
+  /// '회원가입' 링크 — 버튼보다 어두운 코랄.
+  static const Color link = Color(0xFFC26362);
 }
 
 /// 시안 입력칸 — 라벨 + 흰 칸.
@@ -569,15 +613,18 @@ class _LoginField extends StatelessWidget {
             fontFamily: 'Pretendard',
             fontSize: 13.5,
             fontWeight: FontWeight.w700,
-            color: _IntroLogin.title,
+            // 실측 #524E4B — 본문 검정보다 연한 회갈색이다.
+            color: _IntroLogin.label,
           ),
         ),
-        const SizedBox(height: 10),
+        // 시안 라벨->칸 간격 11.5dp
+        const SizedBox(height: 11.5),
         Container(
-          height: 54,
+          // 시안 칸 높이 51.9dp, 모서리 10.7dp
+          height: 52,
           decoration: BoxDecoration(
             color: _IntroLogin.fieldFill,
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(11),
             border: Border.all(color: _IntroLogin.border),
           ),
           alignment: Alignment.center,
@@ -635,12 +682,20 @@ class _PrimaryButton extends StatelessWidget {
         behavior: HitTestBehavior.opaque,
         onTap: disabled ? null : onTap,
         child: Container(
-          height: 62,
+          // 시안 버튼 높이 58.5dp, 모서리 32.6 = 높이의 절반 -> 알약
+          height: 58.5,
           decoration: BoxDecoration(
             color: disabled
                 ? _IntroLogin.accent.withValues(alpha: 0.4)
                 : _IntroLogin.accent,
-            borderRadius: BorderRadius.circular(18),
+            // 🔴 모서리 18.6dp. 알약이 아니다.
+            //
+            // 처음에 32.6 으로 읽어 알약으로 만들었는데, 맨 윗줄의
+            // 안티앨리어싱 때문에 반지름이 부풀려 측정된 것이었다.
+            // 행마다 좌측 끝을 재어 원호를 맞춰 보니 22.5px(=18.6dp)
+            // 에서 오차가 가장 작았다(RMS 0.55px). 알약(35.5px)은
+            // RMS 5.64px 로 분명히 틀렸다.
+            borderRadius: BorderRadius.circular(18.6),
           ),
           alignment: Alignment.center,
           child: Text(

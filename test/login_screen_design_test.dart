@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 
+import 'package:flow_note/design/fn_brand.dart';
 import 'package:flow_note/providers/auth_provider.dart';
 import 'package:flow_note/screens/ds/splash_ds_screen.dart';
 
@@ -60,8 +61,9 @@ void main() {
         return (box.decoration as BoxDecoration?)?.color;
       }
 
-      expect(bgOf('카카오'), const Color(0xFFFEE500));
-      expect(bgOf('네이버'), const Color(0xFF03C75A));
+      // 🔴 #128 시안 실측값으로 갱신. 브랜드 공식색이 아니라 시안을 따른다.
+      expect(bgOf('카카오'), const Color(0xFFFDE500));
+      expect(bgOf('네이버'), const Color(0xFF02A94D));
       expect(bgOf('구글'), Colors.white);
     });
 
@@ -71,8 +73,9 @@ void main() {
         find.ancestor(of: find.text('로그인'), matching: find.byType(Container)).first,
       );
       final d = box.decoration as BoxDecoration;
-      expect(d.color, const Color(0xFFFD717A));
-      expect(box.constraints?.maxHeight ?? 0, 62.0);
+      // 🔴 #128 실측 #FF6D78, 높이 58.5dp (예전 FD717A / 62 는 눈대중)
+      expect(d.color, const Color(0xFFFF6D78));
+      expect(box.constraints?.maxHeight ?? 0, 58.5);
     });
 
     testWidgets('배경이 시안 크림색이다', (t) async {
@@ -182,4 +185,77 @@ void main() {
       expect(find.textContaining('이메일을 먼저 입력'), findsOneWidget);
     });
   });
+  group('#128 시안 색·로고 재측정', () {
+    // 🔴 사장님 지적: "로그인 디자인이랑 컬러가 다르다".
+    //
+    // 시안(473x1024)을 다시 픽셀로 재서 틀린 값을 바로잡았다.
+    // 시안 폭 473 -> 390dp 환산비 0.8245 이고, 1024*0.8245 = 844 이므로
+    // 시안은 아이폰 14 크기로 그려진 것이다.
+
+    String code() => io.File('lib/screens/ds/splash_ds_screen.dart')
+        .readAsLinesSync()
+        .where((l) => !l.trimLeft().startsWith('//'))
+        .join('\n');
+
+    test('🔴 로그인 버튼색이 시안 실측값 #FF6D78 이다', () {
+      // 예전 값 #FD717A 는 눈대중이었다.
+      expect(code().contains('0xFFFF6D78'), isTrue);
+      expect(code().contains('0xFFFD717A'), isFalse,
+          reason: '틀린 예전 버튼색이 남아 있다');
+    });
+
+    test('🔴 SNS 색이 시안 실측값이다', () {
+      final c = code();
+      expect(c.contains('0xFFFDE500'), isTrue, reason: '카카오 실측 FDE500');
+      expect(c.contains('0xFF02A94D'), isTrue, reason: '네이버 실측 02A94D');
+    });
+
+    test('🔴 입력칸 채움이 순백이다', () {
+      expect(code().contains('0xFFFFFFFF'), isTrue);
+      expect(code().contains('0xFFFBFBFB'), isFalse,
+          reason: '회색빛 예전 채움색이 남아 있다');
+    });
+
+    test('🔴 로고가 판 없는 코랄 책(FnBookMark)이다', () {
+      final c = code();
+      expect(c.contains('FnBookMark'), isTrue);
+      // FnAppMark 는 '코랄 판 + 흰 책' 이라 시안과 색이 반대다.
+      expect(c.contains('FnAppMark'), isFalse,
+          reason: '정사각 앱아이콘이 로그인 화면에 남아 있다');
+    });
+
+    test('🔴 스플래시도 같은 로고를 쓴다', () {
+      final c = io.File('lib/screens/ds/intro_ds_screen.dart')
+          .readAsLinesSync()
+          .where((l) => !l.trimLeft().startsWith('//'))
+          .join('\n');
+      expect(c.contains('FnBookMark'), isTrue);
+      expect(c.contains('FnAppMark'), isFalse);
+    });
+
+    test('🔴 새 심볼 에셋이 실제로 있고 정사각이 아니다', () {
+      final f = io.File('assets/brand/logo_symbol_flat.png');
+      expect(f.existsSync(), isTrue);
+      expect(f.lengthSync(), greaterThan(5000));
+      expect(io.File('assets/brand/logo_symbol_mark.png').existsSync(), isTrue);
+      // 시안 실측 1.1512 — 정사각(1.0)이 아니다.
+      expect(FnBrand.symbolFlatRatio, closeTo(1.1512, 0.01));
+    });
+
+    testWidgets('🔴 로그인 화면이 새 심볼을 그린다', (t) async {
+      await pumpLogin(t);
+      final imgs = t
+          .widgetList<Image>(find.byType(Image))
+          .map((w) => (w.image as AssetImage).assetName)
+          .toList();
+      expect(imgs, contains(FnBrand.symbolMarkAsset));
+      // 🔴 워드마크도 '전부 검정' 판으로 바뀌었다 (시안 코랄 픽셀 0개).
+      expect(imgs, contains(FnBrand.wordmarkFlatAsset));
+      expect(imgs.contains(FnBrand.wordmarkAsset), isFalse,
+          reason: 'o 가 코랄인 예전 워드마크가 남아 있다');
+      expect(imgs.contains(FnBrand.symbolAsset), isFalse);
+      expect(imgs.contains(FnBrand.symbolGlowAsset), isFalse);
+    });
+  });
+
 }
