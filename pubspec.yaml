@@ -140,6 +140,9 @@ flutter:
     - assets/icon/
     # 텍스트로고(워드마크). 심볼과 다른 자산이므로 폴더를 나눠 둔다.
     - assets/brand/
+    # 인트로(온보딩) 3D 일러스트. 시안 목업에서 상태바·텍스트를
+    # 잘라낸 그림 영역만 담았다. 문구는 코드에서 그린다.
+    - assets/onboarding/
     # 꽃 표준 이름 사전 (화훼공판장 경매 데이터 기반, 150품목/1084품종)
     - assets/data/flower_names.json
     - assets/data/flower_season.json

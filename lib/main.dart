@@ -7,7 +7,6 @@ import 'package:firebase_core/firebase_core.dart';
 
 import 'firebase_options.dart';
 import 'models/receipt_model.dart';
-import 'design/fn_brand.dart';
 import 'providers/auth_provider.dart';
 import 'providers/receipt_provider.dart';
 import 'services/auth_service.dart';
@@ -26,6 +25,7 @@ import 'services/pwa_install.dart';
 import 'theme/app_theme.dart';
 import 'screens/ds/splash_ds_screen.dart';
 import 'screens/ds/main_ds_screen.dart';
+import 'screens/ds/intro_ds_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -226,21 +226,56 @@ class FlowNoteApp extends StatelessWidget {
   }
 }
 
-class _AppEntry extends StatelessWidget {
+/// 🔴 #121 앱의 첫 화면을 고르는 곳.
+///
+/// ```
+///   부트스트랩 중            -> IntroSplash  (0번 로고 · 매번 보인다)
+///   로그인됨                 -> MainDsScreen
+///   인트로를 본 적 없음      -> IntroDsScreen (1~3번 · 처음 한 번만)
+///   그 외                    -> SplashDsScreen (로그인)
+/// ```
+///
+/// 0번 로고는 '넘기는 화면' 이 아니라 스플래시다. 그래서 부트스트랩
+/// 화면을 그 디자인으로 바꿔 **매번** 보이게 하고, 실제로 넘기는
+/// 1~3번만 [IntroPrefs] 로 한 번만 보이게 했다.
+class _AppEntry extends StatefulWidget {
   const _AppEntry();
+
+  @override
+  State<_AppEntry> createState() => _AppEntryState();
+}
+
+class _AppEntryState extends State<_AppEntry> {
+  /// null = 아직 모름(읽는 중)
+  bool? _introSeen;
+
+  @override
+  void initState() {
+    super.initState();
+    IntroPrefs.seen().then((v) {
+      if (mounted) setState(() => _introSeen = v);
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
     final auth = context.watch<AuthProvider>();
 
-    // 세션 부트스트랩(토큼 갱슱) 중엔 로그인화면이 잠긐 보이는 것을 막는다.
-    if (auth.isBootstrapping) {
-      return const Scaffold(
-        backgroundColor: Color(0xFFFFFCFA),
-        body: Center(child: FnAppMark(size: 84, shadow: false)),
+    // 세션 부트스트랩(토큰 갱신) 중엔 로그인화면이 잠깐 보이는 것을 막는다.
+    // 인트로 기록을 읽는 동안도 마찬가지다. 두 경우 모두 0번 로고를 보여준다.
+    if (auth.isBootstrapping || _introSeen == null) {
+      return const Scaffold(body: IntroSplash());
+    }
+
+    if (auth.isLoggedIn) return const MainDsScreen();
+
+    // 아직 인트로를 못 봤으면 로그인 **앞**에 끼워 넣는다.
+    if (_introSeen == false) {
+      return IntroDsScreen(
+        onDone: () => setState(() => _introSeen = true),
       );
     }
 
-    return auth.isLoggedIn ? const MainDsScreen() : const SplashDsScreen();
+    return const SplashDsScreen();
   }
 }
