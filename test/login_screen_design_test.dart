@@ -236,10 +236,12 @@ void main() {
     test('🔴 새 심볼 에셋이 실제로 있고 정사각이 아니다', () {
       final f = io.File('assets/brand/logo_symbol_flat.png');
       expect(f.existsSync(), isTrue);
-      expect(f.lengthSync(), greaterThan(5000));
+      // 원본에서 오려낸 판은 색이 단순해 PNG 가 작다(4.3KB). 크기보다
+      // '비어 있지 않은가'만 본다.
+      expect(f.lengthSync(), greaterThan(1500));
       expect(io.File('assets/brand/logo_symbol_mark.png').existsSync(), isTrue);
-      // 시안 실측 1.1512 — 정사각(1.0)이 아니다.
-      expect(FnBrand.symbolFlatRatio, closeTo(1.1512, 0.01));
+      // 원본 실측 1.1322 — 정사각(1.0)이 아니다.
+      expect(FnBrand.symbolFlatRatio, closeTo(1.1322, 0.01));
     });
 
     testWidgets('🔴 로그인 화면이 새 심볼을 그린다', (t) async {
