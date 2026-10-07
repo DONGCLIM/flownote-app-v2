@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../design/fn_brand.dart';
+import '../../design/fn_fit.dart';
 import '../../design/fn_tokens.dart';
 
 /// 🔴 #124 — 로그인 **앞**에 붙는 인트로.
@@ -164,6 +165,7 @@ class _IntroSplashState extends State<IntroSplash>
       ),
       child: Center(
         // 시안의 블록 중심은 화면 중앙보다 2.9% 위에 있다.
+        // (폭은 아래 ConstrainedBox 가 시안 폭으로 묶는다 — #132)
         child: FractionalTranslation(
           translation: const Offset(0, -0.058),
           child: AnimatedBuilder(
@@ -251,34 +253,49 @@ class _IntroDsScreenState extends State<IntroDsScreen> {
       body: DecoratedBox(
         decoration: const BoxDecoration(gradient: _bgGradient),
         child: SafeArea(
-          child: LayoutBuilder(
-            builder: (context, c) {
-              // 좌우 여백은 시안 비율(11.25%)을 쓰되 너무 벌어지지 않게 묶는다.
-              final pad = (c.maxWidth * IntroSlide.sidePadFactor).clamp(20.0, 40.0);
-              return Column(
-                children: [
-                  Expanded(
-                    child: PageView.builder(
-                      controller: _pager,
-                      itemCount: _slides.length,
-                      onPageChanged: (i) => setState(() => _page = i),
-                      itemBuilder: (_, i) => _Slide(
-                        slide: _slides[i],
-                        sidePad: pad,
+          // 🔴 #132 PC 에서 가로가 통째로 늘어나던 문제.
+          //
+          // 다만 **휴대폰 폭으로는 절대 묶지 않는다.** 390 으로 묶었더니
+          // 412(갤럭시 S·픽셀 7)·430(프로맥스) 기기에서 일러스트 좌우에
+          // 11px 흰 띠가 생겼다 — #129 에서 없앤 바로 그 문제다.
+          // 테스트가 잡아 줬다.
+          //
+          // 그래서 '휴대폰은 꽉, 큰 화면만 묶기' 로 한다. 기준은
+          // FnFit.phoneMaxWidth(=520) — 이보다 넓으면 태블릿/PC 다.
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: FnFit.phoneMaxWidth),
+              child: LayoutBuilder(
+                builder: (context, c) {
+                  // 좌우 여백은 시안 비율(11.25%)을 쓰되 너무 벌어지지 않게 묶는다.
+                  final pad =
+                      (c.maxWidth * IntroSlide.sidePadFactor).clamp(20.0, 40.0);
+                  return Column(
+                    children: [
+                      Expanded(
+                        child: PageView.builder(
+                          controller: _pager,
+                          itemCount: _slides.length,
+                          onPageChanged: (i) => setState(() => _page = i),
+                          itemBuilder: (_, i) => _Slide(
+                            slide: _slides[i],
+                            sidePad: pad,
+                          ),
+                        ),
                       ),
-                    ),
-                  ),
-                  _BottomBar(
-                    sidePad: pad,
-                    page: _page,
-                    total: _slides.length,
-                    isLast: _isLast,
-                    onSkip: widget.onDone,
-                    onNext: _next,
-                  ),
-                ],
-              );
-            },
+                      _BottomBar(
+                        sidePad: pad,
+                        page: _page,
+                        total: _slides.length,
+                        isLast: _isLast,
+                        onSkip: widget.onDone,
+                        onNext: _next,
+                      ),
+                    ],
+                  );
+                },
+              ),
+            ),
           ),
         ),
       ),

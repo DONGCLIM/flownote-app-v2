@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../../design/fn_brand.dart';
 import '../../design/fn_feedback.dart';
+import '../../design/fn_fit.dart';
 import '../../design/fn_tokens.dart';
 import '../../providers/auth_provider.dart';
 import 'auth_ds_screens.dart';
@@ -174,8 +175,7 @@ class _SplashDsScreenState extends State<SplashDsScreen> {
     FocusScope.of(context).unfocus();
     final email = _email.text.trim();
     if (email.isEmpty || _password.text.isEmpty) {
-      showFnToast(context, '이메일과 비밀번호를 입력해 주세요.',
-          type: FnToastType.error);
+      showFnToast(context, '이메일과 비밀번호를 입력해 주세요.', type: FnToastType.error);
       return;
     }
 
@@ -261,179 +261,187 @@ class _SplashDsScreenState extends State<SplashDsScreen> {
     //   ->버튼 31.3 / 버튼 h 58.5 · r 18.6 / ->가입 14.8
     //   ->SNS제목 80.0 / 제목 h 14.0 / ->카드 17.3 / 카드 h 86.6
     //   좌우 여백 23.9 / SNS 카드 폭 102.2 · 간격 18.1 · r 20.6
+    // 🔴 #132 세 환경(폰 브라우저 / 홈화면 앱 / PC)에서 비율이 제각각
+    //    이던 문제를 FnDesignFit 으로 해결한다.
+    //      - 내용은 항상 390dp 폭으로 그린다 -> PC 가로 늘어남 차단
+    //      - 그 결과를 가로세로 같은 배율로 줄여 화면에 딱 맞춘다
+    //        -> 스크롤 없이 전체가 한눈에
+    //    배율만 다르고 생김새는 세 환경이 똑같다.
     return Scaffold(
       backgroundColor: _IntroLogin.bg,
       body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(24, 0, 24, 28),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              // ── 로고 + 워드마크 ────────────────────────────────
-              // 🔴 로고는 '판 없는 코랄 책'이다. FnAppMark(코랄 판 +
-              //    흰 책)는 시안과 색이 반대라 쓰지 않는다.
-              const SizedBox(height: 92),
-              const Center(child: FnBookMark(height: 75, glow: true)),
-              const SizedBox(height: 8),
-              const Center(child: FnWordmark(height: 28, flat: true)),
+        child: FnDesignFit(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(24, 0, 24, 28),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                // ── 로고 + 워드마크 ────────────────────────────────
+                // 🔴 로고는 '판 없는 코랄 책'이다. FnAppMark(코랄 판 +
+                //    흰 책)는 시안과 색이 반대라 쓰지 않는다.
+                const SizedBox(height: 92),
+                const Center(child: FnBookMark(height: 75, glow: true)),
+                const SizedBox(height: 8),
+                const Center(child: FnWordmark(height: 28, flat: true)),
 
-              // 로그인 서버가 붙지 않았으면 사유를 그대로 보여준다.
-              // (정상이면 아무것도 그리지 않는다)
-              const SizedBox(height: 28),
-              const AuthUnavailableBanner(),
+                // 로그인 서버가 붙지 않았으면 사유를 그대로 보여준다.
+                // (정상이면 아무것도 그리지 않는다)
+                const SizedBox(height: 28),
+                const AuthUnavailableBanner(),
 
-              // ── 이메일 · 비밀번호 ──────────────────────────────
-              const SizedBox(height: 28),
-              _LoginField(
-                label: '이메일',
-                controller: _email,
-                placeholder: 'shop@flownote.kr',
-                keyboardType: TextInputType.emailAddress,
-              ),
-              // 시안 칸->라벨2 15.7dp
-              const SizedBox(height: 16),
-              _LoginField(
-                label: '비밀번호',
-                controller: _password,
-                placeholder: '비밀번호 입력',
-                obscureText: true,
-              ),
+                // ── 이메일 · 비밀번호 ──────────────────────────────
+                const SizedBox(height: 28),
+                _LoginField(
+                  label: '이메일',
+                  controller: _email,
+                  placeholder: 'shop@flownote.kr',
+                  keyboardType: TextInputType.emailAddress,
+                ),
+                // 시안 칸->라벨2 15.7dp
+                const SizedBox(height: 16),
+                _LoginField(
+                  label: '비밀번호',
+                  controller: _password,
+                  placeholder: '비밀번호 입력',
+                  obscureText: true,
+                ),
 
-              // ── 비밀번호 찾기 ─────────────────────────────────
-              // 시안 칸->찾기 14.0dp
-              const SizedBox(height: 14),
-              Center(
-                child: GestureDetector(
-                  behavior: HitTestBehavior.opaque,
-                  onTap: _resetPassword,
-                  child: const Padding(
-                    padding: EdgeInsets.symmetric(vertical: 4, horizontal: 8),
-                    child: Text(
-                      '비밀번호를 잊으셨나요?',
-                      style: TextStyle(
-                        fontFamily: 'Pretendard',
-                        fontSize: 12,
-                        fontWeight: FontWeight.w500,
-                        color: _IntroLogin.faint,
-                        decoration: TextDecoration.underline,
-                        decorationColor: _IntroLogin.faint,
+                // ── 비밀번호 찾기 ─────────────────────────────────
+                // 시안 칸->찾기 14.0dp
+                const SizedBox(height: 14),
+                Center(
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: _resetPassword,
+                    child: const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 4, horizontal: 8),
+                      child: Text(
+                        '비밀번호를 잊으셨나요?',
+                        style: TextStyle(
+                          fontFamily: 'Pretendard',
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
+                          color: _IntroLogin.faint,
+                          decoration: TextDecoration.underline,
+                          decorationColor: _IntroLogin.faint,
+                        ),
                       ),
                     ),
                   ),
                 ),
-              ),
 
-              // ── 로그인 버튼 ──────────────────────────────────
-              // 시안 찾기->버튼 31.3dp
-              const SizedBox(height: 31),
-              if (_busy)
-                const Center(
-                  child: Padding(
-                    padding: EdgeInsets.symmetric(vertical: 18),
-                    child: FnSpinner(),
+                // ── 로그인 버튼 ──────────────────────────────────
+                // 시안 찾기->버튼 31.3dp
+                const SizedBox(height: 31),
+                if (_busy)
+                  const Center(
+                    child: Padding(
+                      padding: EdgeInsets.symmetric(vertical: 18),
+                      child: FnSpinner(),
+                    ),
+                  )
+                else
+                  _PrimaryButton(
+                    label: '로그인',
+                    // 서버가 안 붙었으면 눌러도 성공할 수 없다 → 비활성화해서
+                    // "눌렀는데 아무 일도 안 일어남" 을 원천 차단한다.
+                    disabled: AuthUnavailableBanner.blocked,
+                    onTap: _signIn,
                   ),
-                )
-              else
-                _PrimaryButton(
-                  label: '로그인',
-                  // 서버가 안 붙었으면 눌러도 성공할 수 없다 → 비활성화해서
-                  // "눌렀는데 아무 일도 안 일어남" 을 원천 차단한다.
-                  disabled: AuthUnavailableBanner.blocked,
-                  onTap: _signIn,
-                ),
 
-              // ── 회원가입 ────────────────────────────────────
-              // 시안 버튼->가입 14.8dp
-              const SizedBox(height: 15),
-              Center(
-                child: GestureDetector(
-                  behavior: HitTestBehavior.opaque,
-                  onTap: AuthUnavailableBanner.blocked ? null : _signUp,
-                  child: Padding(
-                    padding:
-                        const EdgeInsets.symmetric(vertical: 6, horizontal: 8),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Text(
-                          '아직 회원이 아니신가요? ',
-                          style: TextStyle(
-                            fontFamily: 'Pretendard',
-                            fontSize: 13,
-                            fontWeight: FontWeight.w500,
-                            color: _IntroLogin.sub,
+                // ── 회원가입 ────────────────────────────────────
+                // 시안 버튼->가입 14.8dp
+                const SizedBox(height: 15),
+                Center(
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: AuthUnavailableBanner.blocked ? null : _signUp,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                          vertical: 6, horizontal: 8),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Text(
+                            '아직 회원이 아니신가요? ',
+                            style: TextStyle(
+                              fontFamily: 'Pretendard',
+                              fontSize: 13,
+                              fontWeight: FontWeight.w500,
+                              color: _IntroLogin.sub,
+                            ),
                           ),
-                        ),
-                        Text(
-                          '회원가입',
-                          style: TextStyle(
-                            fontFamily: 'Pretendard',
-                            fontSize: 13,
-                            fontWeight: FontWeight.w700,
-                            color: _IntroLogin.link,
-                            decoration: TextDecoration.underline,
-                            decorationColor: _IntroLogin.link,
+                          Text(
+                            '회원가입',
+                            style: TextStyle(
+                              fontFamily: 'Pretendard',
+                              fontSize: 13,
+                              fontWeight: FontWeight.w700,
+                              color: _IntroLogin.link,
+                              decoration: TextDecoration.underline,
+                              decorationColor: _IntroLogin.link,
+                            ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
                   ),
                 ),
-              ),
 
-              // ── SNS ────────────────────────────────────────
-              // 시안 가입->SNS제목 80.0dp
-              const SizedBox(height: 62),
-              const Center(
-                child: Text(
-                  'SNS 계정으로 간편 시작해볼까요?',
-                  style: TextStyle(
-                    fontFamily: 'Pretendard',
-                    fontSize: 13.5,
-                    fontWeight: FontWeight.w700,
-                    color: _IntroLogin.title,
+                // ── SNS ────────────────────────────────────────
+                // 시안 가입->SNS제목 80.0dp
+                const SizedBox(height: 62),
+                const Center(
+                  child: Text(
+                    'SNS 계정으로 간편 시작해볼까요?',
+                    style: TextStyle(
+                      fontFamily: 'Pretendard',
+                      fontSize: 13.5,
+                      fontWeight: FontWeight.w700,
+                      color: _IntroLogin.title,
+                    ),
                   ),
                 ),
-              ),
-              // 시안 제목->카드 17.3dp
-              const SizedBox(height: 17),
-              Row(
-                children: [
-                  for (final s in _visibleSns) ...[
-                    // 시안 카드 사이 18.1dp
-                    if (s != _visibleSns.first) const SizedBox(width: 18),
-                    Expanded(child: _snsCard(s)),
-                  ],
-                ],
-              ),
-
-              // ── 약관 (SNS 간편 가입도 동의로 간주되므로 반드시 노출) ──
-              const SizedBox(height: 22),
-              Center(
-                child: Wrap(
-                  alignment: WrapAlignment.center,
-                  crossAxisAlignment: WrapCrossAlignment.center,
+                // 시안 제목->카드 17.3dp
+                const SizedBox(height: 17),
+                Row(
                   children: [
-                    const Text('가입 시 ', style: _legalStyle),
-                    _legalLink('이용약관', () => _openDoc(LegalDocKind.terms)),
-                    const Text(' 및 ', style: _legalStyle),
-                    _legalLink(
-                        '개인정보 처리방침', () => _openDoc(LegalDocKind.privacy)),
-                    const Text('에 동의합니다', style: _legalStyle),
+                    for (final s in _visibleSns) ...[
+                      // 시안 카드 사이 18.1dp
+                      if (s != _visibleSns.first) const SizedBox(width: 18),
+                      Expanded(child: _snsCard(s)),
+                    ],
                   ],
                 ),
-              ),
 
-              // ── 홈 화면에 추가 안내 ───────────────────────────
-              //
-              // 🔴 로그인 화면에 두는 이유: 프로필>설정은 **로그인해야**
-              // 볼 수 있다. 홈 화면 추가는 로그인과 무관한 기능이므로
-              // 로그인 전에도 닿을 수 있어야 한다.
-              if (pwaState().shouldGuide) ...[
-                const SizedBox(height: 14),
-                Center(child: _addToHomeLink()),
+                // ── 약관 (SNS 간편 가입도 동의로 간주되므로 반드시 노출) ──
+                const SizedBox(height: 22),
+                Center(
+                  child: Wrap(
+                    alignment: WrapAlignment.center,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      const Text('가입 시 ', style: _legalStyle),
+                      _legalLink('이용약관', () => _openDoc(LegalDocKind.terms)),
+                      const Text(' 및 ', style: _legalStyle),
+                      _legalLink(
+                          '개인정보 처리방침', () => _openDoc(LegalDocKind.privacy)),
+                      const Text('에 동의합니다', style: _legalStyle),
+                    ],
+                  ),
+                ),
+
+                // ── 홈 화면에 추가 안내 ───────────────────────────
+                //
+                // 🔴 로그인 화면에 두는 이유: 프로필>설정은 **로그인해야**
+                // 볼 수 있다. 홈 화면 추가는 로그인과 무관한 기능이므로
+                // 로그인 전에도 닿을 수 있어야 한다.
+                if (pwaState().shouldGuide) ...[
+                  const SizedBox(height: 14),
+                  Center(child: _addToHomeLink()),
+                ],
               ],
-            ],
+            ),
           ),
         ),
       ),
@@ -502,7 +510,12 @@ class _SplashDsScreenState extends State<SplashDsScreen> {
     // 🔴 #128 시안에서 실측한 색. 브랜드 공식색과 조금 다르지만
     //    **시안을 따른다** (카카오 FDE500 / 네이버 02A94D).
     final (String name, Color bg, Color fg, bool ring) = switch (s) {
-      _Sns.kakao => ('카카오', const Color(0xFFFDE500), const Color(0xFF271B00), false),
+      _Sns.kakao => (
+          '카카오',
+          const Color(0xFFFDE500),
+          const Color(0xFF271B00),
+          false
+        ),
       _Sns.naver => ('네이버', const Color(0xFF02A94D), Colors.white, false),
       _Sns.google => ('구글', Colors.white, const Color(0xFF161616), true),
       _Sns.apple => ('애플', const Color(0xFF000000), Colors.white, false),
