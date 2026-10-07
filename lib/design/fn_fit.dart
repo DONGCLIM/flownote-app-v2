@@ -80,6 +80,17 @@ class FnDesignFit extends StatelessWidget {
     final mq = MediaQuery.of(context);
     final keyboard = mq.viewInsets.bottom > 0;
 
+    // 🔴 #133 휴대폰 브라우저에서 주소창이 차지한 높이를 빼 준다.
+    //
+    // 실제 기기에서는 주소창이 보이는 동안 `innerHeight` 가 큰 값으로
+    // 남아 있어, 플러터가 보이는 영역보다 길게 그린다. 그래서 스크롤해야
+    // 아래가 보였다. index.html 의 100dvh 로 1차 차단했고, dvh 를 모르는
+    // 브라우저를 위해 여기서도 한 번 더 깎는다.
+    //
+    // `viewPadding.bottom` 은 홈 인디케이터/하단바 몫이다. SafeArea 가
+    // 이미 뺀 값이므로 여기서 또 빼면 이중으로 줄어든다. 그래서 건드리지
+    // 않고, 레이아웃이 실제로 받은 높이(c.maxHeight)만 쓴다.
+
     return LayoutBuilder(
       builder: (context, c) {
         final maxW = c.maxWidth;
@@ -173,9 +184,14 @@ class _ScaleToFitBox extends RenderBox
   }
 
   double _scale = 1.0;
+  double _logicalWidth = 0.0;
 
   /// 실제 적용된 배율. 테스트에서 확인한다.
   double get appliedScale => _scale;
+
+  /// 축소 전에 내용을 그린 폭. `_logicalWidth * _scale == 상자 폭` 이어야
+  /// 좌우 쏠림이 없다.
+  double get logicalWidth => _logicalWidth;
 
   @override
   void performLayout() {
@@ -188,16 +204,46 @@ class _ScaleToFitBox extends RenderBox
         ? constraints.maxWidth
         : constraints.minWidth;
 
-    // 폭은 고정, 높이는 무제한으로 재어 '자연 높이'를 얻는다.
-    c.layout(BoxConstraints(minWidth: w, maxWidth: w), parentUsesSize: true);
-    final natural = c.size.height;
-
+    // 🔴 #133 왼쪽 쏠림 버그를 고친 부분.
+    //
+    // 예전에는 상자 폭을 w 로 두고 좌상단 기준으로 축소했다. 그러면
+    // 그려지는 폭이 w*배율 로 줄어드는데 상자는 그대로 w 라서, 줄어든
+    // 만큼이 **전부 오른쪽 빈칸**이 됐다. 실측:
+    //
+    //   폰 브라우저 390 폭, 배율 0.852 -> 그림 폭 332, 오른쪽 58px 빈칸
+    //   홈화면 앱  390 폭, 배율 0.966 -> 그림 폭 377, 오른쪽 13px 빈칸
+    //
+    // 그래서 화면이 왼쪽으로 쏠려 보였다.
+    //
+    // 고친 방법: **축소한 뒤의 폭이 정확히 w 가 되도록** 내용을 더
+    // 넓게(w / 배율) 잡아서 그린다. 배율은 높이에서 나오고 높이는 폭에
+    // 따라 달라지므로 몇 번 돌려 수렴시킨다. 보통 2~3 번에 멎는다.
+    var logicalW = w;
     var s = 1.0;
-    if (natural > 0 && natural > _maxHeight) {
-      s = _maxHeight / natural;
-      if (s < _minScale) s = _minScale;
+    var natural = 0.0;
+
+    for (var i = 0; i < 5; i++) {
+      c.layout(
+        BoxConstraints(minWidth: logicalW, maxWidth: logicalW),
+        parentUsesSize: true,
+      );
+      natural = c.size.height;
+
+      var next = 1.0;
+      if (natural > 0 && natural > _maxHeight) {
+        next = _maxHeight / natural;
+        if (next < _minScale) next = _minScale;
+      }
+      if ((next - s).abs() < 0.001) {
+        s = next;
+        break;
+      }
+      s = next;
+      logicalW = s > 0 ? w / s : w;
     }
+
     _scale = s;
+    _logicalWidth = logicalW;
 
     final used = natural * s;
     size = Size(w, used < _maxHeight ? _maxHeight : used);

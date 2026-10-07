@@ -1,3 +1,4 @@
+import 'dart:io' as io;
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
@@ -110,6 +111,67 @@ void main() {
             reason: '$name: 화면 폭 대비 너무 넓다');
       });
     }
+  });
+
+  group('#133 좌우로 쏠리지 않는다', () {
+    // 🔴 사장님 지적: "웹앱으로 쓸 때 로그인 화면이 왼쪽으로 쏠려 있다."
+    //
+    // 원인은 내가 넣은 축소 코드였다. 상자 폭은 w 로 두고 좌상단 기준
+    // 으로 줄였더니, 그려지는 폭이 w*배율 로 줄어들면서 남는 자리가
+    // **전부 오른쪽 빈칸**이 됐다. 실측(지난 턴 내 스크린샷):
+    //   폰 브라우저 좌여백 18 / 우여백 103  -> 85px 왼쪽 쏠림
+    //   홈화면 앱   좌여백 21 / 우여백  64  -> 43px 왼쪽 쏠림
+    //
+    // 고친 뒤에는 축소 후 폭이 화면 폭과 같아져 쏠림이 0 이 된다.
+    for (final (name, size) in [
+      ('폰 브라우저', Size(390, 744)),
+      ('홈화면 앱', Size(390, 844)),
+      ('갤럭시 S', Size(412, 800)),
+      ('좁은 기기', Size(360, 640)),
+      ('PC', Size(1440, 900)),
+    ]) {
+      testWidgets('🔴 $name 에서 내용이 가운데 온다', (t) async {
+        await t.binding.setSurfaceSize(size);
+        addTearDown(() => t.binding.setSurfaceSize(null));
+        await t.pumpWidget(wrapLogin());
+        await t.pump(const Duration(milliseconds: 500));
+
+        // 로그인 버튼이 화면 가운데 있어야 한다. 축소 배율이 섞여
+        // 있으므로 **화면 좌표**로 환산해서 본다.
+        final box = t.renderObject<RenderBox>(
+            find.ancestor(
+                    of: find.text('로그인'), matching: find.byType(Container))
+                .first);
+        final tl = box.localToGlobal(Offset.zero);
+        final br = box.localToGlobal(Offset(box.size.width, 0));
+        final left = tl.dx;
+        final right = size.width - br.dx;
+        expect((right - left).abs(), lessThan(4.0),
+            reason: '$name: 좌여백 ${left.toStringAsFixed(1)} / '
+                '우여백 ${right.toStringAsFixed(1)} -> '
+                '${(right - left).toStringAsFixed(1)}px 쏠렸다');
+      });
+    }
+
+    test('🔴 index.html 이 보이는 높이(dvh)로 묶는다', () {
+      // 실제 폰 브라우저는 주소창이 보이는 동안 innerHeight 가 큰 값으로
+      // 남아, 플러터가 보이는 영역보다 길게 그린다. 100dvh 로 묶어야
+      // 스크롤이 사라진다. (홈화면 앱은 주소창이 없어 원래 문제없었다)
+      final html = io.File('web/index.html').readAsStringSync();
+      expect(html.contains('100dvh'), isTrue,
+          reason: 'dvh 로 묶지 않으면 폰 브라우저에서 다시 스크롤된다');
+      expect(html.contains('overflow: hidden'), isTrue);
+    });
+
+    test('🔴 축소 후 폭이 화면 폭과 같도록 계산한다', () {
+      final code = io.File('lib/design/fn_fit.dart')
+          .readAsLinesSync()
+          .where((l) => !l.trimLeft().startsWith('//'))
+          .join('\n');
+      // 내용을 w/배율 폭으로 그려야 축소 후 폭이 w 가 된다.
+      expect(code.contains('w / s'), isTrue,
+          reason: '폭 보정이 없으면 다시 왼쪽으로 쏠린다');
+    });
   });
 
   group('#132 휴대폰에서는 폭을 묶지 않는다', () {
