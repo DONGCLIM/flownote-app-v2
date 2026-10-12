@@ -243,8 +243,13 @@ class _HomeDsScreenState extends State<HomeDsScreen> {
   }
 
   Widget _stat(String label, String value, Color valueColor) {
+    // 🔴 가로 패딩이 없으면 긴 금액(₩2,620,000)의 오른쪽 끝이 구분선에
+    //    딱 붙는다. 320/360/390 전부에서 간격이 정확히 0.0px 였다.
+    //    시안은 패널 안쪽 여백이 14.8dp 였으므로 좌우 7 씩 둔다.
     return Expanded(
-      child: Column(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 7),
+        child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           Text(
@@ -269,6 +274,7 @@ class _HomeDsScreenState extends State<HomeDsScreen> {
             ),
           ),
         ],
+        ),
       ),
     );
   }

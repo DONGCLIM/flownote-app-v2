@@ -315,6 +315,33 @@ void _k135() {
       expect(left, closeTo(FnHome.pagePad, 1.0));
     });
 
+    testWidgets('🔴 통계 금액이 구분선에 달라붙지 않는다', (tester) async {
+      // 처음 만들 때 `_stat` 에 가로 패딩이 없어서, 긴 금액(₩2,620,000)의
+      // 오른쪽 끝이 구분선에 **정확히 0.0px** 로 붙었다. 320/360/390
+      // 세 폭 전부에서 그랬다. 320dp 렌더 스크린샷에서 눈으로 먼저 보였고,
+      // 픽셀로 재서 확인한 뒤 좌우 7dp 를 넣었다.
+      for (final w in [320.0, 360.0, 390.0]) {
+        await _pumpHome(tester, size: Size(w, 900));
+        final amount = tester.getRect(find.text('₩2,620,000'));
+
+        // 구분선은 폭이 정확히 1 인 박스다.
+        final lines = <Rect>[];
+        for (final e in find.byType(Container).evaluate()) {
+          final r = tester.getRect(find.byWidget(e.widget));
+          if (r.width == 1.0 && r.height > 10) lines.add(r);
+        }
+        expect(lines, isNotEmpty, reason: '구분선을 못 찾았다 (@$w)');
+
+        // 금액 바로 오른쪽 구분선과의 간격
+        final right = lines
+            .where((r) => r.left >= amount.right)
+            .fold<double?>(null, (m, r) => m == null || r.left < m ? r.left : m);
+        expect(right, isNotNull, reason: '금액 오른쪽 구분선이 없다 (@$w)');
+        expect(right! - amount.right, greaterThanOrEqualTo(4.0),
+            reason: '폭 $w: 금액이 구분선에 ${right - amount.right}px 로 붙었다');
+      }
+    });
+
     testWidgets('좁은 화면(320x568)에서도 넘치지 않는다', (tester) async {
       await _pumpHome(tester, size: const Size(320, 568));
       expect(tester.takeException(), isNull);
