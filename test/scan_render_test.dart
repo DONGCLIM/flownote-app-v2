@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'dart:io' as io;
+import 'package:flow_note/design/fn_home_tokens.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 
@@ -64,38 +66,57 @@ void main() {
 
     expect(find.text('오늘 촬영한 영수증 0장'), findsOneWidget);
     expect(find.textContaining('이번 달 무료 스캔'), findsOneWidget);
-    expect(find.text('촬영하기'), findsOneWidget);
-    expect(find.text('갤러리에서 선택'), findsOneWidget);
+    // #136 시안의 버튼 문구
+    expect(find.text('영수증 촬영하기'), findsOneWidget);
+    expect(find.text('앨범에서 가져오기'), findsOneWidget);
 
     // 팁 카드
     expect(find.text('촬영 전 스캔 팁'), findsOneWidget);
-    expect(find.text('!'), findsOneWidget);
     expect(find.text('밝은 환경에서'), findsOneWidget);
     expect(find.text('영수증 전체가 보이게'), findsOneWidget);
     expect(find.text('인식 후 수정 가능'), findsOneWidget);
-    // 팁 3개 → 체크 칩 3개
-    expect(find.byIcon(Icons.check_rounded), findsNWidgets(3));
+    // #136 시안은 체크 칩이 아니라 01 / 02 / 03 번호다.
+    expect(find.text('01'), findsOneWidget);
+    expect(find.text('02'), findsOneWidget);
+    expect(find.text('03'), findsOneWidget);
   });
 
-  testWidgets('히어로 일러스트 — 영수증 3장 + 카메라 FAB 가 그려진다', (t) async {
+  testWidgets('히어로 일러스트 — 영수증 3장이 그려진다 (#136)', (t) async {
     await t.pumpWidget(_wrap(const []));
     await t.pumpAndSettle();
     expect(t.takeException(), isNull);
 
-    // 168x112 일러스트 박스
-    final art = find.byWidgetPredicate((w) =>
-        w is SizedBox && w.width == 168 && w.height == 112);
+    // #136 시안 실측: 일러스트 bbox 206.1 x 162.4 dp
+    final art = find.byWidgetPredicate(
+        (w) => w is SizedBox && w.width == 206 && w.height == 162);
     expect(art, findsOneWidget);
 
-    // 겹친 영수증 3장 (66x90)
-    final sheets = find.byWidgetPredicate((w) =>
+    // 겹친 영수증 3장 — 가운데 1장(86x122) + 좌우 2장(74x104)
+    final big = find.byWidgetPredicate((w) =>
         w is Container &&
-        w.constraints?.maxWidth == 66 &&
-        w.constraints?.maxHeight == 90);
-    expect(sheets, findsNWidgets(3));
+        w.constraints?.maxWidth == 86 &&
+        w.constraints?.maxHeight == 122);
+    final small = find.byWidgetPredicate((w) =>
+        w is Container &&
+        w.constraints?.maxWidth == 74 &&
+        w.constraints?.maxHeight == 104);
+    expect(big, findsOneWidget);
+    expect(small, findsNWidgets(2));
 
-    // 카메라 FAB
+    // 🔴 시안 일러스트에는 코랄 카메라 FAB 가 없다.
+    //    (일러스트 영역에서 검출된 코랄 175픽셀은 가운데 영수증의
+    //     분홍 머리글 줄 #F6C2C6 이었다 — 픽셀로 확인했다)
+    //    카메라 아이콘은 '영수증 촬영하기' 버튼 안에만 하나 있다.
     expect(find.byIcon(Icons.photo_camera_rounded), findsOneWidget);
+    final inButton = find.descendant(
+      of: find.ancestor(
+        of: find.text('영수증 촬영하기'),
+        matching: find.byType(Row),
+      ).first,
+      matching: find.byIcon(Icons.photo_camera_rounded),
+    );
+    expect(inButton, findsOneWidget,
+        reason: '카메라 아이콘은 버튼 안에 있어야 한다');
   });
 
   testWidgets("'오늘' 은 createdAt 기준으로 센다 (기능 유지)", (t) async {
@@ -121,12 +142,160 @@ void main() {
     expect(find.textContaining('무제한'), findsNothing);
   });
 
+
+  // ───────────────────────────────────────────────────────────────────
+  //  #136 — 스캔 화면을 시안 PNG 톤앤톤으로 다시 그린 뒤의 회귀 방지
+  //
+  //  시안 실측 (473x1024, 환산비 0.8245 -> 390x844dp):
+  //    페이지 배경 #FEF9F5 (37.8%) / 흰 카드 #FFFFFF (24.7%)
+  //    코랄 버튼 #FF6D78 단색 / 보조 버튼 #FEFDFB
+  //    팁 카드 좌우 여백 23.9dp · r 14.2dp
+  //    버튼 높이 52.8 / 54.4dp — 둘 다 알약(r = h/2)
+  // ───────────────────────────────────────────────────────────────────
+
+  testWidgets('#136 시안 색이 실제로 칠해진다', (t) async {
+    await t.pumpWidget(_wrap(const []));
+    await t.pumpAndSettle();
+    expect(t.takeException(), isNull);
+
+    final used = <int>{};
+    void add(Color? c) {
+      if (c != null) used.add(c.toARGB32());
+    }
+
+    for (final e in find.byType(Container).evaluate()) {
+      final w = e.widget as Container;
+      add(w.color);
+      final d = w.decoration;
+      if (d is BoxDecoration) {
+        add(d.color);
+        final b = d.border;
+        if (b is Border) add(b.top.color);
+      }
+    }
+    // 페이지 배경은 `ColoredBox` 로 칠한다 (Container 가 아니다).
+    for (final e in find.byType(ColoredBox).evaluate()) {
+      add((e.widget as ColoredBox).color);
+    }
+    for (final e in find.byType(Text).evaluate()) {
+      add((e.widget as Text).style?.color);
+    }
+    for (final e in find.byType(Icon).evaluate()) {
+      add((e.widget as Icon).color);
+    }
+
+    expect(used, contains(0xFFFEF9F5), reason: '페이지 배경 #FEF9F5');
+    expect(used, contains(0xFFFF6D78), reason: '코랄 버튼 #FF6D78');
+    expect(used, contains(0xFFFEFDFB), reason: '보조 버튼 #FEFDFB');
+    expect(used, contains(0xFFC76769), reason: '팁 번호 #C76769');
+  });
+
+  testWidgets('#136 두 버튼이 알약 모양이다', (t) async {
+    await t.pumpWidget(_wrap(const []));
+    await t.pumpAndSettle();
+
+    // 시안 버튼 높이 52.8 / 54.4dp -> 54 로 통일, 모서리는 정확히 절반
+    for (final label in ['영수증 촬영하기', '앨범에서 가져오기']) {
+      final box = find
+          .ancestor(of: find.text(label), matching: find.byType(Container))
+          .first;
+      final rect = t.getRect(box);
+      expect(rect.height, closeTo(FnHome.buttonH, 0.5),
+          reason: '$label 높이');
+
+      final c = t.widget<Container>(box);
+      final dec = c.decoration as BoxDecoration;
+      final br = dec.borderRadius! as BorderRadius;
+      expect(br.topLeft.x, closeTo(FnHome.buttonH / 2, 0.5),
+          reason: '$label 은 알약이어야 한다 (r = 높이/2)');
+    }
+  });
+
+  testWidgets('#136 좌우 여백이 대칭이다 (시안 23.9dp)', (t) async {
+    await t.pumpWidget(_wrap(const [], size: const Size(390, 844)));
+    await t.pumpAndSettle();
+
+    final screen = t.getSize(find.byType(ScanDsScreen));
+    final box = find
+        .ancestor(
+            of: find.text('영수증 촬영하기'), matching: find.byType(Container))
+        .first;
+    final r = t.getRect(box);
+    final left = r.left;
+    final right = screen.width - r.right;
+    expect((left - right).abs(), lessThan(1.0),
+        reason: '좌 $left / 우 $right — 어긋났다');
+    expect(left, closeTo(FnHome.scanPad, 1.0));
+  });
+
+  testWidgets('#136 한도에 닿으면 촬영을 막는다 (기능 유지)', (t) async {
+    // 한도 판단은 SubscriptionService.canScan 이 그대로 쓰인다.
+    // 지금은 unlockEverything 이라 늘 촬영 가능 — 그 상태를 고정한다.
+    expect(SubscriptionService.instance.canScan, isTrue);
+    await t.pumpWidget(_wrap(const []));
+    await t.pumpAndSettle();
+    expect(find.text('영수증 촬영하기'), findsOneWidget);
+    expect(find.text('이번 달 스캔 한도 도달'), findsNothing);
+  });
+
+  testWidgets('#136 기능 연결이 소스에 그대로 있다', (t) async {
+    final src = io.File('lib/screens/ds/scan_ds_screen.dart')
+        .readAsStringSync()
+        .split('\n')
+        .where((l) {
+          final x = l.trim();
+          return !x.startsWith('//') && !x.startsWith('///');
+        })
+        .join('\n');
+    for (final name in [
+      'showCameraOptions',          // 탭 재탭 시 촬영 열기
+      'ScanFlow.start(context)',    // 촬영 흐름
+      'ScanFlow.startFromGallery',  // 앨범 흐름
+      'PlanPolicy.freeMonthlyScans',// 무료 한도
+      'sub.canScan',                // 한도 판단
+      'sub.scansThisMonth',         // 사용량
+      'createdAt',                  // 오늘 집계 기준
+      'ListenableBuilder',          // 구독 변화 반영
+    ]) {
+      expect(src, contains(name), reason: '$name 이(가) 사라졌다');
+    }
+  });
+
+
+  testWidgets('#136 배경이 화면 끝까지 칠해진다', (t) async {
+    // 🔴 처음엔 `Container(color:)` 로만 감쌌더니 배경이 내용 높이까지만
+    //    칠해졌다. `FnColumn` 이 `SingleChildScrollView` 여서 높이가
+    //    내용만큼이기 때문이다. 390x844 렌더를 픽셀로 재 보니
+    //    678.5dp 아래 165dp 가 #FEF7FF 로 남아 있었다.
+    //    `SizedBox.expand` 로 화면을 먼저 채워서 고쳤다.
+    // 🔴 화면 크기를 `tester.view` 로 **실제로** 바꿔야 한다.
+    //    MediaQuery 만 끼우면 뷰포트는 기본 800x600 이라, 배경 높이와
+    //    ScanDsScreen 높이가 같이 줄어들어 비교가 자기 자신과의 비교가
+    //    된다. (처음에 그렇게 써서 일부러 망친 코드도 통과해 버렸다)
+    t.view.physicalSize = const Size(390, 844);
+    t.view.devicePixelRatio = 1.0;
+    addTearDown(t.view.reset);
+
+    await t.pumpWidget(_wrap(const [], size: const Size(390, 844)));
+    await t.pumpAndSettle();
+
+    final painted = find.byWidgetPredicate(
+        (w) => w is ColoredBox && w.color == FnHome.bgWarm);
+    expect(painted, findsOneWidget, reason: '배경을 칠하는 박스가 없다');
+
+    final box = t.getRect(painted.first);
+    // 뷰포트 높이와 직접 비교한다 (자기 자손과 비교하면 안 된다).
+    expect(box.height, closeTo(844.0, 1.0),
+        reason: '배경 높이 ${box.height} — 화면 844 를 다 못 덮었다');
+    expect(box.width, closeTo(390.0, 1.0));
+  });
+
   testWidgets('좁은 화면(320)에서도 오버플로가 없다', (t) async {
     await t.pumpWidget(_wrap(const [], size: const Size(320, 640)));
     await t.pumpAndSettle();
     expect(t.takeException(), isNull,
         reason: '시안은 402 고정이지만 실제 기기 폭은 더 좁을 수 있다');
-    expect(find.text('촬영하기'), findsOneWidget);
+    expect(find.text('영수증 촬영하기'), findsOneWidget);
   });
 
   test('스캔 한도 계산은 그대로다 (기능 유지)', () {

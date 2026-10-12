@@ -98,4 +98,33 @@ class FnHome {
     end: Alignment.bottomRight,
     colors: [coral, coralEnd],
   );
+
+  // ── #136 스캔 시안에서 추가 실측 ────────────────────────────────────
+  //
+  // 스캔 시안은 473x1024 (환산비 0.8245) 로 로그인 시안과 같은 규격이고,
+  // 배경·코랄이 로그인 화면과 **완전히 같은 색**이었다.
+  //   페이지 배경 #FEF9F5 (37.8%) / 흰 카드 #FFFFFF (24.7%) / 코랄 #FF6D78 (3.2%)
+  // 그래서 홈(#FFF9F6)과 아주 미세하게 다른 이 값을 따로 둔다.
+
+  /// 로그인·스캔 시안의 페이지 배경. 홈(#FFF9F6)보다 한 톤 더 따뜻하다.
+  static const Color bgWarm = Color(0xFFFEF9F5);
+
+  /// 로그인·스캔 시안의 코랄 단색 버튼. (홈 그라디언트 시작값과 1 차이)
+  static const Color coralFlat = Color(0xFFFF6D78);
+
+  /// 테두리 없는 보조 버튼 배경 — 스캔 시안 '앨범에서 가져오기'.
+  static const Color surfaceSoft = Color(0xFFFEFDFB);
+
+  /// 스캔 팁 카드의 번호 색 (01 / 02 / 03).
+  static const Color tipIndex = Color(0xFFC76769);
+
+  /// 팁 설명 글자색.
+  static const Color tipDesc = Color(0xFF55514E);
+
+  /// 스캔 시안 치수.
+  /// 팁 카드 좌우 여백 23.9dp · r 14.2dp
+  /// 버튼 높이 52.8 / 54.4dp — 둘 다 알약(모서리 = 높이/2)
+  static const double scanPad = 24;
+  static const double tipRadius = 14;
+  static const double buttonH = 54;
 }
