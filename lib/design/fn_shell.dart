@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'fn_tokens.dart';
+import 'fn_home_tokens.dart';
+import 'fn_brand.dart';
 
 /// 시안 원본 `window.FN.Shell` 1:1 포팅
 ///
@@ -25,6 +27,10 @@ class FnShell extends StatelessWidget {
     this.trailing,
     this.bg,
     this.showNavBar = true,
+    this.brandHeader = false,
+    this.onBellTap,
+    this.bellDot = false,
+    this.floatingTabs = false,
     required this.child,
   });
 
@@ -36,6 +42,27 @@ class FnShell extends StatelessWidget {
   final List<Widget>? trailing;
   final Color? bg;
   final bool showNavBar;
+
+  /// #136 시안 헤더 — 제목 대신 워드마크 + 알림 벨.
+  ///
+  /// 시안 실측(473x1024, 환산비 0.8245):
+  ///   워드마크 h 17.3dp, 좌 24.7dp / 벨 19.0x21.4dp, 우 25.6dp
+  ///   알림 점 지름 4.9dp #FB6E76
+  /// 5탭 컨테이너에서만 켠다. 나머지 화면은 지금처럼 제목을 쓴다.
+  final bool brandHeader;
+
+  /// 벨을 눌렀을 때. null 이면 벨을 눌러도 아무 일도 없다.
+  final VoidCallback? onBellTap;
+
+  /// 벨 위 빨간 알림 점을 그릴지.
+  final bool bellDot;
+
+  /// #136 시안 탭바 — 바닥에 붙은 줄이 아니라 떠 있는 흰 카드.
+  ///
+  /// 시안 실측: 좌우 여백 9.9dp, 높이 71.7dp, r 27dp,
+  /// 화면 아래로 33.8dp 띄움.
+  final bool floatingTabs;
+
   final Widget child;
 
   @override
@@ -49,7 +76,17 @@ class FnShell extends StatelessWidget {
       backgroundColor: background,
       body: Column(
         children: [
-          if (showNavBar)
+          if (showNavBar && brandHeader)
+            // #136 시안 헤더 — 워드마크 + 알림 벨
+            Container(
+              padding: EdgeInsets.only(top: topInset),
+              color: background,
+              child: _FnBrandHeader(
+                onBellTap: onBellTap,
+                dot: bellDot,
+              ),
+            )
+          else if (showNavBar)
             Container(
               padding: EdgeInsets.only(top: topInset),
               color: background,
@@ -70,7 +107,22 @@ class FnShell extends StatelessWidget {
           else
             SizedBox(height: topInset),
           Expanded(child: child),
-          if (tabs != null)
+          if (tabs != null && floatingTabs)
+            // #136 시안 탭바 — 떠 있는 흰 카드
+            Padding(
+              padding: EdgeInsets.only(
+                left: 10,
+                right: 10,
+                bottom: bottomInset > 0 ? bottomInset : 10,
+              ),
+              child: FnBottomNavigation(
+                tabs: tabs!,
+                activeKey: activeTab,
+                onChange: onTabChange,
+                floating: true,
+              ),
+            )
+          else if (tabs != null)
             Container(
               color: FnColors.backgroundNormal,
               padding: EdgeInsets.only(bottom: bottomInset),
@@ -173,6 +225,75 @@ class _NavBackButton extends StatelessWidget {
   }
 }
 
+/// #136 시안 헤더 — 워드마크 + 알림 벨.
+///
+/// 시안 실측 (473x1024, 환산비 0.8245):
+///   워드마크  좌 24.7dp, y 65.1..81.6dp (h 17.3dp, 비율 6.095)
+///   벨       우 25.6dp, 19.0 x 21.4dp
+///   알림 점   지름 4.9dp, #FB6E76
+///
+/// 워드마크 비율은 `FnBrand.wordmarkRatio`(5.9571) 과 6.095 로 거의 같다.
+/// 시안 쪽이 약간 넓은데, 글자 끝 안티앨리어싱까지 센 탓이다.
+class _FnBrandHeader extends StatelessWidget {
+  const _FnBrandHeader({this.onBellTap, this.dot = false});
+
+  final VoidCallback? onBellTap;
+  final bool dot;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 56,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 24),
+        child: Row(
+          children: [
+            const FnWordmark(height: 18, flat: true),
+            const Spacer(),
+            // 벨 — 누를 수 있는 영역은 44x44 로 넉넉히 둔다.
+            InkWell(
+              onTap: onBellTap,
+              customBorder: const CircleBorder(),
+              child: SizedBox(
+                width: 44,
+                height: 44,
+                child: Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    const Icon(Icons.notifications_none_rounded,
+                        size: 23, color: FnHome.title),
+                    if (dot)
+                      const Positioned(
+                        top: 11,
+                        right: 11,
+                        child: _BellDot(),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// 벨 위 알림 점 — 시안 지름 4.9dp, #FB6E76
+class _BellDot extends StatelessWidget {
+  const _BellDot();
+
+  @override
+  Widget build(BuildContext context) => Container(
+        width: 6,
+        height: 6,
+        decoration: const BoxDecoration(
+          color: Color(0xFFFB6E76),
+          shape: BoxShape.circle,
+        ),
+      );
+}
+
 class FnTab {
   const FnTab({required this.key, required this.label, required this.icon});
   final String key;
@@ -203,14 +324,36 @@ class FnBottomNavigation extends StatelessWidget {
     required this.tabs,
     this.activeKey,
     this.onChange,
+    this.floating = false,
   });
 
   final List<FnTab> tabs;
   final String? activeKey;
   final ValueChanged<String>? onChange;
 
+  /// #136 시안 — 떠 있는 흰 카드로 그린다.
+  /// 시안 실측: 높이 71.7dp, r 27dp, 좌우 여백 9.9dp.
+  final bool floating;
+
   @override
   Widget build(BuildContext context) {
+    if (floating) {
+      return Container(
+        height: 68,
+        decoration: BoxDecoration(
+          color: FnColors.backgroundNormal,
+          borderRadius: BorderRadius.circular(27),
+          boxShadow: [
+            BoxShadow(
+              color: const Color(0xFF8A5C57).withValues(alpha: 0.10),
+              blurRadius: 22,
+              offset: const Offset(0, 6),
+            ),
+          ],
+        ),
+        child: Row(children: _items(coral: true)),
+      );
+    }
     return Container(
       height: 56,
       decoration: const BoxDecoration(
@@ -219,39 +362,47 @@ class FnBottomNavigation extends StatelessWidget {
           top: BorderSide(color: FnColors.lineNeutral, width: 1),
         ),
       ),
-      child: Row(
-        children: tabs.map((t) {
-          final active = t.key == activeKey;
-          final color =
-              active ? FnColors.primaryNormal : FnColors.labelAssistive;
-          return Expanded(
-            child: InkWell(
-              onTap: onChange == null ? null : () => onChange!(t.key),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  SizedBox(
-                    width: 24,
-                    height: 24,
-                    child: Icon(t.icon, size: 20, color: color),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    t.label,
-                    style: TextStyle(
-                      fontFamily: 'Pretendard',
-                      fontSize: 11,
-                      fontWeight: active ? FontWeight.w600 : FontWeight.w500,
-                      color: color,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          );
-        }).toList(),
-      ),
+      child: Row(children: _items()),
     );
+  }
+
+  /// 탭 5칸. `coral` 이면 #136 시안의 코랄 강조색을 쓴다.
+  ///
+  /// 두 모드가 같은 위젯을 쓰게 뽑아냈다. 예전에는 이 코드가 build() 안에
+  /// 인라인으로 있었고, 떠 있는 탭바를 넣으면서 복사하면 둘이 갈라졌다.
+  List<Widget> _items({bool coral = false}) {
+    return tabs.map((t) {
+      final active = t.key == activeKey;
+      final color = active
+          ? (coral ? FnHome.coralFlat : FnColors.primaryNormal)
+          : FnColors.labelAssistive;
+      return Expanded(
+        child: InkWell(
+          onTap: onChange == null ? null : () => onChange!(t.key),
+          borderRadius: BorderRadius.circular(coral ? 20 : 0),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              SizedBox(
+                width: 24,
+                height: 24,
+                child: Icon(t.icon, size: 20, color: color),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                t.label,
+                style: TextStyle(
+                  fontFamily: 'Pretendard',
+                  fontSize: 11,
+                  fontWeight: active ? FontWeight.w600 : FontWeight.w500,
+                  color: color,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }).toList();
   }
 }
 

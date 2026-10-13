@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../design/fn_shell.dart';
+import '../../design/fn_home_tokens.dart';
 import '../../design/fn_tab_intent.dart';
 import '../../widgets/lazy_tabs.dart';
 import '../../providers/receipt_provider.dart';
@@ -98,6 +99,17 @@ class _MainDsScreenState extends State<MainDsScreen> {
     setState(() => _index = i);
   }
 
+  /// 알림 벨 — 아직 알림 화면이 없다. 준비 중임을 알리고 끝낸다.
+  /// (없는 화면으로 보내 깨뜨리지 않는다)
+  void _onBell() {
+    final m = ScaffoldMessenger.maybeOf(context);
+    if (m == null) return;
+    m.showSnackBar(const SnackBar(
+      content: Text('알림은 준비 중이에요'),
+      duration: Duration(seconds: 2),
+    ));
+  }
+
   void _onTab(String key) {
     final i = fnTabs.indexWhere((t) => t.key == key);
     if (i < 0) return;
@@ -112,7 +124,15 @@ class _MainDsScreenState extends State<MainDsScreen> {
   @override
   Widget build(BuildContext context) {
     return FnShell(
+      // #136 시안 — 제목 대신 워드마크 + 알림 벨, 탭바는 떠 있는 흰 카드.
+      //   `navTitle` 은 그대로 넘긴다. `brandHeader` 를 끄면 즉시
+      //   예전 제목 헤더로 돌아간다 (되돌리기 쉽게 남겨 둔다).
       navTitle: _titles[_index],
+      brandHeader: true,
+      bellDot: true,
+      onBellTap: _onBell,
+      floatingTabs: true,
+      bg: FnHome.bgWarm,
       tabs: fnTabs,
       activeTab: fnTabs[_index].key,
       onTabChange: _onTab,
