@@ -102,6 +102,32 @@ const Color kSettleRoseDeep = FnColors.rose30;
 /// 접기 꺾쇠 색 — 원본 `'#C6CBD3'`.
 const Color kSettleCaret = Color(0xFFC6CBD3);
 
+// ── #140 내역 시안 실측 (399x1024, 환산비 0.9774) ─────────────────
+//
+//   총매입 카드   y 127.1..293.2dp (h 166)  흰색 #FFFFFF
+//   카드 좌우     24.4dp (좌우 대칭)
+//   코랄 배지     y 245.3..273.7dp (h 28)   #FF6D78
+//   토글          y 310.8..351.9dp (h 41)   두 칸 각 168~170dp
+//                 활성 #FF6D78 / 비활성 #FFFFFF, 좌우 23.5dp
+
+/// 시안 내역 카드 배경 — **흰색**.
+///
+/// 🔴 예전 `kSettleCardBg`(#FFF9F7) 는 살짝 분홍빛이었다. 시안 카드
+///    내부(x=200dp 세로 단면)는 전부 #FFFFFF 였다.
+const Color kSettleWhite = Color(0xFFFFFFFF);
+
+/// 시안 카드 테두리 — 홈/캘린더와 같은 연한 선.
+const Color kSettleLine = Color(0x14C9A79B);
+
+/// 시안 코랄. 배지와 활성 토글이 같은 색이다.
+const Color kSettleCoral = Color(0xFFFF6D78);
+
+/// 시안 카드 좌우 여백 24.4dp.
+const double kSettlePagePad = 24.0;
+
+/// 시안 토글 높이 41.1dp.
+const double kSettleToggleH = 41.0;
+
 /// 종합소득세용(5월) 보기가 말하는 "소액 결제" 기준 금액.
 ///
 /// 3만원 이하 결제는 적격증빙(세금계산서·카드전표) 없이도 비용으로
@@ -170,59 +196,125 @@ class SettleTotalHeader extends StatelessWidget {
     required this.label,
     required this.total,
     required this.count,
+    this.onPrev,
+    this.onNext,
   });
 
   final String label;
   final double total;
   final int count;
 
+  /// 시안의 `‹` — 없으면 화살표를 그리지 않는다. (#140)
+  final VoidCallback? onPrev;
+
+  /// 시안의 `›` — 없으면 화살표를 그리지 않는다. (#140)
+  final VoidCallback? onNext;
+
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          label,
-          style: const TextStyle(
-            fontFamily: 'Pretendard',
-            fontSize: 12.5,
-            color: kSettleMute,
-          ),
-        ),
-        const SizedBox(height: 6),
-        Row(
-          // 원본 `alignItems: 'baseline'`.
-          crossAxisAlignment: CrossAxisAlignment.baseline,
-          textBaseline: TextBaseline.alphabetic,
-          children: [
-            // 반응형: 금액이 길어지면 건수를 밀어내지 않고 스스로 줄인다.
-            Flexible(
-              child: Text(
-                FnDemo.won(total),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  fontFamily: 'Pretendard',
-                  fontSize: 32,
-                  fontWeight: FontWeight.w700,
-                  height: 1,
-                  letterSpacing: -1.2,
-                  color: kSettleInk,
+    // 🔴 #140 시안은 **흰 카드 안 중앙 정렬**이다.
+    //    위: ‹ 라벨 ›  /  가운데: 큰 금액  /  아래: 코랄 배지
+    //    예전에는 카드 없이 좌측 정렬이고 건수가 회색 글자였다.
+    return Container(
+      padding: const EdgeInsets.fromLTRB(18, 16, 18, 18),
+      decoration: BoxDecoration(
+        color: kSettleWhite,
+        borderRadius: BorderRadius.circular(kSettleCardRadius),
+        border: Border.all(color: kSettleLine),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // ── 기간 라벨 (좌우 화살표는 기능이 연결됐을 때만 보인다) ──
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              if (onPrev != null)
+                _MonthArrow(
+                  icon: Icons.chevron_left_rounded,
+                  onTap: onPrev,
+                ),
+              Flexible(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 6),
+                  child: Text(
+                    label,
+                    textAlign: TextAlign.center,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontFamily: 'Pretendard',
+                      fontSize: 14.5,
+                      fontWeight: FontWeight.w700,
+                      color: kSettleInk,
+                    ),
+                  ),
                 ),
               ),
-            ),
-            const SizedBox(width: 8),
-            Text(
-              '$count건',
+              if (onNext != null)
+                _MonthArrow(
+                  icon: Icons.chevron_right_rounded,
+                  onTap: onNext,
+                ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          // ── 금액 (중앙) ──
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Text(
+              FnDemo.won(total),
+              maxLines: 1,
               style: const TextStyle(
                 fontFamily: 'Pretendard',
-                fontSize: 12.5,
-                color: kSettleMute,
+                fontSize: 30,
+                fontWeight: FontWeight.w800,
+                height: 1.1,
+                letterSpacing: -1.2,
+                color: kSettleInk,
               ),
             ),
-          ],
-        ),
-      ],
+          ),
+          const SizedBox(height: 12),
+          // ── 코랄 배지 ──
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 6),
+            decoration: BoxDecoration(
+              color: kSettleCoral,
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Text(
+              '총 매입 건수 $count건',
+              style: const TextStyle(
+                fontFamily: 'Pretendard',
+                fontSize: 11.5,
+                fontWeight: FontWeight.w700,
+                color: Colors.white,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 시안 총매입 카드의 `‹` `›` 버튼.
+class _MonthArrow extends StatelessWidget {
+  const _MonthArrow({required this.icon, required this.onTap});
+
+  final IconData icon;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(16),
+      child: Padding(
+        padding: const EdgeInsets.all(4),
+        child: Icon(icon, size: 19, color: kSettleInk),
+      ),
     );
   }
 }
@@ -267,27 +359,23 @@ class SettleSegmented extends StatelessWidget {
     for (var i = 0; i < items.length; i++) {
       final e = items[i];
       final on = e == value;
-      if (i > 0) kids.add(const SizedBox(width: 2)); // 원본 `gap: 2`
+      // 시안 칸 사이 간격 6.8dp
+      if (i > 0) kids.add(const SizedBox(width: 7));
       kids.add(Expanded(
         child: GestureDetector(
           onTap: () => onChanged(e),
           behavior: HitTestBehavior.opaque,
+          // 🔴 #140 시안은 회색 홈통 안의 세그먼트가 아니라, 배경 위에
+          //    바로 놓인 **알약 두 칸**이다. 활성은 코랄 채움(흰 글자),
+          //    비활성은 흰 채움 + 연한 테두리.
+          //    실측: 높이 41.1dp, 각 칸 168~170dp, 좌우 23.5dp.
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 150),
-            height: 36,
+            height: kSettleToggleH,
             decoration: BoxDecoration(
-              color: on ? Colors.white : Colors.transparent,
-              borderRadius: BorderRadius.circular(10),
-              boxShadow: on
-                  // 원본 `0 1px 4px rgba(0,0,0,.10)`.
-                  ? const [
-                      BoxShadow(
-                        color: Color(0x1A000000),
-                        blurRadius: 4,
-                        offset: Offset(0, 1),
-                      ),
-                    ]
-                  : null,
+              color: on ? kSettleCoral : kSettleWhite,
+              borderRadius: BorderRadius.circular(kSettleToggleH / 2),
+              border: on ? null : Border.all(color: kSettleLine),
             ),
             alignment: Alignment.center,
             child: Text(
@@ -295,8 +383,8 @@ class SettleSegmented extends StatelessWidget {
               style: TextStyle(
                 fontFamily: 'Pretendard',
                 fontSize: 14,
-                fontWeight: on ? FontWeight.w700 : FontWeight.w500,
-                color: on ? kSettleInk : kSettleMute,
+                fontWeight: on ? FontWeight.w700 : FontWeight.w600,
+                color: on ? Colors.white : kSettleMute,
               ),
             ),
           ),
@@ -304,15 +392,8 @@ class SettleSegmented extends StatelessWidget {
       ));
     }
 
-    return Container(
-      padding: const EdgeInsets.all(3),
-      decoration: BoxDecoration(
-        // 원본 `rgba(112,115,124,.08)` = `FnColors.fillNormal`.
-        color: FnColors.fillNormal,
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Row(children: kids),
-    );
+    // #140 시안은 회색 홈통이 없다. 알약 두 칸을 바로 놓는다.
+    return Row(children: kids);
   }
 }
 
@@ -595,14 +676,28 @@ class _ReceiptCard extends StatelessWidget {
                   // 원본 `flexShrink: 0` — 폭이 좁아도 배지는 줄지 않는다.
                   SettleTaxBadge(tax: tax),
                   const SizedBox(width: 9),
-                  // 원본 `flexShrink: 0` — 금액은 절대 잘리지 않는다.
-                  Text(
-                    FnDemo.won(receipt.totalAmount),
-                    style: const TextStyle(
-                      fontFamily: 'Pretendard',
-                      fontSize: 15.5,
-                      fontWeight: FontWeight.w700,
-                      color: kSettleInk,
+                  // 🔴 #140 좌우 여백을 시안 24dp 로 넓히자 좁은 기기에서
+                  //    이 줄이 넘쳤다. 실측: 320dp 화면에서 이 Row 의
+                  //    제약이 190dp 가 되어 30px 오버플로.
+                  //
+                  //    금액은 절대 자르지 않는다(원본 `flexShrink:0`).
+                  //    대신 들어갈 자리가 없을 때만 **같은 비율로** 줄인다.
+                  //    FittedBox(scaleDown) 은 공간이 충분하면 아무 일도
+                  //    하지 않으므로 넓은 화면의 모습은 그대로다.
+                  Flexible(
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: Alignment.centerRight,
+                      child: Text(
+                        FnDemo.won(receipt.totalAmount),
+                        maxLines: 1,
+                        style: const TextStyle(
+                          fontFamily: 'Pretendard',
+                          fontSize: 15.5,
+                          fontWeight: FontWeight.w700,
+                          color: kSettleInk,
+                        ),
+                      ),
                     ),
                   ),
                 ],

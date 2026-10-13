@@ -185,7 +185,9 @@ class _SettleDsScreenState extends State<SettleDsScreen> {
       behavior: HitTestBehavior.translucent,
       onTap: _closePickers,
       child: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
+        // 🔴 #140 시안 카드 좌우 여백 24.4dp (예전 16dp)
+        padding: const EdgeInsets.fromLTRB(
+            kSettlePagePad, 10, kSettlePagePad, 16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -201,10 +203,14 @@ class _SettleDsScreenState extends State<SettleDsScreen> {
             ),
             const SizedBox(height: 14),
 
-            // ── 날짜별 / 업체별 토글 ─────────────────────────
+            // ── 업체별 / 날짜별 토글 ─────────────────────────
+            //
+            // 🔴 #140 시안은 **업체별이 왼쪽, 날짜별이 오른쪽**이다.
+            //    픽셀로 확인: 왼쪽 칸은 흰 배경(흰 픽셀 2372), 오른쪽
+            //    칸은 코랄 채움이었다. 예전 순서는 반대였다.
             SettleSegmented(
               value: _view,
-              items: const ['date', 'vendor'],
+              items: const ['vendor', 'date'],
               labelOf: (v) => v == 'date' ? '날짜별' : '업체별',
               onChanged: (v) => setState(() {
                 _view = v;
@@ -212,8 +218,23 @@ class _SettleDsScreenState extends State<SettleDsScreen> {
                 _closePickers();
               }),
             ),
-            const SizedBox(height: 14),
+            const SizedBox(height: 18),
 
+            // 🔴 #140 시안에는 검색창 위에 '거래처 검색' 라벨이 있다.
+            //    실측: y 361.6dp, 좌 24.4dp, 글자 회색.
+            const Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                '거래처 검색',
+                style: TextStyle(
+                  fontFamily: 'Pretendard',
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w600,
+                  color: kSettleMute,
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
             FnSearchBar(
               controller: _queryCtl,
               placeholder: '거래처명 검색',
