@@ -31,12 +31,17 @@ class _FakeReceiptProvider extends ReceiptProvider {
   List<ReceiptModel> get allReceipts => _items;
 }
 
-/// 히트맵 색 4단계 (시안 `HEAT`)
+/// 히트맵 색 4단계.
+///
+/// 🔴 #139 시안(317x1024) 범례를 실측해 교체했다. 범례 스와치
+/// (y 752.9dp, 각 13dp)를 왼쪽부터 읽은 값이며, 격자 칸 색으로
+/// 교차 확인했다 (3일 #FFF1EE / 10일 #FFAC92 / 24일 #FF6D78).
+/// 예전 값(#DE6A7C 계열)은 자줏빛이라 앱 코랄 톤과 달랐다.
 const _heat = [
-  Color(0xFFFBE4E7),
-  Color(0xFFF5C2C8),
-  Color(0xFFEE8E9C),
-  Color(0xFFDE6A7C),
+  Color(0xFFFEF0ED),
+  Color(0xFFFFD4C3),
+  Color(0xFFFFAA96),
+  Color(0xFFFF6F7A),
 ];
 
 ReceiptModel _r({
@@ -87,7 +92,133 @@ Color? _cellColor(WidgetTester t, String day) {
   return null;
 }
 
+/// #139 전용 — 시안 톤앤톤 회귀 검사.
+void _k139() {
+  group('#139 캘린더 시안 반영', () {
+    testWidgets('🔴 월 총매입 카드가 흰 카드다 (분홍 그라디언트 아님)',
+        (t) async {
+      await t.pumpWidget(_wrap(const []));
+      await t.pump(const Duration(milliseconds: 300));
+
+      // '총 매입' 글자를 품은 Container 중 배경이 지정된 것을 찾는다.
+      final label = find.textContaining('총 매입');
+      expect(label, findsOneWidget, reason: '총 매입 라벨이 없다');
+      final boxes = find
+          .ancestor(of: label, matching: find.byType(Container))
+          .evaluate()
+          .map((e) => (e.widget as Container).decoration)
+          .whereType<BoxDecoration>()
+          .toList();
+      final withBg = boxes.where((d) => d.color != null).toList();
+      expect(withBg, isNotEmpty, reason: '카드 배경이 없다');
+      expect(withBg.first.color, const Color(0xFFFFFFFF),
+          reason: '시안 카드는 흰색이다');
+      // 예전 그라디언트가 남아 있으면 안 된다
+      expect(boxes.any((d) => d.gradient != null), isFalse,
+          reason: '분홍 그라디언트가 남아 있다');
+    });
+
+    testWidgets('🔴 건수가 코랄 배지로 나온다', (t) async {
+      await t.pumpWidget(_wrap(const []));
+      await t.pump(const Duration(milliseconds: 300));
+
+      final badge = find.text('총 8건');
+      expect(badge, findsOneWidget, reason: '총 N건 배지가 없다');
+      // 글자는 흰색
+      expect((t.widget<Text>(badge)).style?.color, Colors.white,
+          reason: '배지 글자는 흰색이어야 한다');
+      // 배경은 시안 코랄
+      final bg = find
+          .ancestor(of: badge, matching: find.byType(Container))
+          .evaluate()
+          .map((e) => (e.widget as Container).decoration)
+          .whereType<BoxDecoration>()
+          .map((d) => d.color)
+          .whereType<Color>()
+          .toList();
+      expect(bg, contains(const Color(0xFFFF6D78)),
+          reason: '시안 배지 색 #FF6D78 이 없다');
+    });
+
+    testWidgets('🔴 캘린더가 흰 카드 안에 들어 있다', (t) async {
+      await t.pumpWidget(_wrap(const []));
+      await t.pump(const Duration(milliseconds: 300));
+
+      // 요일 '일' 과 범례 '적음' 을 **같은** 흰 Container 가 감싸야 한다.
+      final sun = find.text('일');
+      final few = find.text('적음');
+      expect(sun, findsOneWidget);
+      expect(few, findsOneWidget);
+
+      Set<Element> whiteCardsOf(Finder f) => find
+          .ancestor(of: f, matching: find.byType(Container))
+          .evaluate()
+          .where((e) {
+            final d = (e.widget as Container).decoration;
+            return d is BoxDecoration && d.color == const Color(0xFFFFFFFF);
+          })
+          .toSet();
+
+      final shared = whiteCardsOf(sun).intersection(whiteCardsOf(few));
+      expect(shared, isNotEmpty,
+          reason: '요일과 범례를 함께 감싸는 흰 카드가 없다');
+    });
+
+    testWidgets('🔴 좌우 여백이 시안 24dp 다', (t) async {
+      // 🔴 `_wrap(size:)` 는 MediaQuery 만 바꾼다. 실제 뷰포트는 기본값
+      //    (800dp 폭)이라 left 가 -386.0 으로 나왔다. 화면 폭을 재는
+      //    검사는 `tester.view.physicalSize` 를 반드시 같이 바꿔야 한다.
+      t.view.physicalSize = const Size(390, 900);
+      t.view.devicePixelRatio = 1.0;
+      addTearDown(t.view.reset);
+      await t.pumpWidget(_wrap(const [], size: const Size(390, 900)));
+      await t.pump(const Duration(milliseconds: 300));
+
+      // 🔴 find.byWidget 은 같은 위젯이 여러 번 쓰이면 엉뚱한 것을
+      //    잡는다(실제로 left = -386.0 이 나왔다). 그래서 Finder 를
+      //    조상 경로로 직접 만들어 **첫 번째 흰 카드**를 가리킨다.
+      final label = find.textContaining('총 매입');
+      final card = find.ancestor(
+        of: label,
+        matching: find.byWidgetPredicate((w) {
+          if (w is! Container) return false;
+          final d = w.decoration;
+          return d is BoxDecoration && d.color == const Color(0xFFFFFFFF);
+        }),
+      );
+      expect(card, findsWidgets, reason: '흰 카드가 없다');
+      final r = t.getRect(card.first);
+      expect(r.left, closeTo(24, 1.5), reason: '시안 좌 여백 24.6dp');
+      expect(390 - r.right, closeTo(24, 1.5), reason: '시안 우 여백 24.6dp');
+    });
+
+    testWidgets('🔴 예전 자줏빛 히트맵 색이 남아 있지 않다', (t) async {
+      await t.pumpWidget(_wrap(const []));
+      await t.pump(const Duration(milliseconds: 300));
+
+      final used = <int>{};
+      for (final e in find.byType(Container).evaluate()) {
+        final d = (e.widget as Container).decoration;
+        if (d is BoxDecoration && d.color != null) {
+          used.add(d.color!.toARGB32());
+        }
+      }
+      for (final old in [0xFFFBE4E7, 0xFFF5C2C8, 0xFFEE8E9C, 0xFFDE6A7C]) {
+        expect(used.contains(old), isFalse,
+            reason: '예전 히트맵 색 ${old.toRadixString(16)} 이 남아 있다');
+      }
+      // 새 색 중 적어도 하나는 쓰였다 (데모 데이터에 칠해진 날이 있다)
+      expect(
+          used.intersection(
+              {0xFFFEF0ED, 0xFFFFD4C3, 0xFFFFAA96, 0xFFFF6F7A}),
+          isNotEmpty,
+          reason: '새 히트맵 색이 하나도 안 쓰였다');
+    });
+  });
+}
+
 void main() {
+  _k139();
   // 표시되는 달은 항상 "이번 달" (provider 기본값 = 오늘)
   final now = DateTime.now();
   DateTime day(int d) => DateTime(now.year, now.month, d);
@@ -173,7 +304,8 @@ void main() {
 
     // 88,000 + 210,000 + 12,000 = 310,000
     expect(find.text('₩310,000'), findsWidgets);
-    expect(find.text('3건'), findsOneWidget);
+    // #139 시안은 코랄 배지에 '총 N건' 으로 쓴다.
+    expect(find.text('총 3건'), findsOneWidget);
   });
 
   testWidgets('날짜를 누르면 그날 내역과 사진 추가 버튼이 나온다', (t) async {
@@ -217,6 +349,6 @@ void main() {
 
     // 시안 byDay 합계 = 1,075,000 / 8건
     expect(find.text('₩1,075,000'), findsOneWidget);
-    expect(find.text('8건'), findsOneWidget);
+    expect(find.text('총 8건'), findsOneWidget);
   });
 }

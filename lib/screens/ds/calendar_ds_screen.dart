@@ -4,7 +4,6 @@ import 'package:provider/provider.dart';
 
 import '../../design/fn_tokens.dart';
 import '../../design/fn_card.dart';
-import '../../design/fn_badge_ds.dart';
 import '../../design/fn_controls_ds.dart';
 import '../../models/receipt_model.dart';
 import '../../providers/receipt_provider.dart';
@@ -58,21 +57,55 @@ typedef _DayRow = ({
 /// ```js
 /// const HEAT = ['#FBE4E7', '#F5C2C8', '#EE8E9C', '#DE6A7C'];
 /// ```
+/// 🔴 #139 시안(317x1024, 환산비 1.2303) 범례 실측값으로 교체.
+///
+/// 범례 스와치(y 752.9dp, 각 13dp, 간격 4.9dp)를 왼쪽부터 읽은 값:
+/// ```
+///   #FEF0ED  #FFD4C3  #FFAA96  #FF6F7A
+/// ```
+/// 격자 칸을 직접 읽어 교차 확인했다 (칸 폭 48.5dp, 칩 h 55~58dp):
+/// ```
+///   3,15,17,20 일 -> #FFF1EE (1단계)
+///   10,22   일 -> #FFAC92 (3단계)
+///   24      일 -> #FF6D78 (4단계)
+/// ```
+/// 예전 값은 자줏빛(#DE6A7C 계열)이라 앱 전체 코랄 톤과 달랐다.
 const List<Color> _kHeat = [
-  Color(0xFFFBE4E7),
-  Color(0xFFF5C2C8),
-  Color(0xFFEE8E9C),
-  Color(0xFFDE6A7C),
+  Color(0xFFFEF0ED),
+  Color(0xFFFFD4C3),
+  Color(0xFFFFAA96),
+  Color(0xFFFF6F7A),
 ];
 
-/// 연한 칸에 쓰는 글자색 `#8E3A4B`
-const Color _kHeatFgLight = Color(0xFF8E3A4B);
+/// 연한 칸에 쓰는 글자색.
+///
+/// 시안의 연한 칩 안 글자를 읽으면 코랄 계열 진한 색이다. 예전
+/// `#8E3A4B` 는 자줏빛이라 새 칩 색과 어울리지 않는다.
+const Color _kHeatFgLight = Color(0xFFC2525C);
 
-/// 선택 테두리 `#C9566A`
-const Color _kSelRing = Color(0xFFC9566A);
+/// 선택 테두리. 시안 진한 칩과 같은 코랄.
+const Color _kSelRing = Color(0xFFFF6D78);
 
-/// 오늘 테두리 `rgba(201,86,106,.45)`
-const Color _kTodayRing = Color(0x73C9566A);
+/// 오늘 테두리 — 선택 테두리의 45% 농도.
+const Color _kTodayRing = Color(0x73FF6D78);
+
+/// 🔴 #139 월 총매입 카드 — 시안은 **흰 카드**다.
+///
+/// 예전에는 `linear-gradient(135deg,#FCEEEB,#FFFAF8)` 분홍 그라디언트였다.
+/// 시안 카드 영역(y 127.9..279.3dp)을 읽으면 전부 #FFFFFF 였다.
+const Color _kCardBg = Color(0xFFFFFFFF);
+
+/// 카드 테두리 — 홈 화면과 같은 연한 선.
+const Color _kCardLine = Color(0x14C9A79B);
+
+/// '총 N건' 배지 배경. 시안 실측 #FF6D78 (y 233.8..259.6, h 27.1dp).
+const Color _kCountBadge = Color(0xFFFF6D78);
+
+/// 시안 카드 좌우 여백 24.6dp — 본문 패딩으로 쓴다.
+const double _kPagePad = 24.0;
+
+/// 시안 카드 모서리.
+const double _kCardRadius = 18.0;
 
 class _CalendarDsScreenState extends State<CalendarDsScreen> {
   late DateTime _today;
@@ -427,22 +460,40 @@ class _CalendarDsScreenState extends State<CalendarDsScreen> {
     return Stack(
       children: [
         SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(14, 10, 14, 16),
+          // #139 시안 카드 좌우 여백 24.6dp
+          padding: const EdgeInsets.fromLTRB(_kPagePad, 10, _kPagePad, 20),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               // 시안 순서: 총 매입 카드가 맨 위
               _monthTotalCard(byDay),
               const SizedBox(height: 14),
-              _header(isThisMonth),
-              const SizedBox(height: 14),
-              _weekdayRow(),
-              const SizedBox(height: 14),
-              _grid(byDay, first, daysInMonth, isThisMonth),
-              const SizedBox(height: 4),
-              _heatLegend(),
-              const SizedBox(height: 14),
-              const FnDsDivider(),
+              // 🔴 #139 시안은 월이동 헤더 + 요일 + 격자 + 범례가
+              //    **하나의 흰 카드** 안에 들어 있다.
+              //    실측: x=30dp 세로 단면이 y 302.6..777.5dp 구간에서
+              //    전부 #FFFFFF 였다. 예전에는 카드 없이 배경에 그대로
+              //    놓여 있었다.
+              Container(
+                padding: const EdgeInsets.fromLTRB(12, 14, 12, 12),
+                decoration: BoxDecoration(
+                  color: _kCardBg,
+                  borderRadius: BorderRadius.circular(_kCardRadius),
+                  border: Border.all(color: _kCardLine),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _header(isThisMonth),
+                    const SizedBox(height: 14),
+                    _weekdayRow(),
+                    const SizedBox(height: 10),
+                    _grid(byDay, first, daysInMonth, isThisMonth),
+                    const SizedBox(height: 8),
+                    _heatLegend(),
+                  ],
+                ),
+              ),
               const SizedBox(height: 14),
               _dayDetail(byDay),
             ],
@@ -480,13 +531,10 @@ class _CalendarDsScreenState extends State<CalendarDsScreen> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(16),
-        // linear-gradient(135deg, #FCEEEB 0%, #FFFAF8 100%)
-        gradient: const LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [Color(0xFFFCEEEB), Color(0xFFFFFAF8)],
-        ),
+        // #139 시안은 흰 카드 + 연한 테두리다 (분홍 그라디언트 아님)
+        color: _kCardBg,
+        borderRadius: BorderRadius.circular(_kCardRadius),
+        border: Border.all(color: _kCardLine),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -500,31 +548,37 @@ class _CalendarDsScreenState extends State<CalendarDsScreen> {
               color: FnColors.labelAlternative,
             ),
           ),
-          const SizedBox(height: 4),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.baseline,
-            textBaseline: TextBaseline.alphabetic,
-            children: [
-              Text(
-                FnDemo.won(_monthTotal(byDay)),
+          const SizedBox(height: 6),
+          // 시안은 금액이 한 줄, 그 **아래**에 코랄 배지로 건수를 쓴다.
+          Text(
+            FnDemo.won(_monthTotal(byDay)),
+            style: const TextStyle(
+              fontFamily: 'Pretendard',
+              fontSize: 28,
+              fontWeight: FontWeight.w800,
+              letterSpacing: -1,
+              color: FnColors.labelNormal,
+            ),
+          ),
+          const SizedBox(height: 10),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 5),
+              decoration: BoxDecoration(
+                color: _kCountBadge,
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: Text(
+                '총 $count건',
                 style: const TextStyle(
                   fontFamily: 'Pretendard',
-                  fontSize: 28,
+                  fontSize: 11.5,
                   fontWeight: FontWeight.w700,
-                  letterSpacing: -1,
-                  color: FnColors.labelNormal,
+                  color: Colors.white,
                 ),
               ),
-              const SizedBox(width: 8),
-              Text(
-                '$count건',
-                style: const TextStyle(
-                  fontFamily: 'Pretendard',
-                  fontSize: 12.5,
-                  color: FnColors.labelAlternative,
-                ),
-              ),
-            ],
+            ),
           ),
         ],
       ),
