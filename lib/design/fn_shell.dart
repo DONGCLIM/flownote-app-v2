@@ -259,7 +259,9 @@ class _FnBrandHeader extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 24),
         child: Row(
           children: [
-            const FnWordmark(height: 18, flat: true),
+            // #138 5탭 헤더는 'o' 꽃잎이 코랄인 판을 쓴다.
+            // (로그인·스플래시·인트로 시안은 검정이라 flat 유지)
+            const FnWordmark(height: 18, color: true),
             const Spacer(),
             // 벨 — 누를 수 있는 영역은 44x44 로 넉넉히 둔다.
             InkWell(

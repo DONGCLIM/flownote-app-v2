@@ -1,3 +1,4 @@
+import 'dart:io' as io;
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -64,7 +65,10 @@ void main() {
       expect(wm, findsOneWidget, reason: '워드마크가 없다');
 
       final w = t.widget<FnWordmark>(wm);
-      expect(w.flat, isTrue, reason: '시안 워드마크는 전부 검정(flat)이다');
+      // 🔴 #138 헤더 워드마크는 'o' 꽃잎이 코랄인 판으로 바뀌었다.
+      //    (로그인·스플래시·인트로는 여전히 검정 = flat)
+      expect(w.color, isTrue, reason: '헤더 워드마크는 컬러판이어야 한다');
+      expect(w.flat, isFalse, reason: '검정판으로 돌아가면 안 된다');
       expect(w.height, closeTo(17.3, 1.5), reason: '시안 h 17.3dp');
 
       final r = t.getRect(wm);
@@ -107,6 +111,61 @@ void main() {
       await _pump(t, _shell(brand: false));
       expect(find.text('제목자리표시'), findsOneWidget);
       expect(find.byType(FnWordmark), findsNothing);
+    });
+  });
+
+  group('#138 헤더 로고 — 컬러판', () {
+    testWidgets('🔴 헤더는 컬러 에셋 경로를 가리킨다', (t) async {
+      await _pump(t, _shell());
+      final img = find
+          .descendant(of: find.byType(FnWordmark), matching: find.byType(Image))
+          .evaluate()
+          .map((e) => (e.widget as Image).image)
+          .whereType<AssetImage>()
+          .map((a) => a.assetName)
+          .toList();
+      expect(img, isNotEmpty, reason: '워드마크 Image 가 없다');
+      expect(img.first, FnBrand.wordmarkColorAsset,
+          reason: '헤더는 컬러판을 써야 한다');
+      expect(img.first, isNot(FnBrand.wordmarkFlatAsset),
+          reason: '검정판이면 안 된다');
+    });
+
+    testWidgets('🔴 컬러 에셋 파일이 실제로 있고 꽃잎이 코랄이다', (t) async {
+      // Image.asset 은 테스트 바인딩에서 resolve 되지 않는다. 그래서
+      // 파일 자체를 읽어 확인한다. (렌더 스크린샷으로는 확인 불가)
+      final f = io.File('assets/brand/logo_wordmark_color.png');
+      expect(f.existsSync(), isTrue, reason: '컬러 워드마크 파일이 없다');
+      final bytes = f.readAsBytesSync();
+      expect(bytes.length, greaterThan(10000), reason: '파일이 너무 작다');
+      // PNG 서명
+      expect(bytes.sublist(0, 4), [0x89, 0x50, 0x4E, 0x47]);
+    });
+
+    testWidgets('🔴 로그인/스플래시/인트로는 검정판 그대로다', (t) async {
+      // 소스에서 확인한다. 헤더만 컬러로 바뀌었는지 보장한다.
+      for (final path in <String>[
+        'lib/screens/ds/splash_ds_screen.dart',
+        'lib/screens/ds/intro_ds_screen.dart',
+      ]) {
+        final code = io.File(path).readAsStringSync();
+        expect(code.contains('flat: true'), isTrue,
+            reason: '$path 는 검정판(flat)을 유지해야 한다');
+        expect(code.contains('color: true'), isFalse,
+            reason: '$path 가 컬러판으로 바뀌었다');
+      }
+    });
+
+    testWidgets('🔴 5개 탭 전부 같은 헤더를 쓴다', (t) async {
+      // 헤더는 FnShell 한 곳에서만 그린다. 탭을 바꿔도 워드마크는
+      // 하나뿐이고 컬러판이어야 한다.
+      for (final key in ['home', 'settle', 'scan', 'calendar', 'profile']) {
+        await _pump(t, _shell(active: key));
+        final wm = find.byType(FnWordmark);
+        expect(wm, findsOneWidget, reason: '$key 탭에 워드마크가 없다');
+        expect(t.widget<FnWordmark>(wm).color, isTrue,
+            reason: '$key 탭 헤더가 컬러판이 아니다');
+      }
     });
   });
 

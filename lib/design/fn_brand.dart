@@ -26,6 +26,19 @@ class FnBrand {
   static const String wordmarkFlatAsset =
       'assets/brand/logo_wordmark_flat.png';
 
+  /// 🔴 #138 5탭 헤더용 워드마크 — **'o' 자리 꽃잎이 코랄**.
+  ///
+  /// 사장님이 준 컬러 판(1024x242)을 그대로 넣으면 안 된다. 그 파일은
+  /// 사방에 여백이 있어서(내용은 971x162) 같은 높이로 넣으면 글자가
+  /// 작아 보인다. 그래서 알파 bbox 로 잘라낸 뒤 기존 판과 **똑같은
+  /// 캔버스(1787x300)** 에 다시 앉혔다. 결과 글자 폭이 기존과 정확히
+  /// 같다(차 0px). 꽃잎 색은 왼쪽 #FF787C / 오른쪽 #FF9385.
+  ///
+  /// `wordmarkFlatAsset`(전부 검정)은 로그인·스플래시·인트로 시안이
+  /// 검정이므로 그대로 남겨 둔다.
+  static const String wordmarkColorAsset =
+      'assets/brand/logo_wordmark_color.png';
+
   /// 로그인 화면용 심볼 — 바깥으로 퍼지는 코랄 글로우가 **그림에**
   /// 포함된 버전이다 (사용자 지정, 요청 #116).
   ///
@@ -170,6 +183,7 @@ class FnWordmark extends StatelessWidget {
     required this.height,
     this.semanticsLabel = 'FlowNote',
     this.flat = false,
+    this.color = false,
   });
 
   final double height;
@@ -178,10 +192,17 @@ class FnWordmark extends StatelessWidget {
   /// 'o' 까지 전부 검정인 판을 쓴다. 로그인·스플래시 시안이 이것이다.
   final bool flat;
 
+  /// 'o' 자리 꽃잎만 코랄인 판을 쓴다. 5탭 헤더가 이것이다. (#138)
+  ///
+  /// `flat` 과 같이 켜면 `color` 가 이긴다.
+  final bool color;
+
   @override
   Widget build(BuildContext context) {
     return Image.asset(
-      flat ? FnBrand.wordmarkFlatAsset : FnBrand.wordmarkAsset,
+      color
+          ? FnBrand.wordmarkColorAsset
+          : (flat ? FnBrand.wordmarkFlatAsset : FnBrand.wordmarkAsset),
       height: height,
       width: height * FnBrand.wordmarkRatio,
       fit: BoxFit.contain,
