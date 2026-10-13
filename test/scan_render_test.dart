@@ -194,20 +194,24 @@ void main() {
     await t.pumpWidget(_wrap(const []));
     await t.pumpAndSettle();
 
-    // 시안 버튼 높이 52.8 / 54.4dp -> 54 로 통일, 모서리는 정확히 절반
-    for (final label in ['영수증 촬영하기', '앨범에서 가져오기']) {
+    // 🔴 #137 재실측: 촬영 52.8dp / 앨범 56.9dp 로 **서로 다르다**.
+    //    전에는 둘 다 54 로 통일했는데, 앨범이 3dp 낮았다.
+    const want = <String, double>{
+      '영수증 촬영하기': FnHome.buttonH,
+      '앨범에서 가져오기': FnHome.buttonH2,
+    };
+    for (final e in want.entries) {
       final box = find
-          .ancestor(of: find.text(label), matching: find.byType(Container))
+          .ancestor(of: find.text(e.key), matching: find.byType(Container))
           .first;
       final rect = t.getRect(box);
-      expect(rect.height, closeTo(FnHome.buttonH, 0.5),
-          reason: '$label 높이');
+      expect(rect.height, closeTo(e.value, 0.5), reason: '${e.key} 높이');
 
       final c = t.widget<Container>(box);
       final dec = c.decoration as BoxDecoration;
       final br = dec.borderRadius! as BorderRadius;
-      expect(br.topLeft.x, closeTo(FnHome.buttonH / 2, 0.5),
-          reason: '$label 은 알약이어야 한다 (r = 높이/2)');
+      expect(br.topLeft.x, closeTo(e.value / 2, 0.5),
+          reason: '${e.key} 은 알약이어야 한다 (r = 높이/2)');
     }
   });
 

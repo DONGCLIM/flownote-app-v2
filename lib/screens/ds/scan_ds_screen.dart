@@ -153,6 +153,7 @@ class ScanDsScreenState extends State<ScanDsScreen> {
           // ── 앨범에서 가져오기 (보조) ────────────────────────────────
           _PillButton(
             label: '앨범에서 가져오기',
+                height: FnHome.buttonH2,
             icon: Icons.photo_library_rounded,
             filled: false,
             onTap: reached ? null : _pickFromGallery,
@@ -262,6 +263,7 @@ class _PillButton extends StatelessWidget {
     required this.icon,
     required this.filled,
     this.onTap,
+    this.height = FnHome.buttonH,
   });
 
   final String label;
@@ -269,12 +271,15 @@ class _PillButton extends StatelessWidget {
   final bool filled;
   final VoidCallback? onTap;
 
+  /// 알약 높이. 시안 실측은 촬영 52.8dp / 앨범 56.9dp 로 서로 다르다.
+  final double height;
+
   @override
   Widget build(BuildContext context) {
     final disabled = onTap == null;
     final bg = filled ? FnHome.coralFlat : FnHome.surfaceSoft;
     final fg = filled ? Colors.white : FnHome.tipDesc;
-    const r = FnHome.buttonH / 2;
+    final r = height / 2;
 
     return Opacity(
       opacity: disabled ? 0.45 : 1,
@@ -284,7 +289,7 @@ class _PillButton extends StatelessWidget {
           onTap: onTap,
           borderRadius: BorderRadius.circular(r),
           child: Container(
-            height: FnHome.buttonH,
+            height: height,
             alignment: Alignment.center,
             decoration: BoxDecoration(
               color: bg,

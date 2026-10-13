@@ -121,14 +121,24 @@ void main() {
       expect(r.left, closeTo(390 - r.right, 0.5), reason: '좌우 대칭');
     });
 
-    testWidgets('바닥에서 떠 있다', (t) async {
+    testWidgets('🔴 바닥에서 시안만큼 떠 있다 (34.6dp)', (t) async {
+      // 🔴 이 검사는 전에 `greaterThan(4)` 였다. 그래서 실제로는 10dp 만
+      //    떠 있어도 통과했고, 라이브에서 탭바가 화면 아래에 붙어 보이는
+      //    문제를 **못 잡았다**. 시안 실측 34.6dp 로 조인다.
       await _pump(t, _shell());
       final r = t.getRect(find.byType(FnBottomNavigation));
-      expect(844 - r.bottom, greaterThan(4),
-          reason: '시안은 아래로 띄워져 있다 (바닥에 붙지 않는다)');
+      expect(844 - r.bottom, closeTo(FnHome.tabBarBottom, 1.5),
+          reason: '시안은 바닥에서 34.6dp 떠 있다');
     });
 
-    testWidgets('모서리가 둥글다 (시안 r 27dp)', (t) async {
+    testWidgets('🔴 탭바 높이가 시안과 같다 (70.9dp)', (t) async {
+      await _pump(t, _shell());
+      final r = t.getRect(find.byType(FnBottomNavigation));
+      expect(r.height, closeTo(FnHome.tabBarH, 1.5),
+          reason: '시안 탭바 높이 70.9dp');
+    });
+
+    testWidgets('모서리가 둥글다 (시안 r 28dp)', (t) async {
       await _pump(t, _shell());
       final card = find.descendant(
         of: find.byType(FnBottomNavigation),
@@ -141,7 +151,8 @@ void main() {
       final dec =
           t.widget<Container>(card.first).decoration! as BoxDecoration;
       final br = dec.borderRadius! as BorderRadius;
-      expect(br.topLeft.x, closeTo(27, 2), reason: '시안 r 27dp');
+      expect(br.topLeft.x, closeTo(FnHome.tabBarRadius, 2.5),
+          reason: '시안 탭바 반경');
     });
 
     testWidgets('활성 탭이 코랄이다', (t) async {

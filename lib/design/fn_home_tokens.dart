@@ -127,4 +127,33 @@ class FnHome {
   static const double scanPad = 24;
   static const double tipRadius = 14;
   static const double buttonH = 54;
+
+  // ── #137 스캔 시안 재실측 (473x1024, 환산비 0.8245) ──────────────
+  //
+  // 떠 있는 탭바:
+  //   y 738.8..809.7dp (높이 70.9)   <- 최하단 행 기준
+  //   x 9.9..379.3dp   (좌우 9.9 대칭)
+  //   화면 바닥까지 34.6dp 떠 있다.  <- 전에는 10dp 만 띄워서 붙어 보였다
+  //   최대폭 행(y 747.0): x 22.3..366.9 -> 모서리 반경이 크다
+  //
+  // 앨범 버튼: y 659.6..716.5dp (높이 56.9)
+
+  /// 떠 있는 탭바 높이.
+  static const double tabBarH = 71;
+
+  /// 떠 있는 탭바 좌우 여백.
+  static const double tabBarSide = 10;
+
+  /// 떠 있는 탭바가 화면 바닥에서 떠 있는 거리.
+  ///
+  /// 🔴 전에는 `bottomInset > 0 ? bottomInset : 10` 이었다. 홈 인디케이터가
+  ///    없는 환경(웹·구형 안드로이드)에서는 10dp 만 띄워서 탭바가 화면
+  ///    아래에 붙어 보였다. 라이브 실측 10.0dp vs 시안 34.6dp.
+  static const double tabBarBottom = 34;
+
+  /// 떠 있는 탭바 모서리 반경.
+  static const double tabBarRadius = 28;
+
+  /// 앨범 버튼(흰 알약) 높이. 시안 56.9dp.
+  static const double buttonH2 = 57;
 }

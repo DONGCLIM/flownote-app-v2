@@ -110,10 +110,21 @@ class FnShell extends StatelessWidget {
           if (tabs != null && floatingTabs)
             // #136 시안 탭바 — 떠 있는 흰 카드
             Padding(
+              // 🔴 #137 시안 실측: 좌우 9.9dp / 바닥에서 34.6dp 떠 있다.
+              //
+              // 전에는 `bottomInset > 0 ? bottomInset : 10` 이어서 홈
+              // 인디케이터가 없는 환경(웹·구형 안드로이드)에서는 10dp 만
+              // 띄워 탭바가 화면 아래에 **붙어** 보였다.
+              // 라이브 실측 10.0dp vs 시안 34.6dp.
+              //
+              // 인디케이터가 있으면 그 높이를 쓰되, 시안 간격보다 작으면
+              // 시안 간격을 쓴다. (아래로 더 붙지 않게)
               padding: EdgeInsets.only(
-                left: 10,
-                right: 10,
-                bottom: bottomInset > 0 ? bottomInset : 10,
+                left: FnHome.tabBarSide,
+                right: FnHome.tabBarSide,
+                bottom: bottomInset > FnHome.tabBarBottom
+                    ? bottomInset
+                    : FnHome.tabBarBottom,
               ),
               child: FnBottomNavigation(
                 tabs: tabs!,
@@ -339,10 +350,11 @@ class FnBottomNavigation extends StatelessWidget {
   Widget build(BuildContext context) {
     if (floating) {
       return Container(
-        height: 68,
+        // 시안 실측 70.9dp (y 738.8..809.7)
+        height: FnHome.tabBarH,
         decoration: BoxDecoration(
           color: FnColors.backgroundNormal,
-          borderRadius: BorderRadius.circular(27),
+          borderRadius: BorderRadius.circular(FnHome.tabBarRadius),
           boxShadow: [
             BoxShadow(
               color: const Color(0xFF8A5C57).withValues(alpha: 0.10),
