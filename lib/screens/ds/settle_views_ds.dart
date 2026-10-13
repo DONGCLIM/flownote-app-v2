@@ -128,6 +128,88 @@ const double kSettlePagePad = 24.0;
 /// 시안 토글 높이 41.1dp.
 const double kSettleToggleH = 41.0;
 
+// ── #142 그림자 실측 (시안 399x1024, 환산비 0.9774) ────────────────
+//
+// 배경 #FEF9F5 위에서 카드 아래쪽으로 어두워지는 양(Δ)을 1dp 간격으로
+// 쟀다. 카드 종류마다 번지는 거리가 **다르다**.
+//
+//   총매입 카드   +1dp Δ18 -> +9dp Δ0    9dp 번짐  (크고 부드럽다)
+//   영수증 카드   +1dp Δ16 -> +3dp Δ0    3dp 번짐  (작고 또렷하다)
+//   검색창/칩     +1dp Δ10 -> +2dp Δ0    2dp 번짐  (아주 얕다)
+//
+// 방향: 위 2dp / 옆 6dp / 아래 9dp 로 **아래로 치우쳐** 있다.
+// -> offset.dy 는 blur 의 1/3 쯤.
+//
+// 그림자 색: 가장 진한 픽셀 #ECE8E5 를 배경 #FEF9F5 와 역산하면
+// 채널별 알파가 0.071 / 0.068 / 0.065 로 거의 같다. 즉 **순수 검정이
+// 아니라 배경과 같은 계열의 따뜻한 회갈색**이다. 검정으로 깔면 사진에서
+// 보이는 것보다 차갑게 보인다. 그래서 #8A7268 계열을 쓴다.
+
+/// 시안 그림자 색 — 따뜻한 회갈색. 검정이 아니다.
+const Color kSettleShadow = Color(0xFF8A7268);
+
+/// 총매입 카드 그림자 — 가장 크고 부드럽다 (번짐 9dp).
+///
+/// 🔴 처음에 `blurRadius: 18, offset: (0,6)` 으로 줬더니 렌더 Δ 가
+///    [20, 14, 14, 14, 14, 14, 0] 으로 **계단처럼 평평**했다.
+///    offset 이 크면 카드 바로 아래가 그림자 '몸통'에 가려 감쇠가
+///    보이지 않는다. 시안은 [18, 11, 8, 7, 5, 3, 2, 1, 0] 으로
+///    매끄럽게 줄어든다. 그래서 offset 을 줄이고 blur 를 키웠다.
+const List<BoxShadow> kSettleShadowLg = [
+  BoxShadow(color: Color(0x268A7268), blurRadius: 10, offset: Offset(0, 2)),
+  BoxShadow(color: Color(0x118A7268), blurRadius: 20, offset: Offset(0, 5)),
+];
+
+/// 영수증 카드 그림자 — 작고 또렷하다 (번짐 3dp).
+/// 시안 Δ [16, 6, 1, 0] — 빠르게 사라진다.
+const List<BoxShadow> kSettleShadowMd = [
+  BoxShadow(color: Color(0x1F8A7268), blurRadius: 4, offset: Offset(0, 1)),
+];
+
+/// 검색창·필터칩 그림자 — 아주 얕다 (번짐 2dp).
+/// 시안 Δ [10, 1, 0].
+const List<BoxShadow> kSettleShadowSm = [
+  BoxShadow(color: Color(0x148A7268), blurRadius: 3, offset: Offset(0, 1)),
+];
+
+/// 시안 필터칩 **활성** 채움 — 검정.
+///
+/// 🔴 공용 `FnDsChip` 은 활성일 때 연분홍(`rose95`) 채움 + 코랄 글자였다.
+///    시안을 재 보니 활성 칩 내부는 #171717 이 52%(글자 없는 우측 기준)로
+///    **검정 채움 + 흰 글자**다. 완전히 다른 모습이었다.
+const Color kSettleChipOn = Color(0xFF171717);
+
+/// 시안 필터칩 **비활성** 채움 — 흰색.
+///
+/// 공용 칩은 `outlined` 일 때 투명 + 22% 회색 테두리였다. 시안 비활성 칩
+/// 내부는 #FFFFFF 가 79% 이고, 가장자리는 테두리가 아니라 얕은 그림자다.
+const Color kSettleChipOff = Color(0xFFFFFFFF);
+
+/// 시안 필터칩 높이 — y 465.5..497.5dp.
+const double kSettleChipH = 32.0;
+
+/// 시안 필터칩 모서리.
+const double kSettleChipRadius = 10.0;
+
+/// 내역 화면 금액 표기 — `1,184,000원`.
+///
+/// 🔴 공용 [FnDemo.won] 은 `₩1,184,000` 처럼 **앞에 원화 기호**를 붙인다.
+///    시안을 확대해 보면 내역 화면은 총매입도 영수증 줄도 전부
+///    `256,000원` 처럼 **뒤에 '원' 글자**다. 기호가 아니라 글자다.
+///
+///    공용 함수를 바꾸면 홈·캘린더·정산서까지 전부 바뀐다. 금액 표기는
+///    사장님이 숫자를 읽는 방식이라 화면마다 함부로 통일하면 안 된다.
+///    그래서 내역 화면 전용 표기를 따로 둔다.
+String settleWon(num n) {
+  final s = n.round().abs().toString();
+  final b = StringBuffer();
+  for (var i = 0; i < s.length; i++) {
+    if (i > 0 && (s.length - i) % 3 == 0) b.write(',');
+    b.write(s[i]);
+  }
+  return '${n < 0 ? '-' : ''}$b원';
+}
+
 /// 종합소득세용(5월) 보기가 말하는 "소액 결제" 기준 금액.
 ///
 /// 3만원 이하 결제는 적격증빙(세금계산서·카드전표) 없이도 비용으로
@@ -221,6 +303,8 @@ class SettleTotalHeader extends StatelessWidget {
         color: kSettleWhite,
         borderRadius: BorderRadius.circular(kSettleCardRadius),
         border: Border.all(color: kSettleLine),
+        // #142 시안 실측 — 이 카드만 그림자가 9dp 번진다.
+        boxShadow: kSettleShadowLg,
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -263,7 +347,7 @@ class SettleTotalHeader extends StatelessWidget {
           FittedBox(
             fit: BoxFit.scaleDown,
             child: Text(
-              FnDemo.won(total),
+              settleWon(total),
               maxLines: 1,
               style: const TextStyle(
                 fontFamily: 'Pretendard',
@@ -577,7 +661,7 @@ class _DayBlock extends StatelessWidget {
                   Padding(
                     padding: const EdgeInsets.only(top: 6, bottom: 8),
                     child: Text(
-                      '${group.count}건 · ${FnDemo.won(group.total)}',
+                      '${group.count}건 · ${settleWon(group.total)}',
                       style: const TextStyle(
                         fontFamily: 'Pretendard',
                         fontSize: 12,
@@ -635,11 +719,24 @@ class _ReceiptCard extends StatelessWidget {
 
     // 🔴 `Material` 은 `shape` 와 `borderRadius` 를 동시에 주면 assert 로
     //    죽는다. 외곽선이 필요하므로 `shape` 쪽만 쓴다.
-    return Material(
-      color: kSettleCardBg,
+    // #142 시안 실측 — 영수증 카드는 **흰색**이고, 아래로 3dp 번지는
+    //      작고 또렷한 그림자가 있다. (총매입 카드의 9dp 와 다르다)
+    //      예전 `kSettleCardBg`(#FFF9F7) 는 분홍빛이라 시안과 달랐다.
+    //
+    // 🔴 `Material` 자체에는 그림자 색을 자유롭게 줄 수 없어서
+    //    (elevation 은 검정 계열 고정) 바깥을 `DecoratedBox` 로 감싼다.
+    //    `Material` 은 잉크 효과를 위해 투명으로 남긴다.
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: kSettleWhite,
+        borderRadius: BorderRadius.circular(kSettleCardRadius),
+        boxShadow: kSettleShadowMd,
+      ),
+      child: Material(
+      color: Colors.transparent,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(kSettleCardRadius),
-        side: const BorderSide(color: kSettleCardLine),
+        side: const BorderSide(color: kSettleLine),
       ),
       child: InkWell(
         borderRadius: BorderRadius.circular(kSettleCardRadius),
@@ -689,7 +786,7 @@ class _ReceiptCard extends StatelessWidget {
                       fit: BoxFit.scaleDown,
                       alignment: Alignment.centerRight,
                       child: Text(
-                        FnDemo.won(receipt.totalAmount),
+                        settleWon(receipt.totalAmount),
                         maxLines: 1,
                         style: const TextStyle(
                           fontFamily: 'Pretendard',
@@ -724,6 +821,7 @@ class _ReceiptCard extends StatelessWidget {
             ],
           ),
         ),
+      ),
       ),
     );
   }
@@ -911,7 +1009,7 @@ class _VendorShareCard extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.end,
                     children: [
                       Text(
-                        FnDemo.won(share.total),
+                        settleWon(share.total),
                         style: const TextStyle(
                           fontFamily: 'Pretendard',
                           fontSize: 17,
@@ -1086,7 +1184,7 @@ class _VendorShareCard extends StatelessWidget {
                   ),
                 ),
                 Text(
-                  FnDemo.won(r.totalAmount),
+                  settleWon(r.totalAmount),
                   style: const TextStyle(
                     fontFamily: 'Pretendard',
                     fontSize: 14,
@@ -1254,7 +1352,7 @@ class _VendorReceiptRow extends StatelessWidget {
               const SizedBox(width: 10),
               // 원본 `flexShrink: 0`.
               Text(
-                FnDemo.won(receipt.totalAmount),
+                settleWon(receipt.totalAmount),
                 style: const TextStyle(
                   fontFamily: 'Pretendard',
                   fontSize: 14.5,
@@ -1366,6 +1464,164 @@ class SettleTaxBadge extends StatelessWidget {
           height: 1.4,
           color: kSettleMute,
         ),
+      ),
+    );
+  }
+}
+
+
+// ════════════════════════════════════════════════════════════════
+//  #142 내역 전용 필터칩
+// ════════════════════════════════════════════════════════════════
+
+/// 시안 내역 화면의 필터칩.
+///
+/// 🔴 공용 [FnDsChip] 을 쓰지 않는 이유.
+///    공용 칩은 `outlined` 비활성 = 투명 + 회색 테두리,
+///    `active` = 연분홍 채움 + 코랄 글자다.
+///    시안을 픽셀로 재 보니 내역 화면 칩은
+///      비활성 = 흰 채움 + 얕은 그림자(테두리 없음)
+///      활성   = 검정(#171717) 채움 + 흰 글자
+///    로 **완전히 다른 모습**이었다.
+///
+///    공용 칩을 바꾸면 이 칩을 쓰는 다른 화면이 전부 같이 바뀐다.
+///    그래서 내역 화면만 쓰는 칩을 따로 둔다.
+///
+/// 실측: 높이 32dp, 모서리 10dp, 좌우 여백 11dp, 글자 13.
+class SettleFilterChip extends StatelessWidget {
+  const SettleFilterChip({
+    super.key,
+    required this.label,
+    this.active = false,
+    this.onTap,
+  });
+
+  final String label;
+  final bool active;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(kSettleChipRadius),
+        // 🔴 `Wrap` 안에서는 자식이 느슨한 제약을 받는다. `alignment` 를
+        //    주면 `AnimatedContainer` 가 **줄 폭 전체로 늘어나** 칩이
+        //    한 줄에 하나씩 쌓였다. 글자 크기만큼만 차지하도록
+        //    `alignment` 를 빼고 `IntrinsicWidth` 대신 자연 폭에 맡긴다.
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 150),
+          height: kSettleChipH,
+          padding: const EdgeInsets.symmetric(horizontal: 11),
+          decoration: BoxDecoration(
+            color: active ? kSettleChipOn : kSettleChipOff,
+            borderRadius: BorderRadius.circular(kSettleChipRadius),
+            // 눌린 칩은 검정이라 그림자가 보이지 않는다. 시안도 그렇다.
+            boxShadow: active ? null : kSettleShadowSm,
+          ),
+          child: Center(
+            widthFactor: 1,
+            child: Text(
+              label,
+              style: TextStyle(
+                fontFamily: 'Pretendard',
+                fontSize: 13,
+                fontWeight: active ? FontWeight.w600 : FontWeight.w500,
+                color: active ? Colors.white : kSettleInk,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+
+/// 시안 내역 화면 검색창.
+///
+/// 🔴 공용 [FnSearchBar] 를 쓰지 않는 이유.
+///    공용 검색창 채움은 `FnColors.fillNormal`(8% 회색 반투명)이라
+///    따뜻한 배경 위에서 #F4F4F5 로 보인다. 시안 검색창 내부는
+///    #FFFFFF 가 90% 인 **완전한 흰색 + 얕은 그림자**다.
+///
+///    공용 부품을 고치면 이 검색창을 쓰는 다른 화면이 전부 바뀐다.
+///    그래서 내역 화면 전용으로 따로 둔다. 동작은 공용과 같다.
+///
+/// 실측: 높이 48dp(y 397.8..445.7), 모서리 12dp, 좌우 여백 14dp.
+class SettleSearchBar extends StatelessWidget {
+  const SettleSearchBar({
+    super.key,
+    required this.controller,
+    this.placeholder = '검색',
+    this.onChanged,
+    this.onClear,
+  });
+
+  final TextEditingController controller;
+  final String placeholder;
+  final ValueChanged<String>? onChanged;
+  final VoidCallback? onClear;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 48,
+      padding: const EdgeInsets.symmetric(horizontal: 14),
+      decoration: BoxDecoration(
+        color: kSettleWhite,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: kSettleShadowSm,
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.search_rounded,
+              size: 19, color: FnColors.labelAlternative),
+          const SizedBox(width: 9),
+          Expanded(
+            child: TextField(
+              controller: controller,
+              onChanged: onChanged,
+              style: const TextStyle(
+                fontFamily: 'Pretendard',
+                fontSize: 15,
+                color: kSettleInk,
+              ),
+              cursorColor: kSettleCoral,
+              decoration: InputDecoration(
+                isDense: true,
+                border: InputBorder.none,
+                contentPadding: EdgeInsets.zero,
+                hintText: placeholder,
+                hintStyle: const TextStyle(
+                  fontFamily: 'Pretendard',
+                  fontSize: 15,
+                  color: FnColors.labelAssistive,
+                ),
+              ),
+            ),
+          ),
+          // 입력이 있을 때만 지우기 단추를 보인다 (공용과 같은 동작).
+          if (controller.text.isNotEmpty) ...[
+            const SizedBox(width: 8),
+            GestureDetector(
+              onTap: onClear,
+              child: Container(
+                width: 18,
+                height: 18,
+                decoration: const BoxDecoration(
+                  color: FnColors.fillStrong,
+                  shape: BoxShape.circle,
+                ),
+                alignment: Alignment.center,
+                child: const Icon(Icons.close_rounded,
+                    size: 11, color: FnColors.labelAlternative),
+              ),
+            ),
+          ],
+        ],
       ),
     );
   }

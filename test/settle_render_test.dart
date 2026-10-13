@@ -189,4 +189,131 @@ void main() {
     expect(t.takeException(), isNull);
     expect(find.text('날짜별'), findsOneWidget);
   });
+
+  // ══════════════════════════════════════════════════════════════
+  //  #142 — 카드별 그림자 / 칩 색 / 금액 표기
+  // ══════════════════════════════════════════════════════════════
+
+  /// 해당 글자를 감싸는 Container/DecoratedBox 의 BoxDecoration 목록.
+  List<BoxDecoration> decosOf(Finder f) => [
+        ...find
+            .ancestor(of: f, matching: find.byType(Container))
+            .evaluate()
+            .map((e) => (e.widget as Container).decoration),
+        ...find
+            .ancestor(of: f, matching: find.byType(DecoratedBox))
+            .evaluate()
+            .map((e) => (e.widget as DecoratedBox).decoration),
+        ...find
+            .ancestor(of: f, matching: find.byType(AnimatedContainer))
+            .evaluate()
+            .map((e) => (e.widget as AnimatedContainer).decoration),
+      ].whereType<BoxDecoration>().toList();
+
+  testWidgets('🔴 #142 총매입 카드에 큰 그림자가 있다', (t) async {
+    await _pump(t);
+    final decos = decosOf(find.text('총 매입 건수 3건'));
+    final withShadow =
+        decos.where((d) => (d.boxShadow ?? const []).isNotEmpty).toList();
+    expect(withShadow, isNotEmpty, reason: '총매입 카드에 그림자가 없다');
+    // 시안 번짐 9dp — 가장 큰 blurRadius 가 충분히 커야 한다.
+    final maxBlur = withShadow
+        .expand((d) => d.boxShadow!)
+        .map((s) => s.blurRadius)
+        .reduce((a, b) => a > b ? a : b);
+    expect(maxBlur, greaterThanOrEqualTo(10.0),
+        reason: '시안은 9dp 번지는 부드러운 그림자다');
+  });
+
+  testWidgets('🔴 #142 영수증 카드 그림자는 총매입보다 작다', (t) async {
+    await _pump(t);
+    double maxBlurOf(Finder f) {
+      final sh = decosOf(f)
+          .expand((d) => d.boxShadow ?? const <BoxShadow>[])
+          .map((s) => s.blurRadius)
+          .toList();
+      return sh.isEmpty ? 0 : sh.reduce((a, b) => a > b ? a : b);
+    }
+
+    final big = maxBlurOf(find.text('총 매입 건수 3건'));
+    final small = maxBlurOf(find.text('대한꽃도매'));
+    expect(small, greaterThan(0.0), reason: '영수증 카드에 그림자가 없다');
+    // 🔴 이것이 사장님이 말한 "카드마다 다르다" 의 핵심이다.
+    //    시안 실측: 총매입 9dp 번짐 vs 영수증 3dp 번짐.
+    expect(small, lessThan(big),
+        reason: '영수증 카드 그림자가 총매입 카드와 같거나 더 크다');
+  });
+
+  testWidgets('🔴 #142 영수증 카드는 흰색이다', (t) async {
+    await _pump(t);
+    final colors = decosOf(find.text('대한꽃도매'))
+        .map((d) => d.color)
+        .whereType<Color>()
+        .toList();
+    expect(colors, contains(const Color(0xFFFFFFFF)),
+        reason: '시안 영수증 카드 내부는 #FFFFFF 다 (예전엔 분홍빛 #FFF9F7)');
+  });
+
+  testWidgets('🔴 #142 필터칩 — 꺼진 칩은 흰색, 켠 칩은 검정', (t) async {
+    await _pump(t);
+    // 처음엔 '종합소득세용(5월)' 이 꺼져 있다.
+    // 🔴 `decosOf(...).first` 를 쓰면 안 된다. 칩 글자의 조상에는
+    //    바깥 카드/배경 Container 도 섞여 있어서 엉뚱한 흰색을 집는다.
+    //    칩 본체(`SettleFilterChip` 바로 아래 AnimatedContainer)만 본다.
+    Color chipBg(String label) {
+      final chip = find.ancestor(
+        of: find.text(label),
+        matching: find.byType(SettleFilterChip),
+      );
+      expect(chip, findsOneWidget, reason: '$label 칩을 못 찾았다');
+      final d = find
+          .descendant(of: chip, matching: find.byType(AnimatedContainer))
+          .evaluate()
+          .map((e) => (e.widget as AnimatedContainer).decoration)
+          .whereType<BoxDecoration>()
+          .toList();
+      expect(d, isNotEmpty, reason: '$label 칩 배경을 못 찾았다');
+      return d.first.color!;
+    }
+
+    expect(chipBg('종합소득세용(5월)'), const Color(0xFFFFFFFF),
+        reason: '시안 비활성 칩은 흰색이다');
+
+    // 누르면 검정으로 바뀐다 (시안 활성 칩 = #171717).
+    await t.tap(find.text('종합소득세용(5월)'));
+    await t.pump(const Duration(milliseconds: 300));
+    expect(chipBg('종합소득세용(5월)'), const Color(0xFF171717),
+        reason: '시안 활성 칩은 검정 채움 + 흰 글자다');
+  });
+
+  testWidgets('🔴 #142 금액이 `숫자원` 표기다 (₩ 기호 아님)', (t) async {
+    await _pump(t);
+    // 시안: 1,184,000원 / 256,000원 — 앞에 ₩ 를 붙이지 않는다.
+    expect(find.text('256,000원'), findsOneWidget);
+    expect(find.textContaining('₩'), findsNothing,
+        reason: '시안 내역 화면에는 ₩ 기호가 없다');
+  });
+
+  testWidgets('🔴 #142 검색창이 완전한 흰색이다', (t) async {
+    await _pump(t);
+    final bar = find.byType(SettleSearchBar);
+    expect(bar, findsOneWidget);
+    final box = find
+        .descendant(of: bar, matching: find.byType(Container))
+        .evaluate()
+        .map((e) => (e.widget as Container).decoration)
+        .whereType<BoxDecoration>()
+        .toList();
+    expect(box.first.color, const Color(0xFFFFFFFF),
+        reason: '공용 검색창의 반투명 회색이 아니라 흰색이어야 한다');
+    expect(box.first.boxShadow, isNotEmpty, reason: '검색창에도 얕은 그림자가 있다');
+  });
+
+  testWidgets('기능 유지 — #142 바꾼 뒤에도 검색이 동작한다', (t) async {
+    await _pump(t);
+    await t.enterText(find.byType(TextField), '그린');
+    await t.pump(const Duration(milliseconds: 300));
+    expect(find.text('그린플러스'), findsOneWidget);
+    expect(find.text('대한꽃도매'), findsNothing, reason: '검색이 걸러내지 못했다');
+  });
 }

@@ -235,7 +235,14 @@ class _SettleDsScreenState extends State<SettleDsScreen> {
               ),
             ),
             const SizedBox(height: 8),
-            FnSearchBar(
+            // #142 시안 검색창은 **흰 채움 + 얕은 그림자**(번짐 2dp)다.
+            //
+            // 🔴 공용 `FnSearchBar` 는 반투명 회색(`fillNormal` = 8% 회색)
+            //    채움이라, 흰 카드로 감싸도 그 위에 회색이 덮여 #F4F4F5
+            //    로 보였다(렌더 측정값). 공용 부품을 바꾸면 이 검색창을
+            //    쓰는 다른 화면이 전부 같이 바뀌므로, 내역 전용 검색창을
+            //    따로 둔다. 동작(입력·지우기)은 똑같다.
+            SettleSearchBar(
               controller: _queryCtl,
               placeholder: '거래처명 검색',
               onChanged: (_) => setState(() {}),
@@ -426,41 +433,31 @@ class _SettleDsScreenState extends State<SettleDsScreen> {
           spacing: 7,
           runSpacing: 7,
           children: [
-            FnDsChip(
+            SettleFilterChip(
               label: yearChipLabel,
-              outlined: true,
               active: _filterMonth != '전체',
-              fontWeight: FontWeight.w400,
               onTap: () => _openOnly('year'),
             ),
-            FnDsChip(
+            SettleFilterChip(
               label: '${_sortLabel[_sortBy]} ▾',
-              outlined: true,
               active: _sortBy != 'name',
-              fontWeight: FontWeight.w400,
               onTap: () => _openOnly('sort'),
             ),
-            FnDsChip(
+            SettleFilterChip(
               label: _taxFilter == '전체' ? '과세 구분 ▾' : '$_taxFilter ▾',
-              outlined: true,
               active: _taxFilter != '전체',
-              fontWeight: FontWeight.w400,
               onTap: () => _openOnly('tax'),
             ),
-            FnDsChip(
+            SettleFilterChip(
               label: _sendFilter == '전체' ? '전송 상태 ▾' : '$_sendFilter ▾',
-              outlined: true,
               active: _sendFilter != '전체',
-              fontWeight: FontWeight.w400,
               onTap: () => _openOnly('send'),
             ),
             // 종합소득세용(5월) — 3만원 이하 영수증만 남긴다.
             // 기간은 건드리지 않는다(원본 `smallOnly`).
-            FnDsChip(
+            SettleFilterChip(
               label: '종합소득세용(5월)',
-              outlined: true,
               active: _taxSeason,
-              fontWeight: FontWeight.w400,
               onTap: _toggleTaxSeason,
             ),
           ],
