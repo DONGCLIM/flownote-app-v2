@@ -14,6 +14,7 @@ import 'auth_ds_screens.dart';
 import 'legal_doc_ds_screen.dart';
 import 'onboarding_ds_screens.dart';
 import 'paywall_ds_screen.dart';
+import 'notification_settings_ds_screen.dart';
 
 /// 시안 `AppH7 / screen === 'profile'` 1:1 포팅
 ///
@@ -76,9 +77,41 @@ class _ProfileDsScreenState extends State<ProfileDsScreen> {
       if (u == null || u.phoneNumber.isEmpty) '전화번호',
     ];
 
+    // 🔴 #141 시안 상단: 배지 + 아바타 + 상호명 + `대표자 · 사업자번호`.
+    //
+    //    값이 없으면 시안 예시값(`플로우노트`, `김민준 대표님`)을 쓰지
+    //    않는다. 위 `empty` 와 같은 원칙이다.
+    final shopName = (u?.businessName.isNotEmpty ?? false)
+        ? u!.businessName
+        : '상호명을 입력해 주세요';
+    final ownerBits = <String>[
+      if (u != null && u.ownerName.isNotEmpty) '${u.ownerName} 대표님',
+      if (u != null && u.businessNumber.isNotEmpty) '사업자 ${u.businessNumber}',
+    ];
+    final ownerLine =
+        ownerBits.isEmpty ? '사업자 정보를 입력하면 여기에 보여요' : ownerBits.join(' · ');
+
     return FnColumn(
       gap: 14,
       children: [
+        // ── 시안 프로필 상단 ───────────────────────────────────────────
+        Padding(
+          padding: const EdgeInsets.only(top: 6, bottom: 8),
+          child: _ProfileHeader(
+            shopName: shopName,
+            ownerLine: ownerLine,
+            // 연필을 누르면 기존 '사업자 정보 수정' 과 같은 곳으로 간다.
+            onEdit: () => BizReviewDsScreen.openEdit(context),
+            // 🔴 `isPro` 를 보면 안 된다.
+            // `SubscriptionService.unlockEverything = true` 라서 `isPro` 는
+            // 항상 true 다(결제 전 전면 개방). 그래서 `!isPro` 로 걸면 이
+            // 배지는 영원히 안 보인다 — 시안에는 있는 배지다.
+            // **실제로 돈을 낸** 사람에게만 감춰야 하므로 `purchasedPro`
+            // 를 본다. 결제가 붙는 날 조건을 다시 손댈 필요가 없다.
+            showPlanBadge: !SubscriptionService.instance.purchasedPro,
+          ),
+        ),
+
         // ── 사업자 정보 카드 ────────────────────────────────────────────
         FnCard(
           bordered: true,
@@ -120,22 +153,36 @@ class _ProfileDsScreenState extends State<ProfileDsScreen> {
                           ),
                         ],
                       ),
-                      Row(
-                        children: [
-                          const FnBadge('전자세금계산서 연동용',
-                              color: FnBadgeColor.accent,
-                              size: FnBadgeSize.small),
-                          const SizedBox(width: 8),
-                          AnimatedRotation(
-                            turns: _bizOpen ? 0.5 : 0,
-                            duration: const Duration(milliseconds: 150),
-                            child: const Icon(
-                              Icons.keyboard_arrow_down_rounded,
-                              size: 18,
-                              color: FnColors.labelAlternative,
+                      // #141 좁은 화면(320dp)에서 이 줄이 42px 넘쳤다.
+                      // 제목 + 배지 + 화살표 합이 254dp 를 넘긴다.
+                      // 배지를 지우면 '이 정보가 왜 필요한지' 안내가 사라지고,
+                      // 글자를 줄이면 읽기 어려워진다. 그래서 #140 금액 칸과
+                      // 같은 방법으로 배지만 비례 축소한다(잘리지 않는다).
+                      Flexible(
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Flexible(
+                              child: FittedBox(
+                                fit: BoxFit.scaleDown,
+                                alignment: Alignment.centerRight,
+                                child: FnBadge('전자세금계산서 연동용',
+                                    color: FnBadgeColor.accent,
+                                    size: FnBadgeSize.small),
+                              ),
                             ),
-                          ),
-                        ],
+                            const SizedBox(width: 8),
+                            AnimatedRotation(
+                            turns: _bizOpen ? 0.5 : 0,
+                              duration: const Duration(milliseconds: 150),
+                              child: const Icon(
+                                Icons.keyboard_arrow_down_rounded,
+                                size: 18,
+                                color: FnColors.labelAlternative,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ],
                   ),
@@ -258,7 +305,16 @@ class _ProfileDsScreenState extends State<ProfileDsScreen> {
             //       입구만 막아도 인식 기능은 정상 동작한다.
             //       다시 열어야 하면 gemini_key_screen.dart 를 import 하고
             //       이 자리에 항목 한 줄을 되살리면 된다.
-            ('알림 설정', () => _todo(context, '알림 설정')),
+            // #141 '알림 설정' 을 실제 화면으로 연결했다.
+            //      (예전에는 '준비 중' 스낵바였다)
+            (
+              '알림 설정',
+              () => Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => const NotificationSettingsDsScreen(),
+                    ),
+                  ),
+            ),
             // 웹(PWA) 에서만 의미가 있다. 설치된 앱이거나 이미 홈 화면에서
             // 실행 중이면 `shouldGuide` 가 false 라 아예 안 보여준다.
             if (pwaState().shouldGuide)
@@ -266,6 +322,10 @@ class _ProfileDsScreenState extends State<ProfileDsScreen> {
                 '홈 화면에 추가하기',
                 () => AddToHomeSheet.open(context),
               ),
+            // 🔴 #141 시안은 로그아웃이 **이 카드의 마지막 항목**이다.
+            //    (실측: 카드1 안 구분선 3개 = 항목 4개)
+            //    예전에는 화면 아래 글자 버튼이었다. 동작은 그대로다.
+            ('로그아웃', () => _signOut(context)),
           ],
         ),
 
@@ -301,29 +361,7 @@ class _ProfileDsScreenState extends State<ProfileDsScreen> {
         // ── 마케팅 수신 동의 (언제든 철회 가능해야 함) ─────────────────
         const _MarketingConsentRow(),
 
-        // ── 로그아웃 ────────────────────────────────────────────────────
-        Center(
-          child: FnTextButton(
-            label: '로그아웃',
-            color: FnColors.labelAlternative,
-            onPressed: () async {
-              await context.read<AuthProvider>().signOut();
-              if (!context.mounted) return;
-              // 🔴 절대로 SplashDsScreen 을 직접 push 하지 않는다.
-              //
-              // `pushAndRemoveUntil(..., (r) => false)` 로 스플래시를 띄우면
-              // 루트에 있던 `_AppEntry` 가 스택에서 **완전히 제거**된다.
-              // `_AppEntry` 는 `auth.isLoggedIn` 을 watch 해서
-              // MainDsScreen 으로 바꿔주는 **유일한** 주체이므로,
-              // 이후 로그인에 성공해도 화면을 바꿔줄 위젯이 없어서
-              // "로그인은 되는데 다음으로 안 넘어감" 이 된다.
-              //
-              // → 루트까지만 pop 하면 `_AppEntry` 가 살아난 채로
-              //    isLoggedIn == false 를 보고 스스로 스플래시를 그린다.
-              Navigator.of(context).popUntil((r) => r.isFirst);
-            },
-          ),
-        ),
+        // 로그아웃은 위 '계정/서비스 관리' 카드 안으로 옮겼다. (#141)
         Center(
           child: FnTextButton(
             label: '회원 탈퇴',
@@ -338,6 +376,24 @@ class _ProfileDsScreenState extends State<ProfileDsScreen> {
         const SizedBox(height: 8),
       ],
     );
+  }
+
+  /// 로그아웃.
+  ///
+  /// 🔴 절대로 SplashDsScreen 을 직접 push 하지 않는다.
+  ///
+  /// `pushAndRemoveUntil(..., (r) => false)` 로 스플래시를 띄우면
+  /// 루트에 있던 `_AppEntry` 가 스택에서 **완전히 제거**된다.
+  /// `_AppEntry` 는 `auth.isLoggedIn` 을 watch 해서 MainDsScreen 으로
+  /// 바꿔주는 **유일한** 주체이므로, 이후 로그인에 성공해도 화면을
+  /// 바꿔줄 위젯이 없어서 "로그인은 되는데 다음으로 안 넘어감" 이 된다.
+  ///
+  /// → 루트까지만 pop 하면 `_AppEntry` 가 살아난 채로
+  ///   isLoggedIn == false 를 보고 스스로 스플래시를 그린다.
+  static Future<void> _signOut(BuildContext context) async {
+    await context.read<AuthProvider>().signOut();
+    if (!context.mounted) return;
+    Navigator.of(context).popUntil((r) => r.isFirst);
   }
 
   static void _todo(BuildContext context, String label) {
@@ -365,32 +421,48 @@ class _Section extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       mainAxisSize: MainAxisSize.min,
       children: [
+        // 🔴 #141 시안 제목은 색 글자가 아니라 **진한 검정 굵은 글자**다.
+        //    (실측: 계정/서비스 관리 · 고객 지원 및 안내 둘 다 같은 색)
         Padding(
-          padding: const EdgeInsets.only(left: 4, right: 4, bottom: 6),
+          padding: const EdgeInsets.only(left: 4, right: 4, bottom: 10),
           child: Text(
             title,
-            style: TextStyle(
+            style: const TextStyle(
               fontFamily: 'Pretendard',
-              fontSize: 13,
-              fontWeight: FontWeight.w700,
-              color: titleColor,
+              fontSize: 15,
+              fontWeight: FontWeight.w800,
+              color: _kProfTitle,
             ),
           ),
         ),
-        ...List.generate(items.length, (i) {
-          final it = items[i];
-          return FnDsListCell(
-            title: it.$1,
-            divider: i < items.length - 1,
-            titleWeight: FontWeight.w600,
-            onTap: it.$2,
-            trailing: const Icon(
-              Icons.chevron_right_rounded,
-              size: 16,
-              color: FnColors.labelAlternative,
-            ),
-          );
-        }),
+        // 🔴 #141 시안은 목록이 **흰 카드 안**에 들어 있다.
+        //    실측: 카드 좌우 19.3~20.2dp, 모서리 둥글고 흰 배경.
+        //    예전에는 카드 없이 배경 위에 줄만 놓여 있었다.
+        Container(
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(_kProfRadius),
+            border: Border.all(color: _kProfLine),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: List.generate(items.length, (i) {
+              final it = items[i];
+              return FnDsListCell(
+                title: it.$1,
+                divider: i < items.length - 1,
+                titleWeight: FontWeight.w600,
+                onTap: it.$2,
+                trailing: const Icon(
+                  Icons.chevron_right_rounded,
+                  size: 16,
+                  color: FnColors.labelAlternative,
+                ),
+              );
+            }),
+          ),
+        ),
       ],
     );
   }
@@ -470,6 +542,142 @@ class _MarketingConsentRow extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+// ── #141 프로필 시안 실측 (425x1024, 환산비 0.9176) ────────────────
+//
+//   배경            #FEF9F5
+//   무료 플랜 배지   y 127.6dp  204.6 x 26.6dp  #FF6D78
+//   아바타 원        98.2 x 99.1dp  대각 #FF787C -> #FFA08E
+//   편집 뱃지        20.2 x 20.2dp  #FFD4C4
+//   카드1(계정)      y 383.6..601.1dp (h 218)  좌우 19.3~20.2dp
+//   카드2(고객지원)   y 657.0..822.2dp (h 166)
+
+/// 시안 섹션 제목 색.
+const Color _kProfTitle = Color(0xFF17150F);
+
+/// 시안 카드 테두리 — 홈/캘린더와 같은 연한 선.
+const Color _kProfLine = Color(0x14C9A79B);
+
+/// 시안 카드 모서리.
+const double _kProfRadius = 16.0;
+
+/// 시안 코랄 (배지).
+const Color _kProfCoral = Color(0xFFFF6D78);
+
+/// 시안 프로필 상단 — 배지 + 아바타 + 이름 + 부가정보.
+///
+/// 🔴 값이 없을 때 시안의 예시값(`플로우노트`, `김민준 대표님`,
+///    `123-45-67890`)을 그대로 보여주면 안 된다. 사장님이 자기가 입력한
+///    정보라고 믿게 된다. 비어 있으면 비어 있다고 말한다.
+///    (이 파일 위쪽 `const empty = '미입력'` 과 같은 원칙)
+class _ProfileHeader extends StatelessWidget {
+  const _ProfileHeader({
+    required this.shopName,
+    required this.ownerLine,
+    required this.onEdit,
+    required this.showPlanBadge,
+  });
+
+  /// 상호명. 없으면 안내 문구가 들어온다.
+  final String shopName;
+
+  /// `대표자 · 사업자 번호` 한 줄. 없으면 안내 문구.
+  final String ownerLine;
+
+  final VoidCallback onEdit;
+
+  /// 무료 플랜 안내 배지를 보일지. 이미 Pro 면 보이지 않는다.
+  final bool showPlanBadge;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (showPlanBadge) ...[
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+            decoration: BoxDecoration(
+              color: _kProfCoral,
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: const Text(
+              '대표님, 한달 무료 플랜을 이용해보세요!',
+              style: TextStyle(
+                fontFamily: 'Pretendard',
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                color: Colors.white,
+              ),
+            ),
+          ),
+          const SizedBox(height: 18),
+        ],
+        // ── 아바타 (대각 코랄 그라디언트 + 편집 뱃지) ──
+        SizedBox(
+          width: 104,
+          height: 100,
+          child: Stack(
+            children: [
+              Container(
+                width: 98,
+                height: 99,
+                decoration: const BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [Color(0xFFFF787C), Color(0xFFFFA08E)],
+                  ),
+                ),
+              ),
+              Positioned(
+                right: 0,
+                bottom: 8,
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: onEdit,
+                  child: Container(
+                    width: 26,
+                    height: 26,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFFD4C4),
+                      shape: BoxShape.circle,
+                      border: Border.all(color: Colors.white, width: 2),
+                    ),
+                    child: const Icon(Icons.edit_rounded,
+                        size: 13, color: Colors.white),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 14),
+        Text(
+          shopName,
+          textAlign: TextAlign.center,
+          style: const TextStyle(
+            fontFamily: 'Pretendard',
+            fontSize: 19,
+            fontWeight: FontWeight.w800,
+            color: _kProfTitle,
+          ),
+        ),
+        const SizedBox(height: 6),
+        Text(
+          ownerLine,
+          textAlign: TextAlign.center,
+          style: const TextStyle(
+            fontFamily: 'Pretendard',
+            fontSize: 12.5,
+            color: Color(0xFF8A8580),
+          ),
+        ),
+      ],
     );
   }
 }
