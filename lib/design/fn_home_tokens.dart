@@ -174,4 +174,129 @@ class FnHome {
 
   /// 탭바 활성 알약 높이. 시안 53.2dp.
   static const double tabPillH = 53;
+
+  // ── #146 홈 시안 재실측 (334x1024 -> 검은 프레임 걷은 316x1009, 환산비 1.2342)
+  //
+  // 🔴 사장님 지적: "카드마다 컬러도 다르고 그림자 효과도 들어가 있다"
+  //    실제로 맞았다. 측정해 보니 카드 내부색이 2종이고, 그림자는 3종이었다.
+  //
+  // 카드 내부색 (텍스트/아이콘 없는 영역에서 뽑음):
+  //   카드1 '이번 달 영수증 정리 완료'  #FFFDFC  (94%)  ← 아주 미세하게 따뜻하다
+  //   카드3 '지출 추이'                #FFFFFF         ← 순백
+  //   카드4 '스마트 사입 가이드'        #FFFFFF         ← 순백
+  //   탭바                            #FFFFFF         ← 순백
+  //
+  // 카드 아래 그림자 Δ (1px = 1.234dp, 카드 폭 중앙부 평균):
+  //   카드1   [ 9.4,  7.1, 5.4, 3.2, 2.6, 1.6, 0]        -> 약 6dp 번짐 (가장 약함)
+  //   카드3   [19.4, 11.8, 6.7, 3.4, 1.8, 0]             -> 약 5dp 번짐 (가장 진함)
+  //   카드4   [15.9, 11.9, 6.6, 2.9, 0.6, 0]             -> 약 5dp 번짐
+  //   코랄카드 위/아래 모두 Δ≈0 — **그림자 없음** (그라디언트 자체가 입체감)
+  //
+  // 🔴 그림자 색: 채널별 감소율이 R/G/B = 0.0261/0.0261/0.0261 로 **완전히 균일**.
+  //    즉 #142 내역 화면의 따뜻한 회갈색(#8A7268)과 달리 여기는 **무채색 검정**이다.
+  //    같은 토큰을 재사용하지 않고 따로 둔다. (역산 결과를 그대로 따른다)
+
+  /// 카드1(영수증 정리 완료) 내부색. 순백이 아니라 한 톤 따뜻하다.
+  static const Color cardWarm = Color(0xFFFFFDFC);
+
+  /// 홈 카드 그림자 — 가장 진한 단계(지출 추이 / 사업 가이드).
+  /// Δ 19.4 를 bg #FFF9F6 에 역산하면 검정 α≈0.026, 번짐 5dp.
+  static const List<BoxShadow> shadowCard = [
+    BoxShadow(color: Color(0x0D000000), blurRadius: 10, offset: Offset(0, 3)),
+    BoxShadow(color: Color(0x08000000), blurRadius: 20, offset: Offset(0, 6)),
+  ];
+
+  /// 알림 카드(카드1) 그림자 — Δ 9.4 로 위 카드의 절반 수준.
+  static const List<BoxShadow> shadowSoft = [
+    BoxShadow(color: Color(0x08000000), blurRadius: 8, offset: Offset(0, 2)),
+    BoxShadow(color: Color(0x05000000), blurRadius: 16, offset: Offset(0, 5)),
+  ];
+
+  /// 떠 있는 탭바 그림자 — 위쪽으로도 번진다(Δ위 14.9, Δ아래 15.0 대칭).
+  static const List<BoxShadow> shadowTabBar = [
+    BoxShadow(color: Color(0x0F000000), blurRadius: 16, offset: Offset(0, 4)),
+    BoxShadow(color: Color(0x0A000000), blurRadius: 28, offset: Offset(0, 8)),
+  ];
+
+  /// 코랄 버튼('7월 맞춤 사입 리포트 보기') 그림자.
+  /// 시안 Δ 15.0 이 버튼 아래로 6dp 이상 길게 깔린다.
+  static const List<BoxShadow> shadowCoralBtn = [
+    BoxShadow(color: Color(0x2EFF6E78), blurRadius: 14, offset: Offset(0, 5)),
+  ];
+
+  // ── #146 카드1 책 아이콘 실측 ───────────────────────────────────────
+  //
+  // 🔴 사장님 지적: "맨 위에 있는 카드에 아이콘은 오른쪽에 있는 아이콘으로 바꿔줘"
+  //    지금 앱은 `Icons.menu_book_rounded` 를 **분홍 둥근 사각 박스** 안에 넣어 뒀다.
+  //    시안에는 박스가 **없다**. 펼친 책만 떠 있고, 주변에 분홍 글로우가 번진다.
+  //
+  //   책 크기   y 145.6..166.6dp (h 22.2) · x 48.1..72.8dp (w 25.9)
+  //   왼쪽 페이지 #FF787C (진한 코랄)
+  //   오른쪽 페이지 #FF9385 (연한 살구)   ← 투톤이다
+  //   글로우   아이콘 바깥으로 약 16dp 번짐. 바로 옆 #FFF0EE -> 먼 쪽 #FFFCFB
+
+  /// 책 아이콘 왼쪽 페이지색.
+  static const Color bookLeft = Color(0xFFFF787C);
+
+  /// 책 아이콘 오른쪽 페이지색.
+  static const Color bookRight = Color(0xFFFF9385);
+
+  /// 책 아이콘 뒤 분홍 글로우. 시안 바로 옆 픽셀 #FFF0EE.
+  static const List<BoxShadow> bookGlow = [
+    BoxShadow(color: Color(0x30FF8A8A), blurRadius: 16),
+    BoxShadow(color: Color(0x18FF8A8A), blurRadius: 28),
+  ];
+
+  /// 책 아이콘 크기. 시안 25.9 x 22.2dp.
+  static const double bookW = 26;
+  static const double bookH = 22;
+
+  // ── #146 탭바 아이콘 실측 ───────────────────────────────────────────
+  //
+  // 🔴 사장님 지적: "하단 바에 있는 아이콘들도 내가 준 이미지랑 동일하게"
+  //    시안 아이콘은 **Material 기본 아이콘이 아니다.** 전부 커스텀이다.
+  //      홈     오각형 집 + 안에 웃는 입 곡선   (현재 Icons.home_rounded = 꽉 찬 집)
+  //      내역   체크 3개 + 옆 막대 3개          (현재 business_center = 서류가방)
+  //      스캔   카메라 몸통 + 위 돌출 + 렌즈 원  (현재 photo_camera 와 비슷하나 돌출 위치 다름)
+  //      캘린더 달력 + 위 고리 2개 + 안에 새싹   (현재 calendar_today = 빈 달력)
+  //      프로필 원 테두리 + 안에 머리/어깨      (현재 person_outline = 테두리 원 없음)
+  //
+  //   탭 중심 x = 47.5 / 124.0 / 194.4 / 264.1 / 334.5dp  (균등 5분할)
+  //   아이콘 영역 y 1182..1210dp (약 23dp)
+  //   라벨      y 1216..1235dp
+  //   색: 비활성 #D4D4D4 계열 / 활성 코랄
+
+  /// 탭 아이콘 한 변. 시안 글리프 폭 19.7~22.2dp 에서 선 두께까지 고려한 값.
+  static const double tabIconSize = 23;
+
+  /// 탭 아이콘 선 두께. 시안 아이콘 폭의 7~8%.
+  static const double tabIconStroke = 1.7;
+
+  /// 비활성 탭 아이콘 색. 시안 연회색.
+  static const Color tabIconOff = Color(0xFFD9D9D9);
+
+  /// 비활성 탭 라벨 색.
+  static const Color tabLabelOff = Color(0xFFBDBDBD);
+
+  // ── #146 헤더 벨 실측 ───────────────────────────────────────────────
+  //
+  // 🔴 사장님 지적: "오른쪽 맨 위에 알림 종 같은 모양이 지금 앱 화면에는 안 보인다"
+  //    코드에는 `Icons.notifications_none_rounded` 로 **이미 있었다.**
+  //    라이브를 직접 찍어 확인했다 — 벨은 실제로 그려진다.
+  //    (#145 캐시 문제로 옛 화면을 보고 계셨다)
+  //    다만 **모양이 시안과 다르다.** 시안 벨은:
+  //      돔(위) + 바깥으로 벌어진 스커트 + 아래 **납작한 가로 바**
+  //      + 바 아래 **분리된 작은 추**
+  //    Material 벨은 스커트가 바로 바닥까지 내려오고 추가 둥근 점이다.
+  //
+  //   벨 크기 y 60.5..87.6dp · 폭 약 19.8dp, 선 두께 약 2.2dp
+
+  /// 벨 아이콘 한 변.
+  static const double bellSize = 22;
+
+  /// 벨 선 두께. 시안 벨 폭의 10~12%.
+  static const double bellStroke = 2.1;
+
+  /// 벨 색.
+  static const Color bellInk = Color(0xFF1A1A1A);
 }

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'fn_tokens.dart';
 import 'fn_home_tokens.dart';
 import 'fn_brand.dart';
+import 'fn_icons.dart';
 
 /// 시안 원본 `window.FN.Shell` 1:1 포팅
 ///
@@ -273,8 +274,17 @@ class _FnBrandHeader extends StatelessWidget {
                 child: Stack(
                   alignment: Alignment.center,
                   children: [
-                    const Icon(Icons.notifications_none_rounded,
-                        size: 23, color: FnHome.title),
+                    // 🔴 #146 사장님 지적: "오른쪽 맨 위에 알림 종 같은
+                    //    모양이 지금 앱 화면에는 안 보인다"
+                    //
+                    //    라이브를 직접 찍어 확인했다 — 벨은 **그려지고
+                    //    있었다**. #145 캐시 문제로 옛 화면을 보고 계셨다.
+                    //    다만 모양이 시안과 달랐다.
+                    //      시안: 돔 + 벌어진 스커트 + 납작한 가로 바
+                    //            + 바 아래 분리된 작은 추
+                    //      Material: 스커트가 바닥까지 내려오고 추가 둥근 점
+                    //    그래서 시안 모양대로 직접 그린 벨로 바꿨다.
+                    const FnBellIcon(),
                     if (dot)
                       const Positioned(
                         top: 11,
@@ -357,13 +367,11 @@ class FnBottomNavigation extends StatelessWidget {
         decoration: BoxDecoration(
           color: FnColors.backgroundNormal,
           borderRadius: BorderRadius.circular(FnHome.tabBarRadius),
-          boxShadow: [
-            BoxShadow(
-              color: const Color(0xFF8A5C57).withValues(alpha: 0.10),
-              blurRadius: 22,
-              offset: const Offset(0, 6),
-            ),
-          ],
+          // 🔴 #146 시안 실측: 탭바 그림자는 **위아래가 거의 대칭**이다.
+          //    Δ위 14.9 / Δ아래 15.0. 또 채널별 감소율이 균일해서
+          //    따뜻한 갈색이 아니라 **무채색 검정**이었다.
+          //    전에는 갈색 #8A5C57 10% 한 겹이었다.
+          boxShadow: FnHome.shadowTabBar,
         ),
         child: Row(children: _items(coral: true)),
       );
@@ -394,10 +402,24 @@ class FnBottomNavigation extends StatelessWidget {
         mainAxisAlignment: MainAxisAlignment.center,
         mainAxisSize: MainAxisSize.min,
         children: [
+          // 🔴 #146 사장님 지시: "하단 바에 있는 아이콘들도 내가 준
+          //    이미지랑 동일하게"
+          //
+          //    시안 아이콘을 확대해 보니 **Material 세트에 없는 모양**이었다.
+          //      홈     오각형 집 테두리 + 안에 웃는 입 (Material 은 꽉 찬 집)
+          //      내역   체크 3개 + 가로 막대 3개 (Material 은 서류가방)
+          //      스캔   카메라 + 위 돌출 + 렌즈 원
+          //      캘린더 달력 + 위 고리 2개 + 안에 새싹 (Material 은 빈 달력)
+          //      프로필 원 테두리 + 안에 머리/어깨 (Material 은 원 없음)
+          //
+          //    `FnTabIcon` 이 CustomPainter 로 직접 그린다. `t.icon` 은
+          //    되돌리기 쉽게 `FnTab` 에 그대로 남겨 뒀다(아래 fallback).
           SizedBox(
-            width: 24,
-            height: 24,
-            child: Icon(t.icon, size: 20, color: color),
+            width: FnHome.tabIconSize,
+            height: FnHome.tabIconSize,
+            child: coral
+                ? FnTabIcon(tabKey: t.key, color: color)
+                : Icon(t.icon, size: 20, color: color),
           ),
           const SizedBox(height: 2),
           Text(

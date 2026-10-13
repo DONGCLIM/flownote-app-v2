@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../../design/fn_tokens.dart';
 import '../../design/fn_shell.dart';
 import '../../design/fn_card.dart';
+import '../../design/fn_icons.dart';
 import '../../design/fn_button.dart';
 import '../../design/fn_home_tokens.dart';
 import '../../providers/receipt_provider.dart';
@@ -111,22 +112,37 @@ class _HomeDsScreenState extends State<HomeDsScreen> {
       child: Container(
         padding: const EdgeInsets.fromLTRB(14, 14, 16, 14),
         decoration: BoxDecoration(
-          color: FnHome.card,
+          // 🔴 #146 시안 실측: 카드1 내부색은 순백이 아니라 #FFFDFC 다.
+          //    (카드3·4 는 순백 #FFFFFF) 사장님이 "카드마다 컬러가 다르다"고
+          //    하신 게 이 차이였다.
+          color: FnHome.cardWarm,
           borderRadius: BorderRadius.circular(FnHome.radius),
           border: Border.all(color: FnHome.cardLine),
+          // 시안 Δ 9.4 — 다른 카드(19.4)의 절반 수준으로 가장 옅다.
+          boxShadow: FnHome.shadowSoft,
         ),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Container(
+            // 🔴 #146 사장님 지시: "맨 위에 있는 카드에 아이콘은 오른쪽에
+            //    있는 아이콘으로 바꿔줘"
+            //    전에는 분홍 둥근 사각(38x38, #FFF1EE) 안에
+            //    `Icons.menu_book_rounded` 를 넣었다.
+            //    시안·원본 아이콘에는 **박스가 없다.** 펼친 책만 떠 있고
+            //    주변으로 분홍 글로우가 번진다. 책은 좌/우 페이지가
+            //    다른 색인 투톤이다.
+            SizedBox(
               width: 38,
               height: 38,
-              decoration: BoxDecoration(
-                color: FnHome.coralFaint,
-                borderRadius: BorderRadius.circular(11),
+              child: Center(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    boxShadow: FnHome.bookGlow,
+                  ),
+                  child: const FnBookIcon(),
+                ),
               ),
-              child: const Icon(Icons.menu_book_rounded,
-                  size: 20, color: FnHome.coral),
             ),
             const SizedBox(width: 12),
             Expanded(
@@ -292,9 +308,11 @@ class _HomeDsScreenState extends State<HomeDsScreen> {
     return Container(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 14),
       decoration: BoxDecoration(
+        // 시안 실측 순백. 그림자 Δ 19.4 로 홈에서 가장 진하다.
         color: FnHome.card,
         borderRadius: BorderRadius.circular(FnHome.radius),
         border: Border.all(color: FnHome.cardLine),
+        boxShadow: FnHome.shadowCard,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -446,9 +464,11 @@ class _HomeDsScreenState extends State<HomeDsScreen> {
           child: Container(
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
             decoration: BoxDecoration(
+              // 시안 실측 순백. 그림자 Δ 15.9.
               color: FnHome.card,
               borderRadius: BorderRadius.circular(FnHome.radius),
               border: Border.all(color: FnHome.cardLine),
+              boxShadow: FnHome.shadowCard,
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -624,6 +644,8 @@ class _HomeDsScreenState extends State<HomeDsScreen> {
         decoration: BoxDecoration(
           gradient: FnHome.coralGradient,
           borderRadius: BorderRadius.circular(18),
+          // 시안 Δ 15.0 이 버튼 아래로 6dp 넘게 길게 깔린다.
+          boxShadow: FnHome.shadowCoralBtn,
         ),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,

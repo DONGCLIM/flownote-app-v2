@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:flow_note/design/fn_shell.dart';
+import 'package:flow_note/design/fn_icons.dart';
 import 'package:flow_note/design/fn_brand.dart';
 import 'package:flow_note/design/fn_home_tokens.dart';
 import 'package:flow_note/design/fn_tokens.dart';
@@ -86,7 +87,9 @@ void main() {
     testWidgets('벨이 있고 누르면 콜백이 돈다', (t) async {
       var tapped = 0;
       await _pump(t, _shell(onBell: () => tapped++));
-      final bell = find.byIcon(Icons.notifications_none_rounded);
+      // 🔴 #146 에서 벨을 시안 모양 커스텀(`FnBellIcon`)으로 바꿨다.
+      //    전에는 `Icons.notifications_none_rounded` 를 찾았다.
+      final bell = find.byType(FnBellIcon);
       expect(bell, findsOneWidget);
 
       final r = t.getRect(bell);
@@ -216,12 +219,14 @@ void main() {
 
     testWidgets('활성 탭이 코랄이다', (t) async {
       await _pump(t, _shell(active: 'scan'));
+      // 🔴 #146 에서 떠 있는 탭바 아이콘을 시안 모양 커스텀(`FnTabIcon`)으로
+      //    바꿨다. 전에는 `Icon` 위젯의 color 를 봤다.
       final icons = find
           .descendant(
               of: find.byType(FnBottomNavigation),
-              matching: find.byType(Icon))
+              matching: find.byType(FnTabIcon))
           .evaluate()
-          .map((e) => (e.widget as Icon).color?.toARGB32())
+          .map((e) => (e.widget as FnTabIcon).color.toARGB32())
           .toList();
       expect(icons, contains(FnHome.coralFlat.toARGB32()),
           reason: '활성 탭 코랄이 없다');
