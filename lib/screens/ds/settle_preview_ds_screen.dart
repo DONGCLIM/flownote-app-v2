@@ -11,6 +11,7 @@ import '../../design/fn_sheet.dart';
 import '../../models/receipt_model.dart';
 import '../../providers/auth_provider.dart';
 import '../../services/settlement_pdf_service.dart';
+import '../../services/vendor_tax_service.dart';
 import '../../services/subscription_service.dart';
 import 'fn_data.dart';
 import 'onboarding_ds_screens.dart';
@@ -18,6 +19,7 @@ import 'paywall_ds_screen.dart';
 import 'settle_data_live.dart';
 import 'settle_doc_preview_ds_screen.dart';
 import 'settle_history_ds_screen.dart';
+import 'settle_views_ds.dart';
 
 /// 시안 `AppH2Mvp` → `screen === 'preview'` 1:1 포팅.
 ///
@@ -67,6 +69,17 @@ int get fnExportCount => SubscriptionService.instance.exportsUsed;
 class _SettlePreviewDsScreenState extends State<SettlePreviewDsScreen> {
   late List<String> _sel = List.of(widget.selectedMonths);
   String _exportMode = 'combined';
+
+  /// 시안 `형식` — PDF / 엑셀(.xlsx).
+  ///
+  /// 🔴 엑셀 생성기는 **아직 없다.** 예전에 `엑셀/PDF` 선택이 있었는데
+  ///    엑셀을 고르면 아무 파일도 안 만들고 '완료' 로 넘어가서, 화면만
+  ///    성공처럼 보였다. 그래서 그 선택을 통째로 지웠던 것이다.
+  ///
+  ///    시안이 이 선택을 다시 요구하므로 화면에는 되살리되, 엑셀을 고르면
+  ///    **만들어지지 않는다고 분명히 말하고 PDF 로 되돌린다.**
+  ///    거짓 성공은 다시 만들지 않는다.
+  String _fileFormat = 'pdf';
 
   /// PDF 생성 중. 사진이 많으면 몇 초 걸린다.
   /// 그 동안 버튼을 눌러도 반응이 없으면 사용자는 앱이 멈춘 줄 안다.
@@ -122,6 +135,22 @@ class _SettlePreviewDsScreenState extends State<SettlePreviewDsScreen> {
       );
       return;
     }
+
+    // 🔴 엑셀을 고른 채로 누르면 **지금은 만들 수 없다.**
+    //    생성기가 없는데 조용히 PDF 를 뱉으면, 사장님은 엑셀을 받은 줄
+    //    알고 세무사에게 보낸다. 그래서 말하고 멈춘다.
+    //    (화면의 선택은 시안대로 남겨 두고, 붙는 날 이 블록만 지운다)
+    if (_fileFormat != 'pdf') {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('엑셀 내보내기는 아직 준비 중이에요. PDF 로 먼저 받아보세요.'),
+          duration: Duration(seconds: 3),
+        ),
+      );
+      setState(() => _fileFormat = 'pdf');
+      return;
+    }
+
     _openMethodSheet();
   }
 
@@ -349,200 +378,489 @@ class _SettlePreviewDsScreenState extends State<SettlePreviewDsScreen> {
 
     return FnShell(
       navTitle: '정산서 미리보기',
+      bg: _kBg,
       onBack: () => Navigator.of(context).pop(),
       child: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.fromLTRB(_kPad, 12, _kPad, 24),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            FnCard(
-              bordered: true,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          widget.vendor.name,
-                          style: const TextStyle(
-                            fontFamily: 'Pretendard',
-                            fontSize: 18,
-                            fontWeight: FontWeight.w500,
-                            color: FnColors.labelNormal,
-                          ),
-                        ),
-                      ),
-                      if (months.isNotEmpty)
-                        GestureDetector(
-                          onTap: () => setState(
-                            () => _sel = allSelected ? [] : List.of(months),
-                          ),
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 10, vertical: 6),
-                            decoration: BoxDecoration(
-                              color: FnColors.backgroundNormal,
-                              borderRadius: BorderRadius.circular(8),
-                              border: Border.all(
-                                  color: FnColors.lineNeutral, width: 1),
-                            ),
-                            child: Text(
-                              allSelected ? '전체 해제' : '전체 선택',
-                              style: const TextStyle(
-                                fontFamily: 'Pretendard',
-                                fontSize: 13,
-                                fontWeight: FontWeight.w700,
-                                color: FnColors.rose50,
-                              ),
-                            ),
-                          ),
-                        ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  if (months.isEmpty)
-                    const Padding(
-                      padding: EdgeInsets.symmetric(vertical: 8),
-                      child: Text(
-                        '선택 가능한 내역이 없어요',
-                        style: TextStyle(
-                          fontFamily: 'Pretendard',
-                          fontSize: 14,
-                          color: FnColors.labelAlternative,
-                        ),
-                      ),
-                    )
-                  else
-                    for (final m in months)
-                      GestureDetector(
-                        behavior: HitTestBehavior.opaque,
-                        onTap: () => _toggleMonth(m),
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 5),
-                          child: Row(
-                            children: [
-                              SizedBox(
-                                width: 20,
-                                height: 20,
-                                child: Checkbox(
-                                  value: _sel.contains(m),
-                                  onChanged: (_) => _toggleMonth(m),
-                                  activeColor: FnColors.rose50,
-                                  visualDensity: VisualDensity.compact,
-                                  materialTapTargetSize:
-                                      MaterialTapTargetSize.shrinkWrap,
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: Text(
-                                  FnSettleData.monthLabel[m]!,
-                                  style: const TextStyle(
-                                    fontFamily: 'Pretendard',
-                                    fontSize: 15,
-                                    fontWeight: FontWeight.w600,
-                                    color: FnColors.labelNormal,
-                                  ),
-                                ),
-                              ),
-                              Text(
-                                FnDemo.won(widget.vendor.months[m] ?? 0),
-                                style: const TextStyle(
-                                  fontFamily: 'Pretendard',
-                                  fontSize: 15,
-                                  fontWeight: FontWeight.w600,
-                                  color: FnColors.labelNormal,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                  const Padding(
-                    padding: EdgeInsets.symmetric(vertical: 10),
-                    child: FnDsDivider(),
-                  ),
-                  _kv('공급가액', FnDemo.won(t.supply)),
-                  const SizedBox(height: 4),
-                  _kv('부가세', FnDemo.won(t.vat)),
-                  const SizedBox(height: 8),
-                  Row(
-                    children: [
-                      const Expanded(
-                        child: Text(
-                          '합계',
-                          style: TextStyle(
-                            fontFamily: 'Pretendard',
-                            fontSize: 17,
-                            fontWeight: FontWeight.w500,
-                            color: FnColors.labelNormal,
-                          ),
-                        ),
-                      ),
-                      Text(
-                        FnDemo.won(t.total),
-                        style: const TextStyle(
-                          fontFamily: 'Pretendard',
-                          fontSize: 17,
-                          fontWeight: FontWeight.w700,
-                          color: FnColors.labelNormal,
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
+            _summaryCard(t),
+            const SizedBox(height: 16),
+            _monthCard(months, t, allSelected),
+            const SizedBox(height: 20),
+            // 🔴 '저장 방식' 은 **두 달 이상 골랐을 때만** 뜻이 있다.
+            //    한 달이면 통합이든 분리든 결과가 같은 파일 하나다.
+            //    (예전 구현도 `_sel.length > 1` 조건이었다)
             if (_sel.length > 1) ...[
-              const SizedBox(height: 24),
-              const Text(
-                '내보내기 방식',
-                style: TextStyle(
-                  fontFamily: 'Pretendard',
-                  fontSize: 17,
-                  fontWeight: FontWeight.w600,
-                  color: FnColors.labelStrong,
-                ),
-              ),
-              const SizedBox(height: 8),
+              _groupLabel('저장 방식'),
+              const SizedBox(height: 10),
               Row(
                 children: [
                   Expanded(
-                    child: _modeChip('combined', '전체 통합 저장', '(1개의 파일)'),
+                    child: _optionCard(
+                      selected: _exportMode == 'combined',
+                      title: '전체 통합',
+                      sub: '1개의 파일로 저장',
+                      onTap: () => setState(() => _exportMode = 'combined'),
+                    ),
                   ),
-                  const SizedBox(width: 8),
+                  const SizedBox(width: _kGap),
                   Expanded(
-                    child: _modeChip('separate', '월별 분리 저장', '(월별 개별 파일)'),
+                    child: _optionCard(
+                      selected: _exportMode == 'separate',
+                      title: '월별 분리',
+                      sub: '월마다 각각 저장',
+                      onTap: () => setState(() => _exportMode = 'separate'),
+                    ),
                   ),
                 ],
               ),
+              const SizedBox(height: 20),
             ],
-            const SizedBox(height: 24),
-            _guideBox(),
-            const SizedBox(height: 22),
-            FnDsButton(
-              label: _busy
-                  ? '문서를 만들고 있어요...'
-                  : '선택한 ${_sel.length}개월 내보내기',
-              expand: true,
-              disabled: _sel.isEmpty || _busy,
-              onPressed: _onExport,
+            _groupLabel('형식'),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                Expanded(
+                  child: _optionCard(
+                    selected: _fileFormat == 'pdf',
+                    title: 'PDF',
+                    sub: '범용 문서 형식',
+                    onTap: () => setState(() => _fileFormat = 'pdf'),
+                  ),
+                ),
+                const SizedBox(width: _kGap),
+                Expanded(
+                  child: _optionCard(
+                    selected: _fileFormat == 'xlsx',
+                    title: '엑셀 (.xlsx)',
+                    sub: '데이터 편집 가능',
+                    onTap: () => setState(() => _fileFormat = 'xlsx'),
+                  ),
+                ),
+              ],
             ),
-            const SizedBox(height: 9),
+            const SizedBox(height: 22),
+            _exportButton(),
+            const SizedBox(height: 10),
             Text(
               '이번 달 무료 내보내기 $fnExportCount/${FnSettleData.exportCap}회 사용',
               textAlign: TextAlign.center,
               style: const TextStyle(
                 fontFamily: 'Pretendard',
                 fontSize: 12.5,
-                fontWeight: FontWeight.w400,
-                color: Color(0xFF767676),
+                color: _kMuted,
               ),
             ),
-            const SizedBox(height: 16),
           ],
         ),
+      ),
+    );
+  }
+
+  // ── 시안 조각들 ─────────────────────────────────────────────
+
+  /// 카드1 — 거래처 이름 + 선택 기간 합계.
+  ///
+  /// 시안 실측: y 126.6..320.5 (h 193.9), 좌우 24.7..364.2.
+  ///   이름    y 150.7..182.0 (왼쪽 44.8)
+  ///   '선택 기간 합계'  y 222.4..231.3 (가운데)
+  ///   큰 금액  y 247.0..278.4 (가운데)
+  ///   '1개월 · 영수증 18건'  y 288.5..297.5 (가운데)
+  Widget _summaryCard(({double total, double supply, double vat}) t) {
+    final tax = SettleLiveData.taxOf(widget.vendor.name);
+    final sub = <String>[
+      if (widget.vendor.lastDate.isNotEmpty) '최근 거래 ${widget.vendor.lastDate}',
+      tax == TaxType.exempt ? '면세' : '과세',
+    ].join(' · ');
+
+    return _card(
+      padding: const EdgeInsets.fromLTRB(18, 16, 18, 20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      widget.vendor.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontFamily: 'Pretendard',
+                        fontSize: 16.5,
+                        fontWeight: FontWeight.w700,
+                        color: _kInk,
+                      ),
+                    ),
+                    const SizedBox(height: 5),
+                    Text(
+                      sub,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontFamily: 'Pretendard',
+                        fontSize: 12.5,
+                        color: _kMuted,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 10),
+              // 🔴 시안의 '정보 보기'. 예전 '전체 선택/해제' 버튼은 아래
+              //    월 카드 머리로 옮겼다(시안이 거기에 뒀다).
+              _TextLink(
+                label: '정보 보기',
+                onTap: () => _showVendorInfo(tax),
+              ),
+            ],
+          ),
+          const SizedBox(height: 22),
+          const Text(
+            '선택 기간 합계',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontFamily: 'Pretendard',
+              fontSize: 12.5,
+              color: _kMuted,
+            ),
+          ),
+          const SizedBox(height: 8),
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Text(
+              settleWon(t.total),
+              style: const TextStyle(
+                fontFamily: 'Pretendard',
+                fontSize: 30,
+                fontWeight: FontWeight.w800,
+                letterSpacing: -0.6,
+                color: _kInk,
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            '${_sel.length}개월 · 영수증 ${widget.receipts.length}건',
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              fontFamily: 'Pretendard',
+              fontSize: 12.5,
+              color: _kMuted,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 카드2 — 정산 월 선택 + 공급가액/부가세/합계.
+  ///
+  /// 시안 실측: y 337.3..832.7, 구분선 y 678.5 (#E6E6E6) 하나.
+  Widget _monthCard(
+    List<String> months,
+    ({double total, double supply, double vat}) t,
+    bool allSelected,
+  ) {
+    return _card(
+      padding: const EdgeInsets.fromLTRB(18, 16, 18, 18),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              const Expanded(
+                child: Text(
+                  '정산 월 선택',
+                  style: TextStyle(
+                    fontFamily: 'Pretendard',
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                    color: _kInk,
+                  ),
+                ),
+              ),
+              if (months.isNotEmpty)
+                _TextLink(
+                  // 기능 유지 — 예전 '전체 선택/해제' 와 같은 동작이다.
+                  label: allSelected ? '전체 해제' : '전체 선택',
+                  onTap: () => setState(
+                    () => _sel = allSelected ? [] : List.of(months),
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          if (months.isEmpty)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 12),
+              child: Text(
+                '선택 가능한 내역이 없어요',
+                style: TextStyle(
+                  fontFamily: 'Pretendard',
+                  fontSize: 14,
+                  color: _kMuted,
+                ),
+              ),
+            )
+          else
+            for (final m in months) _monthRow(m),
+          const SizedBox(height: 10),
+          // 시안 구분선 — y 678.5, #E6E6E6.
+          Container(height: 1, color: _kLine2),
+          const SizedBox(height: 14),
+          _kv('공급가액', settleWon(t.supply)),
+          const SizedBox(height: 12),
+          _kv('부가세',
+              t.vat <= 0 ? '${settleWon(0)} (면세)' : settleWon(t.vat)),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              const Expanded(
+                child: Text(
+                  '합계',
+                  style: TextStyle(
+                    fontFamily: 'Pretendard',
+                    fontSize: 17,
+                    fontWeight: FontWeight.w800,
+                    color: _kInk,
+                  ),
+                ),
+              ),
+              Flexible(
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerRight,
+                  child: Text(
+                    settleWon(t.total),
+                    style: const TextStyle(
+                      fontFamily: 'Pretendard',
+                      fontSize: 19,
+                      fontWeight: FontWeight.w800,
+                      color: _kCoral,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 월 한 줄 — 라디오 + 라벨 + 금액.
+  ///
+  /// 🔴 시안은 네모 체크박스가 아니라 **동그란 라디오**다.
+  ///    고른 달은 코랄 동그라미에 흰 체크, 글자와 금액도 코랄로 바뀐다.
+  ///    (예전: Material Checkbox + 항상 검정 글자)
+  Widget _monthRow(String m) {
+    final on = _sel.contains(m);
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: () => _toggleMonth(m),
+        borderRadius: BorderRadius.circular(8),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 9),
+          child: Row(
+            children: [
+              _Radio(on: on),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  FnSettleData.monthLabel[m]!,
+                  style: TextStyle(
+                    fontFamily: 'Pretendard',
+                    fontSize: 14.5,
+                    fontWeight: on ? FontWeight.w700 : FontWeight.w500,
+                    color: on ? _kCoral : _kInk,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Flexible(
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerRight,
+                  child: Text(
+                    settleWon(widget.vendor.months[m] ?? 0),
+                    style: TextStyle(
+                      fontFamily: 'Pretendard',
+                      fontSize: 14.5,
+                      fontWeight: FontWeight.w700,
+                      color: on ? _kCoral : _kInk,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// `저장 방식` / `형식` 같은 묶음 제목.
+  Widget _groupLabel(String text) => Padding(
+        padding: const EdgeInsets.only(left: 2),
+        child: Text(
+          text,
+          style: const TextStyle(
+            fontFamily: 'Pretendard',
+            fontSize: 14,
+            fontWeight: FontWeight.w700,
+            color: _kInk,
+          ),
+        ),
+      );
+
+  /// 저장 방식 / 형식 칸.
+  ///
+  /// 시안 실측: 고른 칸 #FFF1EE + 코랄 테두리, 안 고른 칸 흰색 + 얕은 그림자.
+  Widget _optionCard({
+    required bool selected,
+    required String title,
+    required String sub,
+    required VoidCallback onTap,
+  }) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(_kOptRadius),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 150),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+          decoration: BoxDecoration(
+            color: selected ? _kOptOn : Colors.white,
+            borderRadius: BorderRadius.circular(_kOptRadius),
+            border: Border.all(
+              color: selected ? _kCoral : _kLine,
+              width: selected ? 1.2 : 1,
+            ),
+            // 고른 칸은 코랄 테두리가 윤곽을 잡아주므로 그림자를 빼고,
+            // 안 고른 칸만 시안처럼 얕게 띄운다.
+            boxShadow: selected ? null : _kShadowSm,
+          ),
+          child: Row(
+            children: [
+              _Radio(on: selected, size: 16),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontFamily: 'Pretendard',
+                        fontSize: 13.5,
+                        fontWeight: FontWeight.w700,
+                        color: selected ? _kCoral : _kInk,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      sub,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontFamily: 'Pretendard',
+                        fontSize: 11,
+                        color: selected
+                            ? _kCoral.withValues(alpha: 0.75)
+                            : _kMuted,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// 시안 하단 코랄 알약 버튼 — `내보내기`.
+  Widget _exportButton() {
+    final disabled = _sel.isEmpty || _busy;
+    return Opacity(
+      opacity: disabled ? 0.45 : 1,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: disabled ? null : _onExport,
+          borderRadius: BorderRadius.circular(_kBtnH / 2),
+          child: Container(
+            height: _kBtnH,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: _kCoral,
+              borderRadius: BorderRadius.circular(_kBtnH / 2),
+              boxShadow: disabled ? null : _kShadowBtn,
+            ),
+            child: Text(
+              _busy ? '문서를 만들고 있어요...' : '내보내기',
+              style: const TextStyle(
+                fontFamily: 'Pretendard',
+                fontSize: 16,
+                fontWeight: FontWeight.w700,
+                color: Colors.white,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// 흰 카드 껍데기 — 시안 그림자 9dp 번짐.
+  Widget _card({required Widget child, required EdgeInsets padding}) {
+    return Container(
+      padding: padding,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(_kCardRadius),
+        border: Border.all(color: _kLine),
+        boxShadow: _kShadowLg,
+      ),
+      child: child,
+    );
+  }
+
+  /// 카드1 의 `정보 보기` — 거래처 과세 구분과 최근 거래를 알려준다.
+  ///
+  /// 🔴 시안에 글자는 있는데 무엇을 보여줄지는 없다. 없는 화면으로
+  ///    보내 깨뜨리는 대신, 이 화면이 이미 아는 사실만 정리해 보여준다.
+  void _showVendorInfo(TaxType tax) {
+    showFnDsBottomSheet(
+      context,
+      title: widget.vendor.name,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _kv('과세 구분', tax == TaxType.exempt ? '면세' : '과세'),
+          const SizedBox(height: 12),
+          _kv('최근 거래',
+              widget.vendor.lastDate.isEmpty ? '-' : widget.vendor.lastDate),
+          const SizedBox(height: 12),
+          _kv('영수증', '${widget.receipts.length}건'),
+          const SizedBox(height: 12),
+          _kv('선택한 달', '${_sel.length}개월'),
+          const SizedBox(height: 8),
+        ],
       ),
     );
   }
@@ -562,110 +880,6 @@ class _SettlePreviewDsScreenState extends State<SettlePreviewDsScreen> {
                   color: FnColors.labelNormal)),
         ],
       );
-
-  /// 시안: Chip(flex:1, column, height auto, padding '10px 8px', gap 2)
-  Widget _modeChip(String id, String title, String sub) {
-    final active = _exportMode == id;
-    return GestureDetector(
-      onTap: () => setState(() => _exportMode = id),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
-        decoration: BoxDecoration(
-          color: active ? FnColors.rose95 : FnColors.fillAlternative,
-          borderRadius: BorderRadius.circular(10),
-          border: active ? Border.all(color: FnColors.rose50, width: 1) : null,
-        ),
-        child: Column(
-          children: [
-            Text(
-              title,
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                fontFamily: 'Pretendard',
-                fontSize: 14,
-                height: 1.4,
-                fontWeight: FontWeight.w500,
-                color: active ? FnColors.rose50 : FnColors.labelNormal,
-              ),
-            ),
-            const SizedBox(height: 2),
-            Opacity(
-              opacity: 0.75,
-              child: Text(
-                sub,
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontFamily: 'Pretendard',
-                  fontSize: 11.5,
-                  height: 1.4,
-                  color: active ? FnColors.rose50 : FnColors.labelNormal,
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _guideBox() {
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: FnColors.rose99,
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Padding(
-            padding: EdgeInsets.only(top: 2),
-            child: Icon(Icons.info_outline_rounded,
-                size: 20, color: FnColors.rose50),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  '내보내기 안내',
-                  style: TextStyle(
-                    fontFamily: 'Pretendard',
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
-                    color: FnColors.labelNormal,
-                  ),
-                ),
-                const SizedBox(height: 6),
-                RichText(
-                  text: const TextSpan(
-                    style: TextStyle(
-                      fontFamily: 'Pretendard',
-                      fontSize: 14,
-                      height: 1.7,
-                      color: FnColors.labelNormal,
-                    ),
-                    children: [
-                      TextSpan(text: '· 카카오톡·이메일로 '),
-                      TextSpan(
-                          text: '바로 전송',
-                          style: TextStyle(fontWeight: FontWeight.w600)),
-                      TextSpan(text: '할 수 있어요\n· 내보낸 파일은 '),
-                      TextSpan(
-                          text: '[파일] 앱과 [저장 이력]',
-                          style: TextStyle(fontWeight: FontWeight.w600)),
-                      TextSpan(text: '에 보관돼요'),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
 }
 
 /// ```js
@@ -843,6 +1057,136 @@ class SettleSharedDsScreen extends StatelessWidget {
                 ),
               ),
             ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+
+// ════════════════════════════════════════════════════════════════
+//  #144 정산서 미리보기 시안 실측 (348x1024, 환산비 1.1207)
+// ════════════════════════════════════════════════════════════════
+//
+//   배경        #FEF9F5
+//   카드1       y 126.6..320.5 (h 193.9)   좌우 24.7..364.2
+//   카드2       y 337.3..832.7 (h 495.4)   같은 좌우
+//   카드 그림자   Δ[3,17,13,11,7,5,3,2,1,0]   = 9dp 번짐
+//   구분선      y 678.5  #E6E6E6  (카드2 안에 하나뿐)
+//   고른 옵션칸  #FFF1EE + 코랄 테두리
+//   안 고른 칸   #FFFFFF + 얕은 그림자 Δ[4,4,21,1,0]
+//   내보내기 버튼 #FF6D78, y 1068..1126 (h 58), 그림자 Δ[10,10,7,4,3,2,1,0]
+//   월 라디오    지름 ~18dp. 고르면 코랄 채움 + 흰 체크
+
+/// 시안 배경.
+const Color _kBg = Color(0xFFFEF9F5);
+
+/// 시안 본문 글자색.
+const Color _kInk = Color(0xFF171717);
+
+/// 시안 보조 글자색.
+const Color _kMuted = Color(0xFF8A8580);
+
+/// 시안 코랄.
+const Color _kCoral = Color(0xFFFF6D78);
+
+/// 카드 테두리 — 홈/내역과 같은 연한 선.
+const Color _kLine = Color(0x14C9A79B);
+
+/// 카드2 안 구분선 — 시안 실측 #E6E6E6.
+const Color _kLine2 = Color(0xFFE6E6E6);
+
+/// 고른 옵션 칸 채움 — 시안 실측 #FFF1EE.
+const Color _kOptOn = Color(0xFFFFF1EE);
+
+/// 시안 좌우 여백 24.7dp.
+const double _kPad = 24.0;
+
+/// 옵션 칸 사이 간격.
+const double _kGap = 12.0;
+
+/// 카드 모서리.
+const double _kCardRadius = 18.0;
+
+/// 옵션 칸 모서리.
+const double _kOptRadius = 14.0;
+
+/// 내보내기 버튼 높이 — 시안 y 1068..1126.
+const double _kBtnH = 58.0;
+
+/// 카드 그림자 — 9dp 번짐. 내역 화면과 같은 따뜻한 회갈색을 쓴다.
+const List<BoxShadow> _kShadowLg = [
+  BoxShadow(color: Color(0x268A7268), blurRadius: 10, offset: Offset(0, 2)),
+  BoxShadow(color: Color(0x118A7268), blurRadius: 20, offset: Offset(0, 5)),
+];
+
+/// 안 고른 옵션 칸 그림자 — 아주 얕다.
+const List<BoxShadow> _kShadowSm = [
+  BoxShadow(color: Color(0x148A7268), blurRadius: 3, offset: Offset(0, 1)),
+];
+
+/// 내보내기 버튼 그림자 — 코랄 자체를 번지게 한다.
+const List<BoxShadow> _kShadowBtn = [
+  BoxShadow(color: Color(0x33FF6D78), blurRadius: 12, offset: Offset(0, 4)),
+];
+
+/// 시안 동그란 라디오.
+///
+/// 🔴 Material `Radio` 를 쓰지 않은 이유: 기본 지름·터치영역·색 규칙이
+///    시안과 다르고, 크기를 줄이려면 `VisualDensity` 를 건드려야 해서
+///    오히려 손이 더 간다. 모양이 단순하므로 직접 그린다.
+class _Radio extends StatelessWidget {
+  const _Radio({required this.on, this.size = 18});
+
+  final bool on;
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 150),
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: on ? _kCoral : Colors.white,
+        border: Border.all(
+          color: on ? _kCoral : const Color(0xFFE3E3E3),
+          width: 1.4,
+        ),
+      ),
+      child: on
+          ? Icon(Icons.check_rounded, size: size * 0.66, color: Colors.white)
+          : null,
+    );
+  }
+}
+
+/// 카드 머리의 글자 링크 (`정보 보기`, `전체 선택`).
+class _TextLink extends StatelessWidget {
+  const _TextLink({required this.label, required this.onTap});
+
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(6),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 3),
+          child: Text(
+            label,
+            style: const TextStyle(
+              fontFamily: 'Pretendard',
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color: _kMuted,
+            ),
           ),
         ),
       ),
