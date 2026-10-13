@@ -156,4 +156,22 @@ class FnHome {
 
   /// 앨범 버튼(흰 알약) 높이. 시안 56.9dp.
   static const double buttonH2 = 57;
+
+  // ── #143 탭바 활성 알약 실측 (시안 352x1024, 환산비 1.108) ──────
+  //
+  //   탭바      y 1042.6..1114.6dp (h 72.0)  x 11.1..377.8
+  //   활성 알약  x  88.6..158.4dp (w 69.8)   y 1052.6..1105.7 (h 53.2)
+  //   알약 색   #FEF0EF
+  //
+  // 🔴 지금까지 활성 탭은 **글자·아이콘 색만** 코랄이었다.
+  //    시안에는 활성 탭 뒤에 연분홍 알약이 깔려 있다.
+
+  /// 탭바 활성 탭 뒤 알약 색. 시안 #FEF0EF.
+  static const Color tabPill = Color(0xFFFEF0EF);
+
+  /// 탭바 활성 알약 폭. 시안 69.8dp.
+  static const double tabPillW = 70;
+
+  /// 탭바 활성 알약 높이. 시안 53.2dp.
+  static const double tabPillH = 53;
 }

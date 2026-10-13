@@ -390,29 +390,52 @@ class FnBottomNavigation extends StatelessWidget {
       final color = active
           ? (coral ? FnHome.coralFlat : FnColors.primaryNormal)
           : FnColors.labelAssistive;
+      final content = Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          SizedBox(
+            width: 24,
+            height: 24,
+            child: Icon(t.icon, size: 20, color: color),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            t.label,
+            style: TextStyle(
+              fontFamily: 'Pretendard',
+              fontSize: 11,
+              fontWeight: active ? FontWeight.w600 : FontWeight.w500,
+              color: color,
+            ),
+          ),
+        ],
+      );
       return Expanded(
         child: InkWell(
           onTap: onChange == null ? null : () => onChange!(t.key),
           borderRadius: BorderRadius.circular(coral ? 20 : 0),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              SizedBox(
-                width: 24,
-                height: 24,
-                child: Icon(t.icon, size: 20, color: color),
-              ),
-              const SizedBox(height: 2),
-              Text(
-                t.label,
-                style: TextStyle(
-                  fontFamily: 'Pretendard',
-                  fontSize: 11,
-                  fontWeight: active ? FontWeight.w600 : FontWeight.w500,
-                  color: color,
-                ),
-              ),
-            ],
+          child: Center(
+            // 🔴 #143 시안에는 **활성 탭 뒤에 연분홍 알약**이 깔려 있다.
+            //    지금까지는 글자·아이콘 색만 코랄로 바꿨을 뿐이라
+            //    "지금 어느 탭인지" 가 시안만큼 또렷하지 않았다.
+            //    실측: 70 x 53dp, #FEF0EF.
+            //
+            //    `coral`(= 떠 있는 탭바) 일 때만 그린다. 옛 스타일
+            //    탭바는 높이 56dp 라 53dp 알약이 들어가지 않는다.
+            child: (coral && active)
+                ? Container(
+                    width: FnHome.tabPillW,
+                    height: FnHome.tabPillH,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: FnHome.tabPill,
+                      borderRadius:
+                          BorderRadius.circular(FnHome.tabPillH / 2),
+                    ),
+                    child: content,
+                  )
+                : content,
           ),
         ),
       );

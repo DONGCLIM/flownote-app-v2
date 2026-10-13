@@ -191,6 +191,38 @@ const double kSettleChipH = 32.0;
 /// 시안 필터칩 모서리.
 const double kSettleChipRadius = 10.0;
 
+// ── #143 업체별 화면 실측 (시안 352x1024, 환산비 1.108) ───────────
+//
+//   토글         왼쪽 '업체별' = 코랄 활성(#FF6D78 54%)  <- 날짜별 화면과 반대
+//   업체 카드    내부 #FFFFFF 72~91%, 좌우 24.4..364.5dp
+//   카드 그림자   Δ[18, 13, 10, 8, 5, 4, 2, 1, 0]  = 9dp 번짐
+//                -> **총매입 카드와 같은 큰 그림자**다.
+//                   (날짜별 영수증 카드 3dp 와 다르다)
+//   진행바       y 608..615 (h ~7dp), x 44.3..345.7
+//                채움 #FFAC94 / 트랙 #FFE1D4  <- 둘 다 살구색
+//   검색창       y 382.2..430.5 (h 48.3)
+
+/// 시안 업체 카드 진행바 **채움** — 살구색.
+///
+/// 🔴 예전에는 `#EE7686 -> #F9A7A0` 분홍 그라디언트였다.
+///    시안을 재 보니 단색 살구 #FFAC94 다.
+const Color kSettleBarFill = Color(0xFFFFAC94);
+
+/// 시안 업체 카드 진행바 **트랙** — 연한 살구.
+///
+/// 🔴 예전에는 `rgba(112,115,124,.10)` 회색이었다. 시안은 흰 카드 위에
+///    깔린 연살구 #FFE1D4 라 훨씬 따뜻하다.
+const Color kSettleBarTrack = Color(0xFFFFE1D4);
+
+/// 시안 진행바 높이 — 실측 ~7dp.
+const double kSettleBarH = 7.0;
+
+/// 시안 검색창 높이 — #143 실측 y 382.2..430.5 = 48.3dp.
+///
+/// 🔴 높이 자체는 시안과 같았다. 좁아 보인 원인은 높이가 아니라
+///    입력 칸(`TextField`)의 세로 여백이 0 이었던 것이다.
+const double kSettleSearchH = 50.0;
+
 /// 내역 화면 금액 표기 — `1,184,000원`.
 ///
 /// 🔴 공용 [FnDemo.won] 은 `₩1,184,000` 처럼 **앞에 원화 기호**를 붙인다.
@@ -938,11 +970,19 @@ class _VendorShareCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final radius = BorderRadius.circular(kSettleCardRadius);
 
+    // 🔴 #143 시안 업체 카드는 **흰색 + 큰 그림자**다.
+    //    예전에는 분홍빛 `kSettleCardBg`(#FFF9F7) + 코랄 테두리라
+    //    시안과 달랐다. 실측 카드 내부 #FFFFFF 72~91%.
+    //
+    //    그림자 Δ[18,13,10,8,5,4,2,1,0] 로 9dp 번진다. 이건
+    //    **총매입 카드와 같은 크기**이고, 날짜별 보기의 영수증 카드
+    //    (3dp)보다 크다. 즉 보기마다 카드 그림자가 다르다.
     return Container(
       decoration: BoxDecoration(
-        color: kSettleCardBg,
+        color: kSettleWhite,
         borderRadius: radius,
-        border: Border.all(color: kSettleCardLine),
+        border: Border.all(color: kSettleLine),
+        boxShadow: kSettleShadowLg,
       ),
       // 원본 `Card { padding: 16 }` — 카드 전체가 하나의 16 패딩이다.
       padding: const EdgeInsets.all(16),
@@ -1019,14 +1059,16 @@ class _VendorShareCard extends StatelessWidget {
                         ),
                       ),
                       const SizedBox(height: 3), // 원본 `marginTop: 3`
-                      // 원본 `transform: open ? 'rotate(90deg)' : 'none'`
-                      // — 접힘 `›` → 펼침 `v` (시계방향 90도).
+                      // 🔴 #143 시안 꺾쇠는 접힘 `⌄`(아래), 펼침 `⌃`(위)다.
+                      //    예전에는 접힘 `›`(오른쪽) 을 90도 돌렸다.
+                      //    오른쪽 꺾쇠는 "다음 화면으로 간다" 는 뜻이라
+                      //    접기/펼치기와 의미가 다르다.
                       AnimatedRotation(
-                        turns: open ? 0.25 : 0,
+                        turns: open ? 0.5 : 0,
                         duration: const Duration(milliseconds: 150),
                         child: const Icon(
-                          Icons.chevron_right_rounded,
-                          size: 15,
+                          Icons.keyboard_arrow_down_rounded,
+                          size: 20,
                           color: kSettleCaret,
                         ),
                       ),
@@ -1066,18 +1108,12 @@ class _VendorShareCard extends StatelessWidget {
       children: [
         const SizedBox(height: 12), // 원본 `marginTop: 12`
         SettleShareBar(share: share.share),
-        const SizedBox(height: 6), // 캡션 `marginTop: 6`
-        Text(
-          // 원본 문구 `'전체 매입의 ' + pct + '%'`.
-          // "전체" 는 헤더에 찍힌 조회 기간을 말한다. 헤더 금액이 곧
-          // 분모이므로 두 숫자가 항상 서로 맞는다.
-          share.shareLabel,
-          style: const TextStyle(
-            fontFamily: 'Pretendard',
-            fontSize: 11.5,
-            color: kSettleMute,
-          ),
-        ),
+        // 🔴 #143 시안에는 막대 아래 `전체 매입의 N%` 글자가 없다.
+        //    막대 길이가 곧 비중이라, 같은 말을 두 번 하지 않는다.
+        //    (정확한 숫자가 궁금하면 카드를 펼쳐 금액을 본다)
+        //
+        //    ⚠️ `share.shareLabel` 자체는 지우지 않았다. 다른 곳에서
+        //       쓰거나 되살릴 때 모델을 다시 손댈 필요가 없게 둔다.
       ],
     );
   }
@@ -1122,13 +1158,41 @@ class _VendorShareCard extends StatelessWidget {
         if (small.isNotEmpty && small.length != share.receipts.length)
           _smallBlock(small),
 
-        const SizedBox(height: 8), // 원본 버튼 `marginTop: 8`
-        // 원본 `alignSelf: 'flex-start'`.
-        Align(
-          alignment: Alignment.centerLeft,
-          child: _OutlinedSmallButton(
-            label: '이 업체 정산서 만들기',
-            onPressed: onExport,
+        const SizedBox(height: 10),
+        // 🔴 #143 시안 하단은 테두리 알약이 아니라 **가운데 정렬된
+        //    코랄 글자 + 꺾쇠**다. 문구도 `거래 정산서 보기 ›` 였다.
+        //    (예전: 왼쪽 정렬 테두리 버튼 `이 업체 정산서 만들기`)
+        //
+        //    동작은 그대로 `onExport` 다. 정산서를 만들어 보여주는
+        //    같은 길이므로 문구만 시안을 따른다.
+        Center(
+          child: Material(
+            color: Colors.transparent,
+            child: InkWell(
+              onTap: onExport,
+              borderRadius: BorderRadius.circular(8),
+              child: Padding(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      '거래 정산서 보기',
+                      style: TextStyle(
+                        fontFamily: 'Pretendard',
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                        color: kSettleCoral,
+                      ),
+                    ),
+                    const SizedBox(width: 5),
+                    Icon(Icons.chevron_right_rounded,
+                        size: 17, color: kSettleCoral),
+                  ],
+                ),
+              ),
+            ),
           ),
         ),
       ],
@@ -1235,54 +1299,12 @@ class _SentBadge extends StatelessWidget {
   }
 }
 
-/// 원본 디자인 시스템 `Button { size:'small', variant:'outlined' }`.
-///
-/// ```js
-/// small: { height:32, radius:8, padX:14, font:14 }
-/// outlined → background transparent,
-///            boxShadow 'inset 0 0 0 1px var(--line-normal-normal)',
-///            color primary(= ROSE, 템플릿이 --blue-50 을 #EE7686 로 덮어씀)
-/// fontWeight 600
-/// ```
-///
-/// 🔴 이전 구현은 font 13 / padding 12,8 / 외곽선을 카드선(분홍)으로 줬다.
-///    원본 외곽선은 분홍이 아니라 중립 회색 `rgba(112,115,124,.22)` 다.
-class _OutlinedSmallButton extends StatelessWidget {
-  const _OutlinedSmallButton({required this.label, required this.onPressed});
-
-  final String label;
-  final VoidCallback onPressed;
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onPressed,
-        borderRadius: BorderRadius.circular(8),
-        child: Container(
-          height: 32,
-          padding: const EdgeInsets.symmetric(horizontal: 14),
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(8),
-            // 원본 `inset 0 0 0 1px var(--line-normal-normal)` = 22% 회색.
-            border: Border.all(color: FnColors.lineNormal),
-          ),
-          child: Text(
-            label,
-            style: const TextStyle(
-              fontFamily: 'Pretendard',
-              fontSize: 14,
-              fontWeight: FontWeight.w600,
-              color: FnColors.rose50,
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
+// 🔴 #143 에서 `_OutlinedSmallButton`(테두리 알약)을 지웠다.
+//    시안 업체 카드 하단이 테두리 버튼이 아니라 코랄 글자 링크
+//    `거래 정산서 보기 ›` 였고, 그게 유일한 사용처였다.
+//    되살려야 하면 원본 명세는 이랬다:
+//      small { height:32, radius:8, padX:14, font:14, weight:600 }
+//      outlined -> 배경 투명 + inset 1px rgba(112,115,124,.22) + 코랄 글자
 
 /// 펼친 카드 안의 거래 한 줄.
 ///
@@ -1397,11 +1419,13 @@ class SettleShareBar extends StatelessWidget {
   Widget build(BuildContext context) {
     final f = share.isFinite ? share.clamp(0.0, 1.0) : 0.0;
     return ClipRRect(
-      borderRadius: BorderRadius.circular(3),
+      borderRadius: BorderRadius.circular(kSettleBarH / 2),
       child: Container(
-        height: 6,
-        // 원본 `rgba(112,115,124,.10)`.
-        color: const Color(0x1A70737C),
+        // 🔴 #143 시안 실측 — 높이 ~7dp, 트랙 #FFE1D4(연살구).
+        //    예전에는 높이 6 에 `rgba(112,115,124,.10)` **회색** 트랙이라
+        //    따뜻한 카드 위에서 혼자 차가웠다.
+        height: kSettleBarH,
+        color: kSettleBarTrack,
         child: Align(
           alignment: Alignment.centerLeft,
           child: FractionallySizedBox(
@@ -1410,13 +1434,10 @@ class SettleShareBar extends StatelessWidget {
             widthFactor: f > 0 && f < 0.015 ? 0.015 : f,
             child: Container(
               decoration: BoxDecoration(
-                // 원본 `linear-gradient(90deg, #EE7686 0%, #F9A7A0 100%)`.
-                gradient: const LinearGradient(
-                  begin: Alignment.centerLeft,
-                  end: Alignment.centerRight,
-                  colors: [Color(0xFFEE7686), Color(0xFFF9A7A0)],
-                ),
-                borderRadius: BorderRadius.circular(3),
+                // 🔴 #143 시안은 분홍 그라디언트가 아니라 **단색 살구**다.
+                //    (예전: #EE7686 -> #F9A7A0)
+                color: kSettleBarFill,
+                borderRadius: BorderRadius.circular(kSettleBarH / 2),
               ),
             ),
           ),
@@ -1550,7 +1571,9 @@ class SettleFilterChip extends StatelessWidget {
 ///    공용 부품을 고치면 이 검색창을 쓰는 다른 화면이 전부 바뀐다.
 ///    그래서 내역 화면 전용으로 따로 둔다. 동작은 공용과 같다.
 ///
-/// 실측: 높이 48dp(y 397.8..445.7), 모서리 12dp, 좌우 여백 14dp.
+/// 실측(#143, 352x1024 시안): 상자 y 382.2..430.5 = **높이 48.3dp**,
+/// 좌우 25.5..363.4, 돋보기 x 39.9..53.2(13.3dp),
+/// 글자 y 400.0..412.2 -> 위 17.8dp / 아래 18.3dp 로 **세로 가운데**.
 class SettleSearchBar extends StatelessWidget {
   const SettleSearchBar({
     super.key,
@@ -1568,37 +1591,56 @@ class SettleSearchBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      height: 48,
-      padding: const EdgeInsets.symmetric(horizontal: 14),
+      height: kSettleSearchH,
+      padding: const EdgeInsets.symmetric(horizontal: 16),
       decoration: BoxDecoration(
         color: kSettleWhite,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(14),
         boxShadow: kSettleShadowSm,
       ),
       child: Row(
         children: [
           const Icon(Icons.search_rounded,
               size: 19, color: FnColors.labelAlternative),
-          const SizedBox(width: 9),
+          const SizedBox(width: 10),
           Expanded(
-            child: TextField(
-              controller: controller,
-              onChanged: onChanged,
-              style: const TextStyle(
-                fontFamily: 'Pretendard',
-                fontSize: 15,
-                color: kSettleInk,
-              ),
-              cursorColor: kSettleCoral,
-              decoration: InputDecoration(
-                isDense: true,
-                border: InputBorder.none,
-                contentPadding: EdgeInsets.zero,
-                hintText: placeholder,
-                hintStyle: const TextStyle(
+            // 🔴 #143 "글씨 쓰는 칸이 너무 작다 / 타이트하다" 수정.
+            //
+            //    예전에는 `isDense: true` + `contentPadding: zero` 였다.
+            //    그러면 입력 칸의 세로 공간이 **글자 높이에 딱 붙어서**
+            //    한글 받침(ㅇ, ㄹ)과 윗선이 상자에 닿아 보이고, 커서도
+            //    글자에 바짝 붙는다. 사장님이 말한 '타이트함'이 이것이다.
+            //
+            //    `isDense` 를 끄고 세로 여백을 주면 글자가 숨 쉴 공간이
+            //    생긴다. 상자 높이는 `SizedBox` 가 아니라 바깥
+            //    `Container(height:)` 가 잡고 있으므로, 여백을 늘려도
+            //    칸이 커지지 않고 **글자만 가운데로** 놓인다.
+            child: Center(
+              child: TextField(
+                controller: controller,
+                onChanged: onChanged,
+                textAlignVertical: TextAlignVertical.center,
+                style: const TextStyle(
                   fontFamily: 'Pretendard',
                   fontSize: 15,
-                  color: FnColors.labelAssistive,
+                  height: 1.35,
+                  color: kSettleInk,
+                ),
+                cursorColor: kSettleCoral,
+                cursorHeight: 19,
+                decoration: InputDecoration(
+                  isDense: false,
+                  isCollapsed: true,
+                  border: InputBorder.none,
+                  contentPadding:
+                      const EdgeInsets.symmetric(vertical: 9),
+                  hintText: placeholder,
+                  hintStyle: const TextStyle(
+                    fontFamily: 'Pretendard',
+                    fontSize: 15,
+                    height: 1.35,
+                    color: FnColors.labelAssistive,
+                  ),
                 ),
               ),
             ),

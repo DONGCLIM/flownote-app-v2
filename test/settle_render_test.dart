@@ -21,6 +21,8 @@ import 'package:flow_note/models/receipt_model.dart';
 import 'package:flow_note/providers/receipt_provider.dart';
 import 'package:flow_note/screens/ds/settle_ds_screen.dart';
 import 'package:flow_note/screens/ds/settle_views_ds.dart';
+import 'package:flow_note/design/fn_shell.dart';
+import 'package:flow_note/design/fn_home_tokens.dart';
 
 ReceiptModel _r(String id, DateTime d, String store, double amt) =>
     ReceiptModel(
@@ -315,5 +317,157 @@ void main() {
     await t.pump(const Duration(milliseconds: 300));
     expect(find.text('그린플러스'), findsOneWidget);
     expect(find.text('대한꽃도매'), findsNothing, reason: '검색이 걸러내지 못했다');
+  });
+
+  // ══════════════════════════════════════════════════════════════
+  //  #143 — 업체별 보기 / 검색칸 여백 / 탭바 활성 알약
+  // ══════════════════════════════════════════════════════════════
+
+  /// 업체별 보기로 전환한다.
+  Future<void> toVendor(WidgetTester t) async {
+    await t.tap(find.text('업체별'));
+    await t.pump(const Duration(milliseconds: 300));
+  }
+
+  testWidgets('🔴 #143 검색 입력칸에 세로 여백이 있다', (t) async {
+    await _pump(t);
+    final tf = t.widget<TextField>(find.byType(TextField));
+    final d = tf.decoration!;
+    // 🔴 예전엔 `isDense: true` + `contentPadding: zero` 라 글자가
+    //    상자에 딱 붙어 보였다. 사장님이 말한 '타이트함'.
+    expect(d.isDense, isFalse, reason: 'isDense 가 켜져 있으면 칸이 다시 쪼그라든다');
+    final pad = d.contentPadding as EdgeInsets;
+    expect(pad.vertical, greaterThanOrEqualTo(14.0),
+        reason: '입력 글자 위아래 여백이 없다');
+  });
+
+  testWidgets('🔴 #143 검색창 높이가 시안 48dp 이상이다', (t) async {
+    await _pump(t);
+    final h = t.getSize(find.byType(SettleSearchBar)).height;
+    expect(h, greaterThanOrEqualTo(48.0), reason: '시안 실측 48.3dp');
+  });
+
+  testWidgets('🔴 #143 업체별 카드는 흰색 + 큰 그림자다', (t) async {
+    await _pump(t);
+    await toVendor(t);
+    final card = find.ancestor(
+      of: find.text('대한꽃도매'),
+      matching: find.byType(Container),
+    );
+    final decos = card
+        .evaluate()
+        .map((e) => (e.widget as Container).decoration)
+        .whereType<BoxDecoration>()
+        .where((d) => d.color == const Color(0xFFFFFFFF))
+        .toList();
+    expect(decos, isNotEmpty, reason: '시안 업체 카드는 #FFFFFF 다 (예전 분홍 #FFF9F7)');
+    final shadows =
+        decos.expand((d) => d.boxShadow ?? const <BoxShadow>[]).toList();
+    expect(shadows, isNotEmpty, reason: '업체 카드에 그림자가 없다');
+    // 🔴 시안 Δ[18,13,10,8,5,4,2,1,0] = 9dp 번짐.
+    //    총매입 카드와 같은 큰 그림자이고, 날짜별 영수증 카드(3dp)와 다르다.
+    final maxBlur =
+        shadows.map((e) => e.blurRadius).reduce((a, b) => a > b ? a : b);
+    expect(maxBlur, greaterThanOrEqualTo(10.0),
+        reason: '업체 카드 그림자가 영수증 카드처럼 작다');
+  });
+
+  testWidgets('🔴 #143 점유율 막대가 살구색이다', (t) async {
+    await _pump(t);
+    await toVendor(t);
+    final bars = find
+        .descendant(
+            of: find.byType(SettleShareBar), matching: find.byType(Container))
+        .evaluate()
+        .map((e) => (e.widget as Container))
+        .toList();
+    final colors = <Color>[
+      for (final c in bars) ...[
+        if (c.color != null) c.color!,
+        if (c.decoration is BoxDecoration &&
+            (c.decoration as BoxDecoration).color != null)
+          (c.decoration as BoxDecoration).color!,
+      ]
+    ];
+    // 시안 실측 — 채움 #FFAC94 / 트랙 #FFE1D4. 둘 다 살구색이다.
+    expect(colors, contains(const Color(0xFFFFE1D4)), reason: '트랙이 회색이다');
+    expect(colors, contains(const Color(0xFFFFAC94)),
+        reason: '채움이 분홍 그라디언트다');
+  });
+
+  testWidgets('🔴 #143 업체 카드에 전체 매입의 N% 글자가 없다', (t) async {
+    await _pump(t);
+    await toVendor(t);
+    expect(find.textContaining('전체 매입의'), findsNothing,
+        reason: '시안 막대 아래에는 글자가 없다');
+  });
+
+  testWidgets('🔴 #143 펼치면 거래 정산서 보기 링크가 나온다', (t) async {
+    await _pump(t);
+    await toVendor(t);
+    await t.tap(find.text('대한꽃도매'));
+    await t.pump(const Duration(milliseconds: 300));
+    // 시안 문구 — 테두리 버튼이 아니라 코랄 글자 링크.
+    expect(find.text('거래 정산서 보기'), findsOneWidget);
+    expect(find.text('이 업체 정산서 만들기'), findsNothing,
+        reason: '예전 테두리 버튼 문구가 남아 있다');
+  });
+
+  testWidgets('기능 유지 — #143 업체 카드 접기/펼치기가 동작한다', (t) async {
+    await _pump(t);
+    await toVendor(t);
+    // 접힌 상태에는 거래 줄이 없다.
+    expect(find.text('거래 정산서 보기'), findsNothing);
+    await t.tap(find.text('대한꽃도매'));
+    await t.pump(const Duration(milliseconds: 300));
+    expect(find.text('거래 정산서 보기'), findsOneWidget);
+    // 다시 누르면 접힌다.
+    await t.tap(find.text('대한꽃도매'));
+    await t.pump(const Duration(milliseconds: 300));
+    expect(find.text('거래 정산서 보기'), findsNothing);
+  });
+
+  testWidgets('🔴 #143 탭바 활성 탭 뒤에 연분홍 알약이 있다', (t) async {
+    t.view.physicalSize = const Size(390, 900);
+    t.view.devicePixelRatio = 1.0;
+    addTearDown(t.view.reset);
+    await t.pumpWidget(const MaterialApp(
+      home: Scaffold(
+        body: FnBottomNavigation(
+          tabs: fnTabs,
+          activeKey: 'settle',
+          floating: true,
+        ),
+      ),
+    ));
+    await t.pump(const Duration(milliseconds: 300));
+    final pills = find
+        .byWidgetPredicate((w) =>
+            w is Container &&
+            w.decoration is BoxDecoration &&
+            (w.decoration as BoxDecoration).color == FnHome.tabPill)
+        .evaluate()
+        .toList();
+    // 🔴 활성 탭 하나에만 깔린다. 전부 깔리면 어느 탭인지 알 수 없다.
+    expect(pills.length, 1, reason: '시안 알약은 활성 탭 하나뿐이다');
+    final size = t.getSize(find.byWidget(pills.first.widget));
+    expect(size.width, closeTo(70, 2), reason: '시안 실측 69.8dp');
+    expect(size.height, closeTo(53, 2), reason: '시안 실측 53.2dp');
+  });
+
+  testWidgets('🔴 #143 떠 있지 않은 탭바에는 알약을 안 그린다', (t) async {
+    // 옛 스타일 탭바는 높이 56dp 라 53dp 알약이 들어가지 않는다.
+    await t.pumpWidget(const MaterialApp(
+      home: Scaffold(
+        body: FnBottomNavigation(tabs: fnTabs, activeKey: 'settle'),
+      ),
+    ));
+    await t.pump();
+    expect(t.takeException(), isNull);
+    final pills = find.byWidgetPredicate((w) =>
+        w is Container &&
+        w.decoration is BoxDecoration &&
+        (w.decoration as BoxDecoration).color == FnHome.tabPill);
+    expect(pills, findsNothing);
   });
 }
