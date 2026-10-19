@@ -29,9 +29,15 @@ class _InAppCameraScreenState extends State<InAppCameraScreen>
   bool _isFrontCamera = false;
   bool _isFlashOn = false;
 
-  /// 시안 촬영 프레임 비율(가로/세로). `ScanCameraDsScreen.frameAspect`
+  /// 촬영 프레임 비율(가로/세로). `ScanCameraDsScreen.frameAspect`
   /// 와 같은 값을 써야 두 화면이 같은 사진을 만든다.
-  static const double _frameAspect = 0.62;
+  ///
+  /// 🔴 0.62 -> 0.75. 센서(4:3 = 0.75)와 같은 값으로 맞춰서
+  ///    `BoxFit.cover` 확대 배율을 1.0(확대 없음)으로 만든 것이다.
+  ///    0.62 였을 때는 0.75/0.62 = 1.21배, 즉 21% 확대돼 보였고
+  ///    센서 가로의 82.7% 만 화면에 나왔다. 자세한 설명은
+  ///    `ScanCameraDsScreen.frameAspect` 주석에 적어 뒀다.
+  static const double _frameAspect = 0.75;
 
   // 연속 촬영 시 찍은 사진 목록
   final List<XFile> _capturedImages = [];
@@ -448,15 +454,14 @@ class _InAppCameraScreenState extends State<InAppCameraScreen>
     // (`_cropToFrame`). 화면과 파일이 같아지고 프레임도 커진다.
     return LayoutBuilder(
       builder: (context, constraints) {
+        // 🔴 예전의 "폭 78% 최소 보장" 보정은 지웠다. 그게 걸리면
+        //    프레임 비율이 _frameAspect 가 아니게 돼서, 화면에서 본
+        //    사각형과 저장되는 사각형이 달라진다.
         var w = constraints.maxWidth;
         var h = w / _frameAspect;
         if (h > constraints.maxHeight) {
           h = constraints.maxHeight;
           w = h * _frameAspect;
-          if (w < constraints.maxWidth * 0.78) {
-            w = constraints.maxWidth * 0.78;
-            h = constraints.maxHeight;
-          }
         }
         final previewW = w;
         final previewH = w / (1 / _controller!.value.aspectRatio);

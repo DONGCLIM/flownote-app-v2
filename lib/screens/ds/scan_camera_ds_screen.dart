@@ -46,6 +46,38 @@ class ScanCameraDsScreen extends StatefulWidget {
     this.maxShots = 20,
   });
 
+  /// 촬영 프레임의 **가로/세로 비율**.
+  ///
+  /// 🔴 0.62 -> 0.75 로 바꿨다. 이유를 반드시 읽고 고칠 것.
+  ///
+  /// ## 왜 확대돼 보였나 (사장님 지적: "확대가 되어서 불편하다")
+  ///
+  /// 예전에는 시안 프레임 모양(세로로 긴 영수증, 0.62)을 그대로 쓰고
+  /// 프리뷰를 `BoxFit.cover` 로 채웠다. 센서는 4:3(세로로 놓으면 0.75)
+  /// 이므로 둘이 안 맞고, 그 차이만큼 프리뷰가 **확대**된다.
+  ///
+  /// ```
+  /// 확대 배율 = (1/0.62) / (1/0.75) = 0.75/0.62 = 1.2097  -> 21% 확대
+  /// 보이는 센서 가로 = 1/1.2097 = 82.7%  -> 좌우 17.3% 가 잘려 나간다
+  /// ```
+  ///
+  /// 그래서 영수증을 통째로 담으려면 폰을 뒤로 더 빼야 했다. 기본
+  /// 카메라 앱으로 찍을 때와 화각이 달라서 불편했던 것이다.
+  ///
+  /// ## 고친 방법
+  ///
+  /// 프레임 비율을 **센서와 같은 0.75** 로 맞춘다. 그러면
+  /// `BoxFit.cover` 의 확대 배율이 `0.75/0.75 = 1.0` 즉 **확대 없음**이
+  /// 되고, 센서가 보는 화각이 손실 없이 그대로 화면에 나온다.
+  /// 기본 카메라 앱과 같은 화각이다.
+  ///
+  /// 🔴 이 값이 화면과 저장 사진을 잇는 **유일한 계약**이다.
+  ///    프레임을 이 비율로 그리고, 프리뷰를 `BoxFit.cover` 로 채우고,
+  ///    찍힌 JPEG 를 이 비율로 잘라낸다. 세 곳이 같은 숫자를 쓰는 한
+  ///    "라인에 맞추면 그대로 찍힌다" 가 사실로 유지된다.
+  ///    그래서 여기만 바꾸면 자르기까지 같이 따라온다.
+  static const double frameAspect = 0.75;
+
   final String mode;
 
   /// 상단 배지 문구. 시안은 `'3월 13일에 추가'` 형태.
@@ -64,6 +96,10 @@ class ScanCameraDsScreen extends StatefulWidget {
 
 class _ScanCameraDsScreenState extends State<ScanCameraDsScreen>
     with WidgetsBindingObserver {
+  /// 계약 상수는 [ScanCameraDsScreen.frameAspect] 하나뿐이다.
+  /// 테스트가 읽을 수 있도록 public 위젯 클래스에 뒀고, 여기서는
+  /// 그걸 그대로 가리키기만 한다. 값을 복사해 두면 갈라진다.
+  static const double frameAspect = ScanCameraDsScreen.frameAspect;
   /// `--cool-neutral-10`
   static const _bg = Color(0xFF1B1D22);
 
@@ -73,18 +109,7 @@ class _ScanCameraDsScreenState extends State<ScanCameraDsScreen>
   /// 시안 배지 글자 `#FFC9CE`
   static const _badgeFg = Color(0xFFFFC9CE);
 
-  /// 시안 촬영 프레임의 **가로/세로 비율**.
-  ///
-  /// 시안(`AppH7 scan-camera`)의 프레임은 `flex: 1` — 남은 세로를 전부
-  /// 차지하는 **세로로 긴 사각형**이다. 영수증(감열지)이 세로로 길기
-  /// 때문에 그 모양이 맞다. 화면 폭 372 · 프레임 높이 약 600 이므로
-  /// 실측 비율은 0.62 근처다.
-  ///
-  /// 🔴 이 값이 화면과 저장 사진을 잇는 **유일한 계약**이다.
-  ///    프레임을 이 비율로 그리고, 프리뷰를 `BoxFit.cover` 로 꽉 채우고,
-  ///    찍힌 JPEG 를 **이 비율로 잘라낸다.** 세 곳이 같은 숫자를 쓰는 한
-  ///    "라인에 맞추면 그대로 찍힌다" 가 사실로 유지된다.
-  static const double frameAspect = 0.62;
+
 
   /// 시안 프레임 배경 `rgba(255,255,255,.04)`
   static const _frameFill = Color(0x0AFFFFFF);
@@ -634,19 +659,22 @@ class _ScanCameraDsScreenState extends State<ScanCameraDsScreen>
   Widget _previewSlot() {
     return LayoutBuilder(
       builder: (context, box) {
-        // 시안 비율로 슬롯을 최대한 채운다.
+        // 프레임 비율을 지키면서 슬롯을 최대한 채운다.
+        //
+        // 🔴 예전에는 여기서 "폭이 슬롯의 78% 미만이면 78% 로 되돌린다"
+        //    라는 보정을 했다. 그런데 그 보정이 걸리면 프레임 비율이
+        //    frameAspect 가 아니게 된다(아이폰 SE 에서 0.62 -> 0.668 로
+        //    계산됐다). 화면 비율과 저장 비율이 달라지니 "라인에 맞추면
+        //    그대로 찍힌다" 계약이 바로 깨진다.
+        //
+        //    frameAspect 를 센서와 같은 0.75 로 맞춘 뒤로는 프레임이
+        //    세로로 덜 길어서 그 보정이 필요 없다. 그래서 지웠다.
+        //    비율은 어떤 기기에서도 정확히 frameAspect 다.
         var w = box.maxWidth;
         var h = w / frameAspect;
         if (h > box.maxHeight) {
           h = box.maxHeight;
           w = h * frameAspect;
-          // 세로가 부족해서 가로를 깎게 되면, 시안 느낌을 살리려고
-          // 폭을 너무 줄이지는 않는다. 최소 폭을 보장하고 대신 프레임이
-          // 조금 더 정사각형에 가까워지도록 허용한다.
-          if (w < box.maxWidth * 0.78) {
-            w = box.maxWidth * 0.78;
-            h = box.maxHeight;
-          }
         }
         _frameSize = Size(w, h);
         return Center(child: SizedBox(width: w, height: h, child: _preview()));

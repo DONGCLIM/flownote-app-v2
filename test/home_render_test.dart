@@ -300,19 +300,39 @@ void _k135() {
       await _pumpHome(tester);
       final screen = tester.getSize(find.byType(HomeDsScreen));
       // 코랄 카드는 화면 가로 전체를 쓰고 처음부터 보이므로 여백 측정에 좋다.
-      // 조상 Container 는 3개다:
-      //   [0] 칩(38..163.8)  [1] 코랄 카드(20..370)  [2] 화면 전체(0..390)
-      // `.last` 를 쓰면 화면 전체를 집어 여백이 늘 0 으로 나온다.
-      final coral = find.ancestor(
+      //
+      // 🔴 예전에는 조상 Container 를 `.at(1)` 로 집었다. #147 에서 코랄
+      //    카드를 ClipRRect > DecoratedBox > Stack 구조로 바꾸면서
+      //    Container 조상이 **0개**가 됐고(배지만 Container 로 남음)
+      //    이 테스트가 깨졌다. 인덱스/타입 하나에 기대지 않도록,
+      //    카드를 감싼 ClipRRect 중 **폭으로** 카드인 것을 고른다.
+      final clips = find.ancestor(
         of: find.text('이번 달 총 지출'),
-        matching: find.byType(Container),
+        matching: find.byType(ClipRRect),
       );
-      final box = tester.getRect(coral.at(1));
+      Rect? found;
+      for (final e in clips.evaluate()) {
+        final r = tester.getRect(find.byWidget(e.widget));
+        // 화면 전체(여백 0)도 아니고, 배지처럼 좁지도 않은 것.
+        if (r.width < screen.width - 1 && r.width > screen.width * 0.7) {
+          found = r;
+          break;
+        }
+      }
+      expect(found, isNotNull,
+          reason: '코랄 카드를 못 찾았다 — 카드 래퍼 구조가 또 바뀌었다');
+      final box = found!;
       final left = box.left;
       final right = screen.width - box.right;
       expect((left - right).abs(), lessThan(1.0),
           reason: '좌 $left / 우 $right — 좌우가 어긋났다');
-      expect(left, closeTo(FnHome.pagePad, 1.0));
+      // 🔴 토큰(FnHome.pagePad)과 비교하면 토큰을 바꿔도 테스트가 따라가서
+      //    아무것도 못 잡는다(자기참조). 시안 실측값을 **리터럴**로 박는다.
+      //    시안 19.7dp -> 앱 20dp.
+      expect(left, closeTo(20.0, 1.0),
+          reason: '카드 좌우 여백이 시안(19.7dp)과 다르다: $left');
+      expect(FnHome.pagePad, closeTo(20.0, 1e-9),
+          reason: 'pagePad 토큰이 시안값에서 벗어났다');
     });
 
     testWidgets('🔴 통계 금액이 구분선에 달라붙지 않는다', (tester) async {

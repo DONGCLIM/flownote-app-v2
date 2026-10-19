@@ -188,16 +188,36 @@ class _HomeDsScreenState extends State<HomeDsScreen> {
     return _Tappable(
       onTap: () => _push(const TrendDsScreen()),
       radius: FnHome.coralRadius,
-      child: Container(
-        padding: const EdgeInsets.fromLTRB(18, 16, 18, 16),
-        decoration: BoxDecoration(
-          gradient: FnHome.coralGradient,
-          borderRadius: BorderRadius.circular(FnHome.coralRadius),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
+      // 🔴 #147 사장님 지적: "두번째 카드에도 데코가 들어가 있거든"
+      //    #146 에서 이 데코를 빠뜨렸다. 시안 우상단에 손그림 획
+      //    (꼬리 점 + 고리 2개 + 떨어진 점)이 그라데이션 위에 얹혀 있다.
+      //
+      //    구조: ClipRRect(모서리) > Stack [ 그라데이션+데코, 내용 ]
+      //    - 데코 고리 하나가 카드 **위쪽 경계 밖으로 잘려** 있어서
+      //      ClipRRect 가 반드시 필요하다.
+      //    - 데코는 `IgnorePointer` 로 감싸 터치를 가로막지 않게 한다.
+      //      (카드 전체가 `_Tappable` 로 추이 화면으로 가는 버튼이다)
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(FnHome.coralRadius),
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            gradient: FnHome.coralGradient,
+            borderRadius: BorderRadius.circular(FnHome.coralRadius),
+          ),
+          child: Stack(
+            children: [
+              // 데코는 고정 크기로 우상단에 붙인다(시안 여백 우 6.2 / 상 2.5dp).
+              const Positioned(
+                top: FnHome.decoTop,
+                right: FnHome.decoRight,
+                child: IgnorePointer(child: FnCoralDeco()),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(18, 16, 18, 16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
               decoration: BoxDecoration(
@@ -252,7 +272,11 @@ class _HomeDsScreenState extends State<HomeDsScreen> {
                 ),
               ),
             ),
-          ],
+                  ],
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );

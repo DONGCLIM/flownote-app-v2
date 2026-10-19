@@ -490,75 +490,107 @@ class _BookPainter extends CustomPainter {
   final Color left;
   final Color right;
 
-  // 🔴 사장님이 주신 1024x1024 아이콘 원본을 픽셀 단위로 훑어 얻은 윤곽.
-  //    (코랄 영역 bbox 608x537, 가로/세로 비 1.132)
+  // 🔴 #147 전면 재작성 — #146 판은 상단이 평평해서 "짤린" 것처럼 보였다.
   //
-  //   정규 y    왼쪽 가장자리 x    설명
-  //   0.000     0.788            위 오른쪽 모서리만 먼저 등장 (둥근 모서리)
-  //   0.069     0.000            좌우가 완전히 펴진다
-  //   0.696     0.002            여기까지 **수직**으로 내려온다
-  //   0.728     0.012            ↓ 여기서부터 V 자로 모인다
-  //   0.823     0.127
-  //   0.886     0.322
-  //   0.950     0.411
-  //   1.000     ~0.48           바닥 한 점으로 모인다
+  // [무엇이 틀렸나]
+  // #146 에서는 페이지를 "위는 직선, 아래는 V" 인 단순한 모양으로 그렸다.
+  // 그래서 렌더가 책이 아니라 **방패/배너**처럼 보였다. 수치로도 확인했다:
+  //   원본 왼쪽 페이지의 홈쪽(안쪽) 상단은 정규 y 0.3578 까지 깊게 내려간다.
+  //   #146 렌더는 그 지점이 0.000 — 즉 아치가 **아예 없었다**.
   //
-  //   가운데 홈: x 0.484..0.515 (폭 약 3.1%) — y 0.3 부터 아래까지 일정
-  //   위 모서리 둥글기: y 0.069 안에서 끝나므로 반경 ≈ 폭의 7%
+  // [원본에서 다시 뽑은 윤곽]
+  // 사장님이 주신 1024x1024 원본에서 두 페이지를 색으로 분리했다
+  // (왼 #FF787C / 오 #FF9385). 왼쪽 페이지만 294x532px.
+  // 그 페이지 자체를 0..1 로 정규화한 좌표 (x=0 바깥, x=1 홈쪽):
   //
-  // 🔴 처음엔 수직 구간을 0.66 까지로 잡아서 하트처럼 보였다. 0.70 이 맞다.
-  static const double _gutter = 0.0155; // 가운데 홈 반폭 (0.0310 / 2)
-  static const double _straightTo = 0.700; // 여기까지 수직
-  static const double _corner = 0.070; // 위 모서리 둥글기 (폭 기준)
+  //   A 좌상단 모서리   (0.000, 0.0697) -> (0.140, 0.000)
+  //   B 상단 평평       x 0.140..0.400,  y ~0.000
+  //   C 홈쪽 아치       (0.400, 0.0019) -> (1.000, 0.3315)   ← #146 에 없던 것
+  //       경유점 x0.50 y0.0075 / x0.60 0.0226 / x0.68 0.0433
+  //              x0.76 0.0716 / x0.84 0.1130 / x0.90 0.1544 / x0.96 0.2166
+  //   D 홈쪽 수직       x = 1.000,  y 0.3315..0.9944
+  //   E 하단 스쿱       (1.000, 0.9944) -> (0.000, 0.6750)   ← 위로 오목하다
+  //       경유점 y0.95 x0.8464 / y0.90 0.7099 / y0.85 0.5188
+  //              y0.80 0.1468 / y0.75 0.0478 / y0.70 0.0137
+  //   F 바깥 수직       x = 0.000,  y 0.6750..0.0697
+  //
+  // 오른쪽 페이지는 좌우 반전이라 같은 좌표를 `sign` 으로 뒤집어 쓴다.
+  //
+  // [제어점은 풀어서 구했다]
+  // C·E 두 곡선 모두 위 경유점에 대한 최소제곱(격자 탐색 + 좌표 하강)으로
+  // 3차 베지에 제어점을 구했다. 눈대중이 아니다.
+  //   C 평균오차 0.0009 (0.09%)   E 평균오차 0.0087 (0.87%)
+
+  /// 가운데 홈 반폭. 원본 홈 폭 3.1% 의 절반.
+  static const double _gutter = 0.0155;
+
+  /// 좌상단 모서리가 끝나는 x (페이지 자체 폭 기준).
+  static const double _cornerX = 0.140;
+
+  /// 좌상단 모서리가 시작되는 y (페이지 자체 높이 기준).
+  static const double _cornerY = 0.0697;
+
+  /// 상단 평평 구간이 끝나는 x.
+  static const double _flatTo = 0.400;
+
+  /// 홈쪽 아치가 닿는 가장 아래 y.
+  static const double _archY = 0.3315;
+
+  /// 바닥 홈(두 페이지가 만나는 가장 아래) y.
+  static const double _notchY = 0.9944;
+
+  /// 하단 스쿱이 바깥 벽에 닿는 y.
+  static const double _scoopY = 0.6750;
 
   @override
   void paint(Canvas canvas, Size size) {
-    final n = _N(size);
+    // 페이지 하나의 폭 = 전체 폭의 절반에서 홈 반폭을 뺀 값.
+    final pw = size.width * (0.5 - _gutter);
+    final ph = size.height;
 
-    /// 한 쪽 페이지를 그린다. [sign] = -1 이면 왼쪽, +1 이면 오른쪽.
+    /// [sign] = -1 왼쪽 페이지, +1 오른쪽 페이지.
+    ///
+    /// 페이지 자체 좌표 (px, py) 를 캔버스 좌표로 옮긴다.
+    /// px = 0 은 바깥 가장자리, px = 1 은 홈 쪽.
     Path page(double sign) {
-      final spineX = 0.5 + sign * _gutter; // 홈 쪽 가장자리
-      final outerX = sign < 0 ? 0.0 : 1.0; // 바깥 가장자리
-      final r = _corner;
-      // 바깥쪽으로 r 만큼 들어온 지점 (둥근 모서리 시작)
-      final cornerInX = outerX - sign * r;
+      // 🔴 부호를 거꾸로 쓰면 왼쪽 페이지가 x 음수로 나가서 **아무것도
+      //    안 보인다**(실제로 한 번 겪었다. 렌더가 전부 흰색이었다).
+      //    왼쪽 페이지는 x=0 에서 **오른쪽으로**, 오른쪽 페이지는
+      //    x=size.width 에서 **왼쪽으로** 자란다.
+      Offset q(double px, double py) {
+        final outer = sign < 0 ? 0.0 : size.width;
+        return Offset(outer - sign * px * pw, py * ph);
+      }
 
       return Path()
-        // 홈 위쪽에서 시작
-        ..moveTo(n.p(spineX, 0.0).dx, n.p(spineX, 0.0).dy)
-        // 위 가장자리를 따라 바깥쪽으로
-        ..lineTo(n.p(cornerInX, 0.0).dx, n.p(cornerInX, 0.0).dy)
-        // 둥근 모서리
-        ..quadraticBezierTo(
-          n.p(outerX, 0.0).dx,
-          n.p(outerX, 0.0).dy,
-          n.p(outerX, r * (size.width / size.height)).dx,
-          n.p(outerX, r * (size.width / size.height)).dy,
-        )
-        // 바깥 벽을 수직으로 내려간다
-        ..lineTo(n.p(outerX, _straightTo).dx, n.p(outerX, _straightTo).dy)
-        // V 자 — 바닥 가운데로 모인다.
-        //
-        // 🔴 처음엔 제어점 한 개짜리 2차 곡선으로 그렸더니 y 0.85~0.95 구간이
-        //    원본보다 **덜 좁아져서 방패처럼** 보였다. 렌더를 원본과 수치로
-        //    맞춰 보니 차이가 그 구간에서 -0.13 까지 벌어졌다.
-        //    그래서 원본 실측 좌표를 그대로 통과하도록 3차 곡선으로 바꿨다.
-        //
-        //   맞춰야 할 원본 좌표 (왼쪽 페이지 기준, 정규 x)
-        //     y 0.80 -> 0.067   y 0.85 -> 0.250
-        //     y 0.90 -> 0.342   y 0.95 -> 0.411   y 1.00 -> 0.457
-        //   = 0.80 직후 급격히 꺾였다가 바닥 쪽에서 완만해진다
-        // 제어점은 눈대중이 아니라, 위 목표 좌표 6개에 대한 **최소제곱
-        // 맞춤으로 풀었다** (격자 탐색 + 좌표 하강). 평균 오차 1.4% 폭.
-        //   P1 = (-0.010, 0.850)   P2 = (0.280, 0.790)   (왼쪽 페이지 기준)
-        // 오른쪽 페이지는 x 를 좌우 반전해서 같은 곡선을 쓴다.
+        // B 상단 평평 — 모서리가 끝나는 지점에서 시작
+        ..moveTo(q(_cornerX, 0).dx, q(_cornerX, 0).dy)
+        ..lineTo(q(_flatTo, 0).dx, q(_flatTo, 0).dy)
+        // C 홈쪽 아치 — 홈 쪽으로 가며 아래로 깊게 내려간다.
+        //   제어점 P1(0.7953, 0.0078) P2(1.0000, 0.1906)
+        //   🔴 처음엔 제어점을 x 1.41 까지 두고 풀었더니 곡선이 페이지
+        //      경계를 넘어가 렌더 폭이 294 -> 314px 로 부풀었다(오차 2.8%).
+        //      제어점을 0..1 안으로 묶어 다시 풀어 오차 0.09% 로 내렸다.
         ..cubicTo(
-          n.p(outerX - sign * -0.010, 0.850).dx,
-          n.p(outerX - sign * -0.010, 0.850).dy,
-          n.p(outerX - sign * 0.280, 0.790).dx,
-          n.p(outerX - sign * 0.280, 0.790).dy,
-          n.p(spineX, 1.0).dx,
-          n.p(spineX, 1.0).dy,
+          q(0.7953, 0.0078).dx, q(0.7953, 0.0078).dy,
+          q(1.0000, 0.1906).dx, q(1.0000, 0.1906).dy,
+          q(1.0, _archY).dx, q(1.0, _archY).dy,
+        )
+        // D 홈쪽 수직 — 바닥 홈까지
+        ..lineTo(q(1.0, _notchY).dx, q(1.0, _notchY).dy)
+        // E 하단 스쿱 — 위로 오목하게 바깥 벽까지.
+        //   제어점 P1(0.1906, 0.7000) P2(0.0906, 0.9016)  — 오차 0.87%
+        ..cubicTo(
+          q(0.1906, 0.7000).dx, q(0.1906, 0.7000).dy,
+          q(0.0906, 0.9016).dx, q(0.0906, 0.9016).dy,
+          q(0.0, _scoopY).dx, q(0.0, _scoopY).dy,
+        )
+        // F 바깥 수직 — 모서리 시작점까지 올라간다
+        ..lineTo(q(0.0, _cornerY).dx, q(0.0, _cornerY).dy)
+        // A 좌상단 모서리
+        ..quadraticBezierTo(
+          q(0.0, 0.0).dx, q(0.0, 0.0).dy,
+          q(_cornerX, 0.0).dx, q(_cornerX, 0.0).dy,
         )
         ..close();
     }
@@ -570,4 +602,112 @@ class _BookPainter extends CustomPainter {
   @override
   bool shouldRepaint(_BookPainter old) =>
       old.left != left || old.right != right;
+}
+
+// ───────────────────────────────────────────────────────────────────────
+// 코랄 카드 우상단 데코
+// ───────────────────────────────────────────────────────────────────────
+
+/// #147 시안 코랄 카드('이번 달 총 지출') 우상단의 손그림 데코.
+///
+/// 🔴 사장님 지적: "두번째 카드에도 세번째 이미지처럼 데코가 들어가 있거든"
+///    #146 에서는 이걸 아예 빠뜨렸다.
+///
+/// 꼬리 끝 점에서 위로 휘어 올라가며 고리 두 개를 그리고, 오른쪽에 떨어진
+/// 작은 점이 하나 더 있다. 작은 고리는 **카드 위쪽 경계 밖으로 잘려**
+/// 있어서 부모가 `ClipRRect` 로 잘라 주는 것을 전제로 한다.
+///
+/// 🔴 처음엔 데코를 카드 폭에 **비례 확대**했는데, 그러면 우측 여백까지
+///    같이 늘어나 데코가 오른쪽으로 밀렸다(시안 6.2dp -> 렌더 0.3dp).
+///    시안의 여백은 비율이 아니라 **고정 간격**이다. 그래서 데코를
+///    `FnHome.decoSize`(92.6 x 76.5dp) **고정 크기**로 그리고,
+///    부모가 `Positioned` 로 우상단에 고정 여백으로 붙인다.
+class FnCoralDeco extends StatelessWidget {
+  const FnCoralDeco({super.key});
+
+  @override
+  Widget build(BuildContext context) => SizedBox(
+        width: FnHome.decoSize.width,
+        height: FnHome.decoSize.height,
+        child: CustomPaint(painter: _DecoPainter()),
+      );
+}
+
+class _DecoPainter extends CustomPainter {
+  // 데코 bbox(92.6 x 76.5dp) 좌상단 기준 실측 dp.
+  //   (시안 카드 기준 좌표에서 bbox 좌상단 (241.9, 2.5) 을 뺀 값)
+  static const Offset _tailEnd = Offset(2.5, 75.3);
+  static const Offset _bigLoop = Offset(42.6, 28.4);
+  static const Size _bigR = Size(11.1, 11.7);
+  static const Offset _smallLoop = Offset(64.2, 12.3);
+  static const Size _smallR = Size(8.0, 11.7);
+  static const Offset _dot = Offset(89.5, 44.4);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final line = Paint()
+      ..color = FnHome.decoLine
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = FnHome.decoStroke
+      ..strokeCap = StrokeCap.round
+      ..isAntiAlias = true;
+
+    // 꼬리 — 아래 점에서 큰 고리 왼쪽까지 완만하게 휘어 올라간다.
+    //   실측 경유점 (2.5,75.3) (3.1,67.8) (4.3,60.4) (6.2,53.0) (9.3,45.6)
+    //   = 아래는 거의 수직, 위로 갈수록 오른쪽으로 눕는다.
+    canvas.drawPath(
+      Path()
+        ..moveTo(_tailEnd.dx, _tailEnd.dy)
+        ..cubicTo(
+          2.0, 57.0,
+          10.0, 39.0,
+          _bigLoop.dx - _bigR.width, _bigLoop.dy,
+        ),
+      line,
+    );
+
+    // 큰 고리 — 가로/세로 반지름이 달라 살짝 기울어 보인다.
+    canvas.drawOval(
+      Rect.fromCenter(
+        center: _bigLoop,
+        width: _bigR.width * 2,
+        height: _bigR.height * 2,
+      ),
+      line,
+    );
+
+    // 작은 고리 — 큰 고리 오른쪽 위. 카드 위로 잘린다.
+    canvas.drawOval(
+      Rect.fromCenter(
+        center: _smallLoop,
+        width: _smallR.width * 2,
+        height: _smallR.height * 2,
+      ),
+      line,
+    );
+
+    // 두 고리를 잇는 짧은 획.
+    canvas.drawPath(
+      Path()
+        ..moveTo(_bigLoop.dx + 2, _bigLoop.dy - _bigR.height)
+        ..quadraticBezierTo(
+          54.0, 8.5,
+          _smallLoop.dx - _smallR.width, _smallLoop.dy + 6,
+        ),
+      line,
+    );
+
+    final dot = Paint()
+      ..color = FnHome.decoDot
+      ..style = PaintingStyle.fill
+      ..isAntiAlias = true;
+
+    // 꼬리 끝 점 — 지름 3.7dp
+    canvas.drawCircle(_tailEnd, 3.7 / 2, dot);
+    // 떨어진 작은 점 — 지름 4.9dp (시안에서 이게 더 크다)
+    canvas.drawCircle(_dot, 4.9 / 2, dot);
+  }
+
+  @override
+  bool shouldRepaint(_DecoPainter old) => false;
 }

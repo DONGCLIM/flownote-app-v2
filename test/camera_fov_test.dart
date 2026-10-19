@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flow_note/services/receipt_image_editor.dart';
+import 'package:flow_note/screens/ds/scan_camera_ds_screen.dart';
 
 /// 🔴 #101 — 카메라 화각(FOV) 불일치 회귀 방지
 ///
@@ -124,8 +125,8 @@ void main() {
       expect(code.contains('Clip.hardEdge'), isTrue,
           reason: '$path 의 cover 프리뷰에 clipBehavior 가 없다');
       // 화각 계약 상수가 살아있는지
-      expect(src.contains('0.62'), isTrue,
-          reason: '$path 에 프레임 비율 계약(0.62)이 없다');
+      expect(src.contains('0.75'), isTrue,
+          reason: '$path 에 프레임 비율 계약(0.75)이 없다');
     }
   });
 
@@ -134,34 +135,59 @@ void main() {
     // 한다. 값이 갈라지면 다시 화각이 어긋난다.
     final ds =
         File('lib/screens/ds/scan_camera_ds_screen.dart').readAsStringSync();
-    expect(ds.contains('static const double frameAspect = 0.62;'), isTrue,
+    expect(ds.contains('static const double frameAspect = 0.75;'), isTrue,
         reason: 'frameAspect 계약 상수가 사라졌다');
     final iac =
         File('lib/screens/in_app_camera_screen.dart').readAsStringSync();
-    expect(iac.contains('static const double _frameAspect = 0.62;'), isTrue,
+    expect(iac.contains('static const double _frameAspect = 0.75;'), isTrue,
         reason: 'in_app_camera 의 프레임 비율이 어긋났다');
   });
 
-  test('🔴 프레임은 세로로 꽉 차야 한다 (#103 "왜 갑자기 작아졌어?")', () {
-    // #101 의 회귀 코드는 이랬다.
-    //   if (h > box.maxHeight) { h = box.maxHeight; w = h * ar; }  ← 폭이 줄어든다
-    // 지금은 폭이 78% 아래로는 절대 줄지 않는다.
-    const boxW = 380.0, boxH = 520.0;
-    const frameAspect = 0.62;
-    var w = boxW;
-    var h = w / frameAspect;
-    if (h > boxH) {
-      h = boxH;
-      w = h * frameAspect;
-      if (w < boxW * 0.78) {
-        w = boxW * 0.78;
+  test('🔴 #148 프레임 비율은 어떤 슬롯에서도 정확히 frameAspect 다', () {
+    // 🔴 예전에는 "폭이 슬롯의 78% 아래로 내려가면 78% 로 되돌린다"
+    //    라는 보정이 있었다. 그게 걸리면 비율이 frameAspect 가 아니게
+    //    돼서, 화면에서 본 사각형과 저장되는 사각형이 달라진다.
+    //    (아이폰 SE 슬롯에서 0.62 대신 0.668 로 계산됐다)
+    //    보정을 지웠으니 어떤 슬롯에서도 비율이 정확해야 한다.
+    const frameAspect = 0.75;
+    const slots = [
+      (380.0, 520.0), // 세로가 모자란 슬롯
+      (335.0, 391.0), // 아이폰 SE
+      (350.0, 900.0), // 세로가 남는 슬롯
+      (280.0, 292.0), // 아주 작은 슬롯
+      (372.0, 496.0), // 갤럭시
+    ];
+    for (final (boxW, boxH) in slots) {
+      var w = boxW;
+      var h = w / frameAspect;
+      if (h > boxH) {
         h = boxH;
+        w = h * frameAspect;
       }
+      expect(w / h, closeTo(frameAspect, 1e-9),
+          reason: '슬롯 $boxW x $boxH 에서 비율이 ${w / h} 가 됐다 — '
+              '화면과 저장 사진이 달라진다');
+      expect(w, lessThanOrEqualTo(boxW + 1e-9));
+      expect(h, lessThanOrEqualTo(boxH + 1e-9));
+      // 슬롯 한 변은 꽉 채운다 (작아 보이면 안 된다)
+      final fills = (w - boxW).abs() < 1e-9 || (h - boxH).abs() < 1e-9;
+      expect(fills, isTrue, reason: '슬롯 $boxW x $boxH 를 꽉 채우지 못했다');
     }
-    // 세로는 슬롯을 꽉 채운다
-    expect(h, closeTo(boxH, 1e-9));
-    // 폭이 시안보다 많이 좁아지지 않는다
-    expect(w, greaterThanOrEqualTo(boxW * 0.78 - 1e-9));
+  });
+
+  test('🔴 #148 보정 상수 0.78 이 되살아나면 안 된다', () {
+    for (final path in const [
+      'lib/screens/ds/scan_camera_ds_screen.dart',
+      'lib/screens/in_app_camera_screen.dart',
+    ]) {
+      final code = File(path)
+          .readAsLinesSync()
+          .map((l) => l.trim())
+          .where((l) => !l.startsWith('//') && !l.startsWith('///'))
+          .join('\n');
+      expect(code.contains('0.78'), isFalse,
+          reason: '$path 에 폭 78% 보정이 되살아났다 — 프레임 비율이 깨진다');
+    }
   });
 
   test('🔴 프레임 가이드는 프리뷰 사각형에만 그린다', () {
@@ -362,5 +388,74 @@ void main() {
     // #105 에서 사장님이 못박은 값. 조용히 올리지 말 것.
     expect(src.contains('static const int defaultMaxDimension = 1200;'), isTrue,
         reason: '저장 상한 1200px 은 #105 에서 정한 값이다');
+  });
+
+  // ─────────────────────────────────────────────────────────────
+  // 🔴 #148 "카메라로 찍을 때 확대가 되어서 불편하다"
+  //
+  // 원인: 프레임 비율(0.62)이 센서 비율(4:3 = 0.75)보다 좁은데
+  //       프리뷰를 BoxFit.cover 로 채웠다. 그 차이만큼 프리뷰가
+  //       확대된다. 0.75/0.62 = 1.2097 -> 21% 확대, 센서 가로의
+  //       82.7% 만 보였다. 그래서 영수증을 다 담으려면 폰을 더
+  //       뒤로 빼야 했다.
+  // 고침: 프레임 비율을 센서와 같은 0.75 로 맞춰 배율을 1.0 으로.
+  // ─────────────────────────────────────────────────────────────
+
+  test('🔴 #148 cover 확대 배율이 1.0 이어야 한다 (확대 없음)', () {
+    // BoxFit.cover 는 자식(센서 비율)을 부모(프레임 비율)에 꽉 채운다.
+    // 세로로 긴 쪽을 기준으로 하면 배율 = (1/frame) / (1/sensor)
+    //                                  = sensor / frame
+    const sensor = 0.75; // 4:3 을 세로로 놓은 가로/세로
+    final frame = ScanCameraDsScreen.frameAspect;
+
+    final zoom = sensor / frame;
+    expect(zoom, closeTo(1.0, 1e-9),
+        reason: '확대 배율이 $zoom 배다. 1.0 이 아니면 기본 카메라 앱보다 '
+            '확대돼 보이고, 영수증을 담으려면 폰을 뒤로 빼야 한다');
+
+    // 센서 화각이 잘리지 않고 전부 보여야 한다.
+    final visible = 1 / zoom;
+    expect(visible, closeTo(1.0, 1e-9),
+        reason: '센서 가로의 ${(visible * 100).toStringAsFixed(1)}% 만 보인다');
+  });
+
+  test('🔴 #148 예전 값 0.62 였다면 21% 확대였다 (되돌리지 말 것)', () {
+    // 되돌렸을 때 무슨 일이 벌어지는지를 숫자로 박아 둔다.
+    const sensor = 0.75;
+    const oldFrame = 0.62;
+    expect(sensor / oldFrame, closeTo(1.2097, 1e-4));
+    expect(1 / (sensor / oldFrame), closeTo(0.8267, 1e-4));
+
+    // 그리고 지금 값은 그 값이 아니어야 한다.
+    expect(ScanCameraDsScreen.frameAspect, isNot(closeTo(oldFrame, 1e-9)));
+  });
+
+  test('🔴 #148 프레임 비율이 센서와 같으면 자르기가 아무것도 안 깎는다', () {
+    // frameAspect 가 센서와 같으니, 4:3 사진 + 4:3 프리뷰 조합에서는
+    // coverCropRect 가 전체(1.0 x 1.0)를 돌려줘야 한다. 한 픽셀이라도
+    // 깎으면 그만큼 화각이 좁아진 것이다.
+    final r = ReceiptImageEditor.coverCropRect(
+      imageWidth: 3000,
+      imageHeight: 4000, // 0.75
+      previewAspect: ScanCameraDsScreen.frameAspect,
+      cameraAspect: 0.75,
+    );
+    expect(r.isFull, isTrue,
+        reason: '4:3 센서/4:3 프리뷰인데 ${r.width} x ${r.height} 로 잘렸다');
+  });
+
+  test('🔴 #148 두 카메라 화면의 프레임 비율이 서로 같다', () {
+    // 두 화면이 다른 값을 쓰면 같은 영수증이 화면마다 다르게 찍힌다.
+    final ds =
+        File('lib/screens/ds/scan_camera_ds_screen.dart').readAsStringSync();
+    final iac =
+        File('lib/screens/in_app_camera_screen.dart').readAsStringSync();
+    final re = RegExp(r'_?frameAspect = ([0-9.]+);');
+    final a = re.firstMatch(ds)?.group(1);
+    final b = re.firstMatch(iac)?.group(1);
+    expect(a, isNotNull, reason: 'scan_camera 의 frameAspect 를 못 찾았다');
+    expect(b, isNotNull, reason: 'in_app_camera 의 _frameAspect 를 못 찾았다');
+    expect(a, b, reason: '두 카메라 화면의 프레임 비율이 다르다 ($a vs $b)');
+    expect(double.parse(a!), closeTo(0.75, 1e-9));
   });
 }
