@@ -29,15 +29,25 @@ class _InAppCameraScreenState extends State<InAppCameraScreen>
   bool _isFrontCamera = false;
   bool _isFlashOn = false;
 
-  /// 촬영 프레임 비율(가로/세로). `ScanCameraDsScreen.frameAspect`
-  /// 와 같은 값을 써야 두 화면이 같은 사진을 만든다.
+  /// 카메라를 못 열었을 때의 **폴백** 프레임 비율(가로/세로).
   ///
-  /// 🔴 0.62 -> 0.75. 센서(4:3 = 0.75)와 같은 값으로 맞춰서
-  ///    `BoxFit.cover` 확대 배율을 1.0(확대 없음)으로 만든 것이다.
-  ///    0.62 였을 때는 0.75/0.62 = 1.21배, 즉 21% 확대돼 보였고
-  ///    센서 가로의 82.7% 만 화면에 나왔다. 자세한 설명은
-  ///    `ScanCameraDsScreen.frameAspect` 주석에 적어 뒀다.
+  /// 🔴 #149 — 고정값을 계약으로 쓰면 안 된다.
+  ///    `ResolutionPreset.max` 는 해상도만 보장하고 비율은 보장하지
+  ///    않아서, 프리뷰가 16:9 인 기기에서는 0.75 고정이 1.33배 확대를
+  ///    만든다. 그래서 실제로는 [_liveAspect] 를 쓴다.
+  ///    자세한 설명은 `ScanCameraDsScreen.frameAspect` 주석에 있다.
   static const double _frameAspect = 0.75;
+
+  /// 🔴 #149 지금 실제로 써야 할 프레임 비율. 컨트롤러가 보고하는
+  ///    프리뷰 비율을 그대로 쓴다. 프레임과 프리뷰가 같은 비율이어야
+  ///    `BoxFit.cover` 가 아무것도 확대하지 않는다.
+  double get _liveAspect {
+    final c = _controller;
+    if (c == null || !c.value.isInitialized) return _frameAspect;
+    final a = c.value.aspectRatio;
+    if (a <= 0 || !a.isFinite) return _frameAspect;
+    return 1 / a;
+  }
 
   // 연속 촬영 시 찍은 사진 목록
   final List<XFile> _capturedImages = [];
@@ -454,17 +464,18 @@ class _InAppCameraScreenState extends State<InAppCameraScreen>
     // (`_cropToFrame`). 화면과 파일이 같아지고 프레임도 커진다.
     return LayoutBuilder(
       builder: (context, constraints) {
-        // 🔴 예전의 "폭 78% 최소 보장" 보정은 지웠다. 그게 걸리면
-        //    프레임 비율이 _frameAspect 가 아니게 돼서, 화면에서 본
-        //    사각형과 저장되는 사각형이 달라진다.
+        // 🔴 #149 프레임을 실제 프리뷰 비율로 그린다(확대 0).
+        // 🔴 "폭 78% 최소 보장" 보정은 지웠다. 되살리지 말 것.
+        final ar = _liveAspect;
         var w = constraints.maxWidth;
-        var h = w / _frameAspect;
+        var h = w / ar;
         if (h > constraints.maxHeight) {
           h = constraints.maxHeight;
-          w = h * _frameAspect;
+          w = h * ar;
         }
+        // 프레임과 같은 비율이라 cover 가 확대할 거리가 없다.
         final previewW = w;
-        final previewH = w / (1 / _controller!.value.aspectRatio);
+        final previewH = w / ar;
         return Center(
           child: SizedBox(
             width: w,
@@ -565,7 +576,8 @@ class _InAppCameraScreenState extends State<InAppCameraScreen>
       final rect = ReceiptImageEditor.coverCropRect(
         imageWidth: size.width,
         imageHeight: size.height,
-        previewAspect: _frameAspect,
+        // 🔴 #149 화면에서 보인 비율은 고정 상수가 아니라 _liveAspect 다.
+        previewAspect: _liveAspect,
         cameraAspect: cameraAspect,
       );
       if (rect.isFull) return shot;

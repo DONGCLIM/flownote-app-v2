@@ -46,36 +46,38 @@ class ScanCameraDsScreen extends StatefulWidget {
     this.maxShots = 20,
   });
 
-  /// 촬영 프레임의 **가로/세로 비율**.
+  /// 카메라를 아직 못 열었을 때만 쓰는 **폴백** 프레임 비율(가로/세로).
   ///
-  /// 🔴 0.62 -> 0.75 로 바꿨다. 이유를 반드시 읽고 고칠 것.
+  /// 🔴 #149 — 이 값을 "계약"으로 쓰면 안 된다. 읽고 고칠 것.
   ///
-  /// ## 왜 확대돼 보였나 (사장님 지적: "확대가 되어서 불편하다")
+  /// ## #148 에서 내가 한 수정이 왜 불완전했나
   ///
-  /// 예전에는 시안 프레임 모양(세로로 긴 영수증, 0.62)을 그대로 쓰고
-  /// 프리뷰를 `BoxFit.cover` 로 채웠다. 센서는 4:3(세로로 놓으면 0.75)
-  /// 이므로 둘이 안 맞고, 그 차이만큼 프리뷰가 **확대**된다.
+  /// #148 에서 0.62 -> 0.75 로 바꾸면서 "센서는 4:3 이니까 0.75 면
+  /// 확대가 0 이 된다"고 했다. **그 전제가 틀렸다.**
   ///
-  /// ```
-  /// 확대 배율 = (1/0.62) / (1/0.75) = 0.75/0.62 = 1.2097  -> 21% 확대
-  /// 보이는 센서 가로 = 1/1.2097 = 82.7%  -> 좌우 17.3% 가 잘려 나간다
-  /// ```
+  /// `ResolutionPreset.max` 는 `ResolutionStrategy.highestAvailableStrategy`
+  /// 만 넘긴다(= 가장 높은 해상도). **비율은 보장하지 않는다.**
+  /// 요즘 기기는 최고 해상도가 16:9 인 경우가 흔하다. 그러면:
   ///
-  /// 그래서 영수증을 통째로 담으려면 폰을 뒤로 더 빼야 했다. 기본
-  /// 카메라 앱으로 찍을 때와 화각이 달라서 불편했던 것이다.
+  /// | 실제 프리뷰 | 프레임 0.75 고정 시 확대 | 보이는 화각 |
+  /// |---|---|---|
+  /// | 4:3 (0.750)  | 1.00배 | 100% |
+  /// | 3:2 (0.667)  | 1.13배 | 88.9% |
+  /// | 16:9 (0.5625)| **1.33배** | **75%** |
+  /// | 19.5:9 (0.46)| **1.63배** | **61.5%** |
   ///
-  /// ## 고친 방법
+  /// 즉 기기에 따라 여전히 확대됐다. 사장님이 "여전히 확대된다,
+  /// 폰을 눈앞까지 가져가야 한다"고 한 게 이것이다.
   ///
-  /// 프레임 비율을 **센서와 같은 0.75** 로 맞춘다. 그러면
-  /// `BoxFit.cover` 의 확대 배율이 `0.75/0.75 = 1.0` 즉 **확대 없음**이
-  /// 되고, 센서가 보는 화각이 손실 없이 그대로 화면에 나온다.
-  /// 기본 카메라 앱과 같은 화각이다.
+  /// ## #149 의 해법
   ///
-  /// 🔴 이 값이 화면과 저장 사진을 잇는 **유일한 계약**이다.
-  ///    프레임을 이 비율로 그리고, 프리뷰를 `BoxFit.cover` 로 채우고,
-  ///    찍힌 JPEG 를 이 비율로 잘라낸다. 세 곳이 같은 숫자를 쓰는 한
-  ///    "라인에 맞추면 그대로 찍힌다" 가 사실로 유지된다.
-  ///    그래서 여기만 바꾸면 자르기까지 같이 따라온다.
+  /// 프레임 비율을 **고정하지 않고, 실제 컨트롤러가 보고하는
+  /// 프리뷰 비율([_liveAspect])에 맞춘다.** 그러면 프레임과 프리뷰가
+  /// 항상 같은 비율이라 `BoxFit.cover` 의 확대 배율이 **어떤 기기에서도
+  /// 정확히 1.0** 이 된다. 기본 카메라 앱과 같은 화각이다.
+  ///
+  /// 이 상수는 카메라가 아직 안 열렸을 때 프레임 자리를 잡아두는
+  /// 용도로만 남는다.
   static const double frameAspect = 0.75;
 
   final String mode;
@@ -96,10 +98,25 @@ class ScanCameraDsScreen extends StatefulWidget {
 
 class _ScanCameraDsScreenState extends State<ScanCameraDsScreen>
     with WidgetsBindingObserver {
-  /// 계약 상수는 [ScanCameraDsScreen.frameAspect] 하나뿐이다.
-  /// 테스트가 읽을 수 있도록 public 위젯 클래스에 뒀고, 여기서는
-  /// 그걸 그대로 가리키기만 한다. 값을 복사해 두면 갈라진다.
+  /// 카메라를 못 열었을 때의 폴백 비율.
   static const double frameAspect = ScanCameraDsScreen.frameAspect;
+
+  /// 🔴 #149 — 지금 이 순간 **실제로** 써야 할 프레임 비율(가로/세로).
+  ///
+  /// 컨트롤러가 열려 있으면 그 프리뷰 비율을 그대로 쓴다. 프레임과
+  /// 프리뷰 비율이 같아야 `BoxFit.cover` 가 아무것도 확대하지 않는다.
+  /// 고정 상수를 쓰면 기기마다 비율이 달라 확대가 되살아난다(#148 의 실패).
+  ///
+  /// `controller.value.aspectRatio` 는 **가로/세로를 가로가 긴 기준**으로
+  /// 준다(예: 4:3 이면 1.333). 세로로 세운 화면에서 쓰려면 뒤집어야 해서
+  /// `1 / aspectRatio` 로 바꾼다.
+  double get _liveAspect {
+    final c = _controller;
+    if (c == null || !c.value.isInitialized) return frameAspect;
+    final a = c.value.aspectRatio;
+    if (a <= 0 || !a.isFinite) return frameAspect;
+    return 1 / a;
+  }
   /// `--cool-neutral-10`
   static const _bg = Color(0xFF1B1D22);
 
@@ -659,22 +676,19 @@ class _ScanCameraDsScreenState extends State<ScanCameraDsScreen>
   Widget _previewSlot() {
     return LayoutBuilder(
       builder: (context, box) {
-        // 프레임 비율을 지키면서 슬롯을 최대한 채운다.
+        // 🔴 #149 프레임을 **실제 프리뷰 비율**로 그린다.
+        //    고정 상수를 쓰면 프리뷰가 16:9 인 기기에서 프레임과
+        //    비율이 달라지고, 그 차이만큼 BoxFit.cover 가 확대한다
+        //    (16:9 기기에서 1.33배). 그게 #148 이 못 고친 부분이다.
         //
-        // 🔴 예전에는 여기서 "폭이 슬롯의 78% 미만이면 78% 로 되돌린다"
-        //    라는 보정을 했다. 그런데 그 보정이 걸리면 프레임 비율이
-        //    frameAspect 가 아니게 된다(아이폰 SE 에서 0.62 -> 0.668 로
-        //    계산됐다). 화면 비율과 저장 비율이 달라지니 "라인에 맞추면
-        //    그대로 찍힌다" 계약이 바로 깨진다.
-        //
-        //    frameAspect 를 센서와 같은 0.75 로 맞춘 뒤로는 프레임이
-        //    세로로 덜 길어서 그 보정이 필요 없다. 그래서 지웠다.
-        //    비율은 어떤 기기에서도 정확히 frameAspect 다.
+        // 🔴 "폭 78% 최소 보장" 보정은 #148 에서 지웠다. 되살리지 말 것.
+        //    그게 걸리면 비율이 어긋나 화면과 저장 사진이 달라진다.
+        final ar = _liveAspect;
         var w = box.maxWidth;
-        var h = w / frameAspect;
+        var h = w / ar;
         if (h > box.maxHeight) {
           h = box.maxHeight;
-          w = h * frameAspect;
+          w = h * ar;
         }
         _frameSize = Size(w, h);
         return Center(child: SizedBox(width: w, height: h, child: _preview()));
@@ -741,15 +755,17 @@ class _ScanCameraDsScreenState extends State<ScanCameraDsScreen>
     // (직전 버전에서 이 방법을 안 쓴 이유는 "`image` 패키지를 새 의존성으로
     //  넣어야 한다" 였는데, 크롭/리사이즈 기능이 그 패키지를 이미 필요로
     //  하므로 그 이유는 사라졌다)
+    // 🔴 #149 프레임 자체가 이미 프리뷰 비율([_liveAspect])로 그려져
+    //    있으므로, 자식도 같은 비율로 주면 cover 가 확대할 거리가 없다
+    //    (배율 정확히 1.0). 기본 카메라 앱과 같은 화각이 된다.
+    final w = _frameSize.width <= 0 ? 300.0 : _frameSize.width;
     return _framed(
       FittedBox(
         fit: BoxFit.cover,
         clipBehavior: Clip.hardEdge,
         child: SizedBox(
-          width: _frameSize.width <= 0 ? 300 : _frameSize.width,
-          height: _frameSize.width <= 0
-              ? 300 / (1 / _controller!.value.aspectRatio)
-              : _frameSize.width / (1 / _controller!.value.aspectRatio),
+          width: w,
+          height: w / _liveAspect,
           child: CameraPreview(_controller!),
         ),
       ),
@@ -786,10 +802,12 @@ class _ScanCameraDsScreenState extends State<ScanCameraDsScreen>
       final size = await ReceiptImageEditor.measure(bytes);
       if (size == null) return shot;
 
+      // 🔴 #149 화면에서 보인 프레임 비율은 고정 상수가 아니라
+      //    _liveAspect 다. 여기에 상수를 넘기면 화면과 저장이 또 어긋난다.
       final rect = ReceiptImageEditor.coverCropRect(
         imageWidth: size.width,
         imageHeight: size.height,
-        previewAspect: frameAspect,
+        previewAspect: _liveAspect,
         cameraAspect: cameraAspect,
       );
       // 이미 비율이 같으면(거의 없다) 손대지 않는다.

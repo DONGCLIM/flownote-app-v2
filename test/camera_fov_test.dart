@@ -2,7 +2,6 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flow_note/services/receipt_image_editor.dart';
-import 'package:flow_note/screens/ds/scan_camera_ds_screen.dart';
 
 /// 🔴 #101 — 카메라 화각(FOV) 불일치 회귀 방지
 ///
@@ -391,71 +390,111 @@ void main() {
   });
 
   // ─────────────────────────────────────────────────────────────
-  // 🔴 #148 "카메라로 찍을 때 확대가 되어서 불편하다"
+  // 🔴 #149 "여전히 확대된다. 폰을 눈앞까지 가져가야 한다"
   //
-  // 원인: 프레임 비율(0.62)이 센서 비율(4:3 = 0.75)보다 좁은데
-  //       프리뷰를 BoxFit.cover 로 채웠다. 그 차이만큼 프리뷰가
-  //       확대된다. 0.75/0.62 = 1.2097 -> 21% 확대, 센서 가로의
-  //       82.7% 만 보였다. 그래서 영수증을 다 담으려면 폰을 더
-  //       뒤로 빼야 했다.
-  // 고침: 프레임 비율을 센서와 같은 0.75 로 맞춰 배율을 1.0 으로.
+  // #148 에서 프레임을 0.62 -> 0.75 로 바꾸며 "센서는 4:3 이니까
+  // 확대가 0 이 된다"고 했다. 그 전제가 틀렸다.
+  //
+  // ResolutionPreset.max 는 highestAvailableStrategy 만 넘긴다.
+  // 즉 **해상도만** 고르고 비율은 보장하지 않는다. 프리뷰가 16:9 로
+  // 열리는 기기에서는 0.75 고정이 1.33배 확대를 만든다.
+  //
+  //   프리뷰 4:3   (0.750) -> 1.00배
+  //   프리뷰 3:2   (0.667) -> 1.13배
+  //   프리뷰 16:9  (0.5625)-> 1.33배   <- 사장님이 겪은 것
+  //   프리뷰 19.5:9(0.4615)-> 1.63배
+  //
+  // 해법: 프레임 비율을 고정하지 말고 **실제 프리뷰 비율(_liveAspect)**
+  //       에 맞춘다. 그러면 어떤 기기에서도 배율이 정확히 1.0 이다.
   // ─────────────────────────────────────────────────────────────
 
-  test('🔴 #148 cover 확대 배율이 1.0 이어야 한다 (확대 없음)', () {
-    // BoxFit.cover 는 자식(센서 비율)을 부모(프레임 비율)에 꽉 채운다.
-    // 세로로 긴 쪽을 기준으로 하면 배율 = (1/frame) / (1/sensor)
-    //                                  = sensor / frame
-    const sensor = 0.75; // 4:3 을 세로로 놓은 가로/세로
-    final frame = ScanCameraDsScreen.frameAspect;
-
-    final zoom = sensor / frame;
-    expect(zoom, closeTo(1.0, 1e-9),
-        reason: '확대 배율이 $zoom 배다. 1.0 이 아니면 기본 카메라 앱보다 '
-            '확대돼 보이고, 영수증을 담으려면 폰을 뒤로 빼야 한다');
-
-    // 센서 화각이 잘리지 않고 전부 보여야 한다.
-    final visible = 1 / zoom;
-    expect(visible, closeTo(1.0, 1e-9),
-        reason: '센서 가로의 ${(visible * 100).toStringAsFixed(1)}% 만 보인다');
+  test('🔴 #149 프레임을 실제 프리뷰 비율에 맞추면 어떤 기기든 확대가 0 이다', () {
+    // 프레임이 프리뷰와 같은 비율이면 cover 가 확대할 거리가 없다.
+    for (final cam in const [0.75, 0.6667, 0.5625, 0.4615, 1.0]) {
+      final frame = cam; // _liveAspect 가 하는 일
+      final zoom = cam > frame ? cam / frame : frame / cam;
+      expect(zoom, closeTo(1.0, 1e-9),
+          reason: '프리뷰 $cam 에서 확대 배율이 $zoom 배다');
+    }
   });
 
-  test('🔴 #148 예전 값 0.62 였다면 21% 확대였다 (되돌리지 말 것)', () {
-    // 되돌렸을 때 무슨 일이 벌어지는지를 숫자로 박아 둔다.
-    const sensor = 0.75;
-    const oldFrame = 0.62;
-    expect(sensor / oldFrame, closeTo(1.2097, 1e-4));
-    expect(1 / (sensor / oldFrame), closeTo(0.8267, 1e-4));
-
-    // 그리고 지금 값은 그 값이 아니어야 한다.
-    expect(ScanCameraDsScreen.frameAspect, isNot(closeTo(oldFrame, 1e-9)));
+  test('🔴 #149 고정 0.75 를 쓰면 16:9 기기에서 1.33배 확대된다 (되돌리지 말 것)', () {
+    // #148 의 실패를 숫자로 박아 둔다. 고정값으로 되돌리면 이 확대가 돌아온다.
+    const fixed = 0.75;
+    expect(fixed / 0.5625, closeTo(1.3333, 1e-4)); // 16:9
+    expect(fixed / 0.4615, closeTo(1.6251, 1e-3)); // 19.5:9
+    expect(fixed / 0.6667, closeTo(1.1249, 1e-3)); // 3:2
   });
 
-  test('🔴 #148 프레임 비율이 센서와 같으면 자르기가 아무것도 안 깎는다', () {
-    // frameAspect 가 센서와 같으니, 4:3 사진 + 4:3 프리뷰 조합에서는
-    // coverCropRect 가 전체(1.0 x 1.0)를 돌려줘야 한다. 한 픽셀이라도
-    // 깎으면 그만큼 화각이 좁아진 것이다.
-    final r = ReceiptImageEditor.coverCropRect(
-      imageWidth: 3000,
-      imageHeight: 4000, // 0.75
-      previewAspect: ScanCameraDsScreen.frameAspect,
-      cameraAspect: 0.75,
-    );
-    expect(r.isFull, isTrue,
-        reason: '4:3 센서/4:3 프리뷰인데 ${r.width} x ${r.height} 로 잘렸다');
+  test('🔴 #149 두 카메라 화면이 고정 상수가 아니라 _liveAspect 를 쓴다', () {
+    for (final path in const [
+      'lib/screens/ds/scan_camera_ds_screen.dart',
+      'lib/screens/in_app_camera_screen.dart',
+    ]) {
+      final code = File(path)
+          .readAsLinesSync()
+          .map((l) => l.trim())
+          .where((l) => !l.startsWith('//') && !l.startsWith('///'))
+          .join('\n');
+
+      expect(code.contains('_liveAspect'), isTrue,
+          reason: '$path 가 _liveAspect 를 안 쓴다 — 고정 비율이면 기기에 따라 확대된다');
+
+      // getter 선언 1 + 실제 사용처 2곳 이상(프레임 그리기 / 자르기).
+      // scan_camera 는 프리뷰 SizedBox 에서 한 번 더 써서 4번 나온다.
+      expect('_liveAspect'.allMatches(code).length, greaterThanOrEqualTo(3),
+          reason: '$path 에서 _liveAspect 사용처가 모자라다 — '
+              '프레임·프리뷰·자르기 중 하나가 아직 고정값이다');
+
+      // 프레임을 그리는 쪽이 고정 상수를 쓰면 안 된다.
+      expect(RegExp(r'[wh] = [wh] [/*] _?frameAspect').hasMatch(code), isFalse,
+          reason: '$path 의 프레임 계산이 아직 고정 상수를 쓴다');
+
+      // 자르기에 고정 상수를 넘기면 화면과 저장이 어긋난다.
+      expect(code.contains('previewAspect: _liveAspect'), isTrue,
+          reason: '$path 의 자르기가 화면과 다른 비율을 쓴다');
+      expect(RegExp(r'previewAspect: _?frameAspect').hasMatch(code), isFalse,
+          reason: '$path 의 자르기가 고정 상수로 되돌아갔다');
+    }
   });
 
-  test('🔴 #148 두 카메라 화면의 프레임 비율이 서로 같다', () {
-    // 두 화면이 다른 값을 쓰면 같은 영수증이 화면마다 다르게 찍힌다.
+  test('🔴 #149 프리뷰 비율로 자르면 아무것도 안 깎인다 (모든 기기)', () {
+    // 화면에서 본 것 = 저장된 것. 프리뷰 비율 그대로이므로 손실 0.
+    const combos = [
+      (3000, 4000, 0.75), // 4:3
+      (1080, 1920, 0.5625), // 16:9
+      (1440, 3120, 0.4615), // 19.5:9
+    ];
+    for (final (w, h, cam) in combos) {
+      final r = ReceiptImageEditor.coverCropRect(
+        imageWidth: w,
+        imageHeight: h,
+        previewAspect: cam, // _liveAspect 가 넘기는 값
+        cameraAspect: cam,
+      );
+      expect(r.isFull, isTrue,
+          reason: '$w x $h / 프리뷰 $cam 인데 ${r.width} x ${r.height} 로 잘렸다 — '
+              '그만큼 화각이 좁아진다');
+    }
+  });
+
+  test('🔴 #149 폴백 상수는 카메라를 못 열었을 때만 쓴다', () {
+    // 폴백 자체는 남아 있어야 한다(컨트롤러가 null 일 때 프레임 자리 잡기).
     final ds =
         File('lib/screens/ds/scan_camera_ds_screen.dart').readAsStringSync();
-    final iac =
-        File('lib/screens/in_app_camera_screen.dart').readAsStringSync();
-    final re = RegExp(r'_?frameAspect = ([0-9.]+);');
-    final a = re.firstMatch(ds)?.group(1);
-    final b = re.firstMatch(iac)?.group(1);
-    expect(a, isNotNull, reason: 'scan_camera 의 frameAspect 를 못 찾았다');
-    expect(b, isNotNull, reason: 'in_app_camera 의 _frameAspect 를 못 찾았다');
-    expect(a, b, reason: '두 카메라 화면의 프레임 비율이 다르다 ($a vs $b)');
-    expect(double.parse(a!), closeTo(0.75, 1e-9));
+    expect(ds.contains('static const double frameAspect = 0.75;'), isTrue,
+        reason: '폴백 상수가 사라지면 카메라 열기 전에 프레임을 못 그린다');
+
+    // 그리고 _liveAspect 가 컨트롤러 미초기화 시 그 폴백을 돌려줘야 한다.
+    final code = ds
+        .split('\n')
+        .map((l) => l.trim())
+        .where((l) => !l.startsWith('//') && !l.startsWith('///'))
+        .join('\n');
+    expect(code.contains('if (c == null || !c.value.isInitialized) return frameAspect;'),
+        isTrue,
+        reason: '_liveAspect 가 컨트롤러 미초기화를 안전하게 처리하지 않는다');
+    expect(code.contains('return 1 / a;'), isTrue,
+        reason: '_liveAspect 가 세로 기준으로 뒤집지 않으면 비율이 거꾸로 된다');
   });
 }

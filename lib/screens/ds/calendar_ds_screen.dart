@@ -851,15 +851,22 @@ class _CalendarDsScreenState extends State<CalendarDsScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        // 🔴 날짜 + 추가버튼 + 금액이 한 줄이다. 금액이 길면(수백만 원)
+        //    좁은 폭에서 Row 가 넘쳤다("RenderFlex overflowed by 26 px").
+        //    제목은 Flexible+ellipsis, 금액은 Flexible+FittedBox 로 줄인다.
         Row(
           children: [
-            Text(
-              selDay != null ? '$_month월 $selDay일' : '날짜를 선택하세요',
-              style: const TextStyle(
-                fontFamily: 'Pretendard',
-                fontSize: 17,
-                fontWeight: FontWeight.w700,
-                color: FnColors.labelNormal,
+            Flexible(
+              child: Text(
+                selDay != null ? '$_month월 $selDay일' : '날짜를 선택하세요',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontFamily: 'Pretendard',
+                  fontSize: 17,
+                  fontWeight: FontWeight.w700,
+                  color: FnColors.labelNormal,
+                ),
               ),
             ),
             if (selDay != null) ...[
@@ -868,13 +875,20 @@ class _CalendarDsScreenState extends State<CalendarDsScreen> {
             ],
             const Spacer(),
             if (selDay != null)
-              Text(
-                FnDemo.won(_dayTotal(byDay, selDay)),
-                style: const TextStyle(
-                  fontFamily: 'Pretendard',
-                  fontSize: 17,
-                  fontWeight: FontWeight.w500,
-                  color: FnColors.rose50,
+              Flexible(
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerRight,
+                  child: Text(
+                    FnDemo.won(_dayTotal(byDay, selDay)),
+                    maxLines: 1,
+                    style: const TextStyle(
+                      fontFamily: 'Pretendard',
+                      fontSize: 17,
+                      fontWeight: FontWeight.w500,
+                      color: FnColors.rose50,
+                    ),
+                  ),
                 ),
               ),
           ],
