@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
@@ -392,6 +394,103 @@ void main() {
       expect(t.takeException(), isNull);
       expect(find.byType(FnBellIcon), findsOneWidget);
       expect(find.byType(FnBookIcon), findsOneWidget);
+    });
+  });
+
+  // 🔴 #147 "첫번째 카드 로고 아이콘이 짤리는 것 같다" +
+  //         "두번째 카드에도 데코가 들어가 있다"
+  //
+  // 짤림의 정체: 크기(26x22dp)는 정확했는데, 책의 홈(가운데)쪽 상단
+  // 아치가 통째로 없었다. 원본은 그 지점이 정규 y 0.3315 까지 내려오는데
+  // #146 렌더는 0.000 이라 위가 평평했다. 그래서 펼친 책이 아니라
+  // "위가 잘린 방패" 처럼 보였다.
+  group('#147 책 아이콘 아치 · 코랄 데코', () {
+    test('🔴 책 페인터가 홈쪽 상단 아치 좌표를 갖는다 (평평하면 짤려 보인다)', () {
+      final code = File('lib/design/fn_icons.dart')
+          .readAsLinesSync()
+          .map((l) => l.trim())
+          .where((l) => !l.startsWith('//') && !l.startsWith('///'))
+          .join('\n');
+
+      // 홈쪽 상단이 내려오는 깊이. 0 이면 평평 = 짤려 보인다.
+      expect(code.contains('_archY = 0.3315'), isTrue,
+          reason: '홈쪽 상단 아치 깊이가 사라졌다 — 위가 평평해져 '
+              '펼친 책이 아니라 잘린 방패로 보인다(#146 재발)');
+      // 아치 3차 베지어 제어점(최소제곱, 오차 0.09%)
+      expect(code.contains('0.7953'), isTrue, reason: '아치 제어점이 사라졌다');
+      // 하단 스쿱(위로 오목) / 바깥 상단 모서리
+      expect(code.contains('_scoopY = 0.6750'), isTrue,
+          reason: '하단 스쿱이 사라졌다');
+      expect(code.contains('_cornerY = 0.0697'), isTrue,
+          reason: '바깥 상단 모서리 둥글기가 사라졌다');
+    });
+
+    testWidgets('🔴 책 아이콘은 두 페이지를 서로 다른 색으로 그린다', (t) async {
+      await t.pumpWidget(const MaterialApp(home: Center(child: FnBookIcon())));
+      await t.pump();
+      expect(t.takeException(), isNull);
+      final w = t.widget<FnBookIcon>(find.byType(FnBookIcon));
+      // 시안 실측: 왼 #FF787C / 오 #FF9385 (리터럴로 고정)
+      expect(w.left.toARGB32(), const Color(0xFFFF787C).toARGB32(),
+          reason: '왼쪽 페이지 색이 시안과 다르다');
+      expect(w.right.toARGB32(), const Color(0xFFFF9385).toARGB32(),
+          reason: '오른쪽 페이지 색이 시안과 다르다');
+    });
+
+    testWidgets('🔴 코랄 카드에 데코가 그려진다', (t) async {
+      await _pumpHome(t);
+      expect(t.takeException(), isNull);
+      expect(find.byType(FnCoralDeco), findsOneWidget,
+          reason: '코랄 카드 우상단 손그림 데코가 없다(#147 요청)');
+    });
+
+    testWidgets('🔴 데코는 터치를 가로막지 않는다', (t) async {
+      // 카드 전체가 지출 추이로 가는 버튼이다. 데코가 그걸 먹으면 안 된다.
+      await _pumpHome(t);
+      expect(
+        find.ancestor(
+            of: find.byType(FnCoralDeco),
+            matching: find.byType(IgnorePointer)),
+        findsWidgets,
+        reason: '데코가 IgnorePointer 로 감싸이지 않아 카드 탭을 가로챈다',
+      );
+    });
+
+    testWidgets('🔴 코랄 카드가 데코를 모서리에서 잘라낸다 (ClipRRect)', (t) async {
+      // 데코 고리 하나가 카드 위쪽 경계를 넘어가므로 클립이 필수다.
+      await _pumpHome(t);
+      expect(
+        find.ancestor(
+            of: find.byType(FnCoralDeco), matching: find.byType(ClipRRect)),
+        findsWidgets,
+        reason: '클립이 없으면 데코가 카드 밖으로 비져나간다',
+      );
+    });
+
+    testWidgets('🔴 데코는 고정 크기다 (비례 확대 금지)', (t) async {
+      // 🔴 처음엔 카드 폭에 비례해 키웠는데, 그러면 우측 여백까지 같이
+      //    늘어나 데코가 오른쪽 끝으로 밀렸다(시안 12.3dp -> 렌더 0.3dp).
+      await t.pumpWidget(const MaterialApp(home: Center(child: FnCoralDeco())));
+      await t.pump();
+      expect(t.takeException(), isNull);
+      final size = t.getSize(find.byType(FnCoralDeco));
+      // 시안 실측 82.7 x 76.0dp — 토큰과 비교하면 자기참조라 리터럴로 쓴다.
+      expect(size.width, closeTo(82.7, 0.1),
+          reason: '데코 폭이 시안 실측(82.7dp)과 다르다');
+      expect(size.height, closeTo(76.0, 0.1),
+          reason: '데코 높이가 시안 실측(76.0dp)과 다르다');
+    });
+
+    test('🔴 데코 획은 반투명 흰색이다', () {
+      // 코랄 그라데이션 위에 얹히므로 불투명 흰색이면 튄다.
+      // 시안 역산: 코어 #FFD6D4 를 배경 #FF7F7F 에 올린 알파 약 0.75.
+      expect(FnHome.decoLine.a, closeTo(0.75, 0.02),
+          reason: '데코 선 알파가 시안 역산값(0.75)과 다르다');
+      expect(FnHome.decoDot.a, greaterThan(FnHome.decoLine.a),
+          reason: '점은 선보다 진해야 시안과 같다');
+      expect(FnHome.decoLine.r, closeTo(1.0, 0.01));
+      expect(FnHome.decoLine.g, closeTo(1.0, 0.01));
+      expect(FnHome.decoLine.b, closeTo(1.0, 0.01));
     });
   });
 }
