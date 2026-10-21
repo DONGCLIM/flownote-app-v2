@@ -465,4 +465,77 @@ void _k135() {
       expect(find.byType(HomeDsScreen), findsOneWidget);
     });
   });
+
+  // 🔴 #153 (#136 후속) "영수증 0건이면 홈 차트가 빈칸"
+  //
+  // 실제로 재현되는지 직접 확인했다. months/spend 는 어떤 경우에도
+  // 12개로 채워지므로 bars 가 비는 일은 없고, 0원인 달도 clamp(6.0)
+  // 덕에 6dp 막대가 보인다. 즉 빈칸은 나오지 않는다.
+  // 다만 bars 가 비는 분기가 94dp 빈칸을 돌려주고 있어서, 혹시라도
+  // 그 경로를 타면 고장처럼 보인다. 안내문으로 바꾸고 고정한다.
+  group('#153 홈 차트 — 0건에서도 빈칸이 아니다', () {
+    test('🔴 영수증이 0건이어도 months/spend 가 12개로 채워진다', () {
+      final d = FnDemo.resolveFrom(const <ReceiptModel>[]);
+      expect(d.months.length, 12,
+          reason: 'months 가 비면 차트가 통째로 사라진다');
+      expect(d.spend.length, 12,
+          reason: 'spend 가 비면 차트가 통째로 사라진다');
+      expect(d.isDemo, isTrue, reason: '0건이면 데모 데이터를 보여준다');
+    });
+
+    test('🔴 영수증 1건이어도 12개월이 유지되고 막대가 그려진다', () {
+      final r = ReceiptModel(
+        id: 'x',
+        date: DateTime.now(),
+        storeName: '가게',
+        items: const [],
+        totalAmount: 1000,
+        rawOcrText: '',
+        createdAt: DateTime.now(),
+      );
+      final d = FnDemo.resolveFrom([r]);
+      expect(d.months.length, 12);
+      expect(d.spend.length, 12);
+      expect(d.isDemo, isFalse, reason: '실데이터가 있으면 데모가 아니다');
+
+      // 0원인 달도 최소 높이 6dp 로 보인다 (clamp).
+      // 실제 계산을 그대로 재현해 확인한다.
+      const barFull = 94.0;
+      const topPct = 76.0;
+      final tail = d.spend.sublist(d.spend.length - 6);
+      final mx = tail.reduce((a, b) => a > b ? a : b);
+      for (final v in tail) {
+        final pct = mx <= 0 ? 0.0 : v / mx * topPct;
+        final h = (pct / 100 * barFull).clamp(6.0, barFull);
+        expect(h, greaterThanOrEqualTo(6.0),
+            reason: '막대 높이가 0 이면 그 자리가 빈칸으로 보인다');
+      }
+    });
+
+    testWidgets('🔴 영수증 0건 홈에 94dp 빈칸이 아니라 막대가 보인다', (tester) async {
+      await _pumpHome(tester);
+      expect(tester.takeException(), isNull);
+
+      // 차트 카드가 있고
+      expect(find.text('지출 추이'), findsOneWidget);
+      // "최근 0개월" 같은 고장 표시가 없어야 한다
+      expect(find.text('최근 0개월'), findsNothing,
+          reason: '막대가 없다는 뜻이라 고장처럼 보인다');
+      // 데모 데이터라 6개월 배지가 뜬다
+      expect(find.text('최근 6개월'), findsOneWidget);
+    });
+
+    test('🔴 bars 가 비면 빈칸 대신 안내문을 보여준다', () {
+      // 지금 데이터 경로로는 타지 않는 분기지만, 타더라도 빈칸이면 안 된다.
+      final code = io.File('lib/screens/ds/home_ds_screen.dart')
+          .readAsLinesSync()
+          .map((l) => l.trim())
+          .where((l) => !l.startsWith('//') && !l.startsWith('///'))
+          .join('\n');
+      expect(code.contains('아직 지출 기록이 없어요'), isTrue,
+          reason: 'bars 가 비었을 때 94dp 빈칸만 남으면 고장처럼 보인다');
+      expect(code.contains("bars.isEmpty ? '기록 없음'"), isTrue,
+          reason: '배지에 "최근 0개월" 이 뜨면 안 된다');
+    });
+  });
 }

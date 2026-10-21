@@ -353,8 +353,9 @@ class _HomeDsScreenState extends State<HomeDsScreen> {
                   color: FnHome.coralFaint,
                   borderRadius: BorderRadius.circular(20),
                 ),
+                // 🔴 #153 bars 가 비면 "최근 0개월" 이 떠서 고장처럼 보인다.
                 child: Text(
-                  '최근 ${bars.length}개월',
+                  bars.isEmpty ? '기록 없음' : '최근 ${bars.length}개월',
                   style: const TextStyle(
                     fontFamily: 'Pretendard',
                     fontSize: 10.5,
@@ -776,7 +777,28 @@ class _BarRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (bars.isEmpty) return const SizedBox(height: FnHome.barFull);
+    // 🔴 #153 예전에는 여기서 `SizedBox(height: barFull)` 을 돌려줬다.
+    //    그러면 아무것도 없는 94dp 빈칸이 카드 안에 남는다(#136 지적).
+    //
+    //    지금 데이터 경로상 `months`/`spend` 는 항상 12개라 이 분기는
+    //    사실상 타지 않는다(직접 확인했다). 하지만 들어오면 **빈칸이
+    //    아니라 안내문**을 보여주는 게 맞다. 빈칸은 고장처럼 보인다.
+    if (bars.isEmpty) {
+      return const SizedBox(
+        height: FnHome.barFull,
+        child: Center(
+          child: Text(
+            '아직 지출 기록이 없어요',
+            style: TextStyle(
+              fontFamily: 'Pretendard',
+              fontSize: 12.5,
+              fontWeight: FontWeight.w500,
+              color: FnHome.muted,
+            ),
+          ),
+        ),
+      );
+    }
     final last = bars.length - 1;
     return SizedBox(
       height: FnHome.barFull + 40,
