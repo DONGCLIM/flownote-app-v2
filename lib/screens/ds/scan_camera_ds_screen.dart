@@ -498,8 +498,13 @@ class _ScanCameraDsScreenState extends State<ScanCameraDsScreen>
               onTap: _flip,
             ),
         ],
+        // 🔴 #151 좌우 여백을 없앤다.
+        //    프리뷰를 확대하지 않고(화각 100%) 프레임을 키우려면
+        //    **화면 공간을 더 주는 수밖에 없다.** 좌우 20dp 씩 40dp 를
+        //    되찾으면 갤럭시 기준 프레임이 372x496 -> 412x549 가 된다.
+        //    확대는 그대로 1.0 이다.
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(20, 20, 20, 32),
+          padding: const EdgeInsets.fromLTRB(0, 12, 0, 20),
           child: Column(
             children: [
               // ContentBadge accent (시안 style override)
@@ -524,10 +529,11 @@ class _ScanCameraDsScreenState extends State<ScanCameraDsScreen>
                   ),
                 ),
               ),
-              // 시안 프레임 + 실제 프리뷰 (`flex: 1`, margin '20px 0')
+              // 프리뷰 슬롯. 🔴 #151 상하 마진도 20 -> 10 으로 줄여
+              //    세로 20dp 를 프레임에 돌려준다.
               Expanded(
                 child: Container(
-                  margin: const EdgeInsets.symmetric(vertical: 20),
+                  margin: const EdgeInsets.symmetric(vertical: 10),
                   child: _previewSlot(),
                 ),
               ),
@@ -690,28 +696,26 @@ class _ScanCameraDsScreenState extends State<ScanCameraDsScreen>
   Widget _previewSlot() {
     return LayoutBuilder(
       builder: (context, box) {
-        // 🔴 #150 **세로 우선**으로 담는다. 영수증은 세로로 길기 때문이다.
+        // 🔴 #151 **센서가 보는 것을 하나도 자르지 않는다 (contain).**
         //
-        //   세로를 슬롯에 꽉 채우고, 폭이 슬롯을 넘으면 좌우만 잘라낸다.
-        //   (가로 우선으로 하면 4:3 기기에서 세로가 609 -> 496 으로
-        //    짧아진다. 그게 사장님이 "세로가 너무 짧다" 고 한 것이다.)
+        //   #150 은 "세로 우선" 이라며 세로를 슬롯에 꽉 채우고 넘치는
+        //   좌우를 화면 밖으로 버렸다. 4:3 기기에서 좌우 18.6% 를
+        //   잘라냈는데, **그게 바로 1.23배 확대**다.
+        //   사장님: "가이드 안에는 들어오나 너무 확대돼서 또 폰을
+        //            눈까지 올려야 한다"
         //
-        //   ⚠️ 이건 확대가 아니다. 영상은 1:1 배율 그대로 보여주고,
-        //      화면 밖으로 나가는 좌우만 안 보일 뿐이다. 세로 화각은
-        //      항상 100% 다. 4:3 기기 기준 좌우 18.6% 를 내주고
-        //      세로를 496 -> 609dp 로 얻는 교환이다.
+        //   자르는 순간 확대다. 예외 없다. 그래서 이제는 센서 화면을
+        //   통째로(contain) 보여준다. 확대 배율 정확히 1.0, 화각 100%.
+        //   기본 카메라 앱과 완전히 같은 거리에서 찍을 수 있다.
+        //
+        //   프레임 크기는 **여백을 줄여서** 확보한다(확대가 아니라
+        //   화면 공간으로). 화각을 깎아 크게 보이게 하지 않는다.
         final ar = _liveAspect;
-        var ph = box.maxHeight;
-        var pw = ph * ar;
-        if (pw < box.maxWidth) {
-          // 폭이 남으면 폭도 더 키울 수 있는지 본다(세로는 이미 최대).
-          // 세로가 슬롯을 넘지 않는 선에서만.
-          final tryW = box.maxWidth;
-          final tryH = tryW / ar;
-          if (tryH <= box.maxHeight) {
-            pw = tryW;
-            ph = tryH;
-          }
+        var pw = box.maxWidth;
+        var ph = pw / ar;
+        if (ph > box.maxHeight) {
+          ph = box.maxHeight;
+          pw = ph * ar;
         }
 
         // 🔴 #150 가이드는 **보이는 영역을 최대한 쓴다.**
@@ -734,18 +738,9 @@ class _ScanCameraDsScreenState extends State<ScanCameraDsScreen>
         // 보이는 영역(= 잘린 뒤 실제로 눈에 들어온 사각형)의 비율.
         _shownAspect = visW / visH;
 
-        // 넘치는 좌우는 잘라낸다(ClipRect). 자르지 않으면 셔터 버튼
-        // 위로 영상이 비져나간다.
-        return ClipRect(
-          child: OverflowBox(
-            maxWidth: pw,
-            maxHeight: ph,
-            child: SizedBox(
-              width: pw,
-              height: ph,
-              child: _preview(),
-            ),
-          ),
+        // contain 이라 슬롯을 넘지 않는다. 자를 것도 없다.
+        return Center(
+          child: SizedBox(width: pw, height: ph, child: _preview()),
         );
       },
     );

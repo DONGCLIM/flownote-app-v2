@@ -378,105 +378,62 @@ void main() {
   });
 
   // ─────────────────────────────────────────────────────────────
-  // 🔴 #150 "영수증 전체가 찍히게 프레임을 넓게. 세로가 너무 짧다"
+  // 🔴 #151 "가이드 안에 들어오지만 너무 확대돼서 또 폰을 눈까지
+  //          올려야 한다. 편한 자세에서 찍게 해달라"
   //
-  // #149 에서 "프레임 = 센서 비율" 로 묶었더니 확대는 사라졌지만
-  // 4:3 기기에서 프레임 세로가 609 -> 496dp 로 짧아졌다.
-  // 영수증은 세로로 긴데 가이드가 납작해져 찍기 어려워졌다.
+  // #150 은 "세로 우선" 이라며 세로를 슬롯에 꽉 채우고 넘치는 좌우를
+  // 화면 밖으로 버렸다. 4:3 기기에서 좌우 18.6% 를 잘라냈는데,
+  // **자르는 것이 곧 확대다** (배율 1.228).
   //
-  // 교훈: **프레임 모양**과 **확대**는 다른 문제다. 묶으면 한쪽이 깨진다.
+  // 네 번의 실패를 관통하는 교훈:
+  //   프레임을 크게 보이려고 화각을 깎으면 그게 바로 확대다.
+  //   #147 cover(21%) / #148 cover(33%) / #150 좌우잘라냄(23%)
   //
-  // #150 구조
-  //   프리뷰 : 세로를 슬롯에 꽉 채움. 늘리지 않음(배율 1.0).
-  //            폭이 넘치면 좌우만 화면 밖으로 나간다.
-  //   가이드 : 보이는 영역 안에 그리는 세로로 긴 사각형(0.62).
-  //   저장   : 화면에 보인 영역(_shownAspect)과 같게 자른다.
+  // #151: 센서 화면을 통째로 보여준다(contain, 화각 100%, 배율 1.0).
+  //       프레임 크기는 **여백을 줄여서** 확보한다.
   // ─────────────────────────────────────────────────────────────
 
-  /// #150 의 배치 계산을 테스트에서 그대로 재현한다.
-  /// (구현과 같은 식을 쓰되, 기대값은 리터럴로 따로 검증한다)
-  ({double pw, double ph, double gw, double gh}) layout(
-      double boxW, double boxH, double ar, double frameAspect) {
-    var ph = boxH;
-    var pw = ph * ar;
-    if (pw < boxW) {
-      final tryW = boxW;
-      final tryH = tryW / ar;
-      if (tryH <= boxH) {
-        pw = tryW;
-        ph = tryH;
-      }
+  /// #151 배치. 센서 전체가 슬롯 안에 들어가도록만 한다(자르지 않음).
+  ({double pw, double ph}) layout151(double boxW, double boxH, double ar) {
+    var pw = boxW;
+    var ph = pw / ar;
+    if (ph > boxH) {
+      ph = boxH;
+      pw = ph * ar;
     }
-    final visW = pw < boxW ? pw : boxW;
-    final visH = ph < boxH ? ph : boxH;
-    var gw = visW;
-    var gh = visH;
-    if (gw / gh > frameAspect) {
-      gw = gh * frameAspect;
-    }
-    return (pw: pw, ph: ph, gw: gw, gh: gh);
+    return (pw: pw, ph: ph);
   }
 
-  test('🔴 #150 세로가 슬롯을 꽉 채운다 (영수증이 세로로 길다)', () {
-    // 갤럭시 기준 슬롯. 어떤 센서 비율이든 세로는 항상 슬롯 전체.
-    const boxW = 372.0, boxH = 609.0;
+  test('🔴 #151 센서 화각을 100% 보여준다 — 한 픽셀도 자르지 않는다', () {
+    const boxW = 412.0, boxH = 669.0;
     for (final ar in const [0.75, 0.6667, 0.5625, 0.4615]) {
-      final r = layout(boxW, boxH, ar, 0.62);
-      expect(r.ph, closeTo(boxH, 1e-6),
-          reason: '센서 $ar 에서 프리뷰 세로가 ${r.ph} 다 — 슬롯($boxH)을 못 채웠다');
-      // 가이드 세로 = 보이는 영역 세로 = 슬롯 세로. 어떤 센서든.
-      expect(r.gh, closeTo(boxH, 1e-6),
-          reason: '센서 $ar 에서 가이드 세로가 ${r.gh} 다 — 영수증 맞추기 어렵다');
-      // #149(496dp)보다 반드시 길어야 한다.
-      expect(r.gh, greaterThan(496.0),
-          reason: '센서 $ar 에서 가이드 세로 ${r.gh} 는 #149 보다 짧다');
+      final r = layout151(boxW, boxH, ar);
+      // 프리뷰가 슬롯을 넘으면 그만큼 화면 밖으로 잘린다 = 확대.
+      expect(r.pw, lessThanOrEqualTo(boxW + 1e-6),
+          reason: '센서 $ar 에서 프리뷰 폭 ${r.pw} 가 슬롯($boxW)을 넘었다 — '
+              '좌우가 잘리고 그만큼 확대돼 보인다');
+      expect(r.ph, lessThanOrEqualTo(boxH + 1e-6),
+          reason: '센서 $ar 에서 프리뷰 높이 ${r.ph} 가 슬롯($boxH)을 넘었다');
+      // 비율은 센서 그대로 (찌그러지지 않는다)
+      expect(r.pw / r.ph, closeTo(ar, 1e-9));
     }
   });
 
-  test('🔴 #150 4:3 기기에서 가이드 세로가 496 이 아니라 609 다 (회귀 방지)', () {
-    // #149 의 실패를 숫자로 박아 둔다.
+  test('🔴 #151 #150 의 세로우선은 4:3 에서 1.23배 확대였다 (되돌리지 말 것)', () {
     const boxW = 372.0, boxH = 609.0;
-    final r = layout(boxW, boxH, 0.75, 0.62);
-
-    expect(r.gh, closeTo(609.0, 1e-6),
-        reason: '#149 에서 496 이었다. 다시 짧아지면 사장님이 또 못 찍는다');
-    expect(r.gh, greaterThan(496.0 + 100),
-        reason: '#149 대비 100dp 이상 길어야 한다');
-
-    // 가이드는 세로로 긴 모양이어야 한다(0.62 보다 넓어지면 안 된다).
-    expect(r.gw / r.gh, lessThanOrEqualTo(0.62 + 1e-6),
-        reason: '가이드가 영수증 모양보다 가로로 넓다: ${r.gw / r.gh}');
+    // #150 방식: 세로를 꽉 채우고 폭이 넘치게 둔다.
+    const ar = 0.75;
+    final ph = boxH;
+    final pw = ph * ar; // 456.75
+    expect(pw, greaterThan(boxW)); // 슬롯 폭을 넘는다
+    final zoom = pw / boxW;
+    expect(zoom, closeTo(1.2278, 1e-3),
+        reason: '이 1.23배가 사장님이 느낀 "또 확대됐다" 였다');
+    expect(boxW / pw, closeTo(0.8145, 1e-3),
+        reason: '가로 화각이 81.4% 로 줄었다');
   });
 
-  test('🔴 #150 프리뷰를 늘리지 않는다 — 배율은 항상 1.0', () {
-    // 프리뷰 사각형은 언제나 센서 비율 그대로여야 한다.
-    // (비율이 유지되면 영상이 찌그러지지도, 확대되지도 않는다)
-    const boxW = 372.0, boxH = 609.0;
-    for (final ar in const [0.75, 0.6667, 0.5625, 0.4615]) {
-      final r = layout(boxW, boxH, ar, 0.62);
-      expect(r.pw / r.ph, closeTo(ar, 1e-9),
-          reason: '센서 $ar 인데 프리뷰 비율이 ${r.pw / r.ph} 다 — 늘어났다');
-    }
-  });
-
-  test('🔴 #150 가이드는 보이는 영역을 넘지 않는다', () {
-    // 가이드가 영상 밖(검은 영역)에 걸치면 거기 맞출 수가 없다.
-    const boxW = 372.0, boxH = 609.0;
-    for (final ar in const [0.75, 0.6667, 0.5625, 0.4615]) {
-      final r = layout(boxW, boxH, ar, 0.62);
-      final visW = r.pw < boxW ? r.pw : boxW;
-      final visH = r.ph < boxH ? r.ph : boxH;
-      expect(r.gw, lessThanOrEqualTo(visW + 1e-6),
-          reason: '센서 $ar 에서 가이드 폭이 보이는 영역을 넘었다');
-      expect(r.gh, lessThanOrEqualTo(visH + 1e-6),
-          reason: '센서 $ar 에서 가이드 높이가 보이는 영역을 넘었다');
-    }
-  });
-
-  test('🔴 #150 실제 코드가 세로 우선으로 배치한다 (가로 우선 금지)', () {
-    // 🔴 위의 layout() 은 테스트 안의 복사본이라, 구현이 가로 우선으로
-    //    바뀌어도 그대로 통과한다(사보타주로 확인했다).
-    //    그래서 **실제 소스**가 세로 우선인지 직접 검사한다.
+  test('🔴 #151 실제 코드가 자르지 않는다 (ClipRect/OverflowBox 금지)', () {
     for (final path in const [
       'lib/screens/ds/scan_camera_ds_screen.dart',
       'lib/screens/in_app_camera_screen.dart',
@@ -487,34 +444,49 @@ void main() {
           .where((l) => !l.startsWith('//') && !l.startsWith('///'))
           .join('\n');
 
-      // 세로 우선: 먼저 높이를 슬롯 최대로 잡고 폭을 유도한다.
-      //   var ph = box.maxHeight;  /  var pw = ph * ar;
+      // 프리뷰를 늘리는 cover 금지
+      expect(code.contains('BoxFit.cover'), isFalse,
+          reason: '$path 에 BoxFit.cover 가 되살아났다 — 프리뷰가 확대된다');
+
+      // 슬롯 밖으로 넘겨 자르는 OverflowBox 금지
+      expect(code.contains('OverflowBox'), isFalse,
+          reason: '$path 가 OverflowBox 로 화면 밖까지 그린다 — '
+              '잘리는 만큼 확대돼 보인다(#150 재발)');
+
+      // 가로 기준으로 담고(contain), 넘치면 줄인다
+      final containsW =
+          RegExp(r'var pw = (?:box|constraints)\.maxWidth;').hasMatch(code);
+      final containsH = RegExp(r'var ph = pw / ar;').hasMatch(code);
+      expect(containsW && containsH, isTrue,
+          reason: '$path 가 contain 배치가 아니다 — 센서 일부가 잘릴 수 있다');
+
+      // 세로 우선(= 좌우를 버리는) 패턴이 없어야 한다
       final heightFirst =
           RegExp(r'var ph = (?:box|constraints)\.maxHeight;').hasMatch(code) &&
               RegExp(r'var pw = ph \* ar;').hasMatch(code);
-      expect(heightFirst, isTrue,
-          reason: '$path 가 세로 우선이 아니다 — 가로 우선이면 4:3 기기에서 '
-              '프레임 세로가 609 -> 496 으로 짧아진다(#149 재발)');
-
-      // 가로 우선 패턴이 남아 있으면 안 된다.
-      final widthFirst =
-          RegExp(r'var pw = (?:box|constraints)\.maxWidth;').hasMatch(code) &&
-              RegExp(r'var ph = pw / ar;').hasMatch(code);
-      expect(widthFirst, isFalse,
-          reason: '$path 에 가로 우선 배치가 되살아났다');
-
-      // 🔴 가이드는 보이는 영역 세로를 **그대로** 써야 한다.
-      //    `visH * 0.8` 처럼 줄이면 가이드가 또 짧아진다(사보타주로 확인).
-      expect(RegExp(r'var gh = visH;').hasMatch(code), isTrue,
-          reason: '$path 의 가이드 높이가 보이는 영역 세로 그대로가 아니다 — '
-              '가이드가 짧아지면 영수증을 맞추기 어렵다');
-      expect(RegExp(r'var gh = visH \*').hasMatch(code), isFalse,
-          reason: '$path 가 가이드 높이를 줄이고 있다');
+      expect(heightFirst, isFalse,
+          reason: '$path 에 세로 우선 배치가 되살아났다 — 좌우가 잘려 확대된다');
     }
   });
 
-  test('🔴 #150 cover 로 늘리는 코드가 되살아나면 안 된다', () {
-    // #147(21%) / #148(16:9 기기 33%) 확대의 원인이 BoxFit.cover 였다.
+  test('🔴 #151 여백을 줄여 프레임 공간을 확보한다 (확대가 아니라 화면으로)', () {
+    final ds =
+        File('lib/screens/ds/scan_camera_ds_screen.dart').readAsStringSync();
+    // 좌우 여백 0, 상하도 줄였다.
+    expect(ds.contains('EdgeInsets.fromLTRB(0, 12, 0, 20)'), isTrue,
+        reason: '좌우 여백이 되살아나면 프레임이 다시 작아진다');
+    expect(ds.contains('EdgeInsets.symmetric(vertical: 10)'), isTrue,
+        reason: '프리뷰 상하 마진이 되살아나면 세로가 줄어든다');
+
+    // 여백을 없앤 효과를 숫자로 고정 (갤럭시 412 기준)
+    const screenW = 412.0;
+    const oldSlotW = screenW - 40; // 좌우 20dp 씩
+    const newSlotW = screenW;
+    expect(newSlotW / oldSlotW, closeTo(1.1075, 1e-3),
+        reason: '여백 제거로 프레임이 약 11% 커진다 — 확대 없이');
+  });
+
+  test('🔴 #151 저장은 화면에 보인 영역과 같다', () {
     for (final path in const [
       'lib/screens/ds/scan_camera_ds_screen.dart',
       'lib/screens/in_app_camera_screen.dart',
@@ -524,44 +496,39 @@ void main() {
           .map((l) => l.trim())
           .where((l) => !l.startsWith('//') && !l.startsWith('///'))
           .join('\n');
-      expect(code.contains('BoxFit.cover'), isFalse,
-          reason: '$path 에 BoxFit.cover 가 되살아났다 — 프리뷰가 확대된다');
-    }
-  });
-
-  test('🔴 #150 저장은 화면에 보인 영역(_shownAspect)으로 자른다', () {
-    for (final path in const [
-      'lib/screens/ds/scan_camera_ds_screen.dart',
-      'lib/screens/in_app_camera_screen.dart',
-    ]) {
-      final code = File(path)
-          .readAsLinesSync()
-          .map((l) => l.trim())
-          .where((l) => !l.startsWith('//') && !l.startsWith('///'))
-          .join('\n');
-
       expect(code.contains('_shownAspect'), isTrue,
           reason: '$path 가 보이는 영역을 기록하지 않는다');
-      expect(code.contains('_shownAspect = visW / visH;'), isTrue,
-          reason: '$path 의 _shownAspect 계산이 보이는 영역 기준이 아니다');
-
-      // 가이드 비율로 자르면 영수증이 가이드를 살짝 넘겼을 때 글자가 날아간다.
+      // 가이드 비율로 자르면 영수증이 가이드를 넘겼을 때 글자가 날아간다.
       expect(RegExp(r'previewAspect: _?frameAspect').hasMatch(code), isFalse,
-          reason: '$path 가 가이드 비율로 사진을 자른다 — 글자가 잘릴 수 있다');
+          reason: '$path 가 가이드 비율로 사진을 자른다');
     }
   });
 
-  test('🔴 #150 가이드 비율 상수는 세로로 긴 영수증 모양이다', () {
+  test('🔴 #151 contain 이면 저장 때 아무것도 안 깎인다', () {
+    // 화면에 센서 전체가 보였으니 저장본도 전체여야 한다.
+    for (final (w, h, cam) in const [
+      (3000, 4000, 0.75),
+      (1080, 1920, 0.5625),
+      (1440, 3120, 0.4615),
+    ]) {
+      final r = ReceiptImageEditor.coverCropRect(
+        imageWidth: w,
+        imageHeight: h,
+        previewAspect: cam, // contain 이라 보인 비율 == 센서 비율
+        cameraAspect: cam,
+      );
+      expect(r.isFull, isTrue,
+          reason: '$w x $h / 센서 $cam 인데 ${r.width} x ${r.height} 로 잘렸다');
+    }
+  });
+
+  test('🔴 #151 가이드는 세로로 긴 영수증 모양을 유지한다', () {
     final ds =
         File('lib/screens/ds/scan_camera_ds_screen.dart').readAsStringSync();
     final iac =
         File('lib/screens/in_app_camera_screen.dart').readAsStringSync();
-    expect(ds.contains('static const double frameAspect = 0.62;'), isTrue,
-        reason: '가이드가 영수증 모양(0.62)이 아니다');
-    expect(iac.contains('static const double _frameAspect = 0.62;'), isTrue,
-        reason: '두 화면의 가이드 비율이 다르다');
-
-    // 세로가 가로보다 길어야 영수증 모양이다.
-    expect(0.62, lessThan(1.0));
+    expect(ds.contains('static const double frameAspect = 0.62;'), isTrue);
+    expect(iac.contains('static const double _frameAspect = 0.62;'), isTrue);
+    expect(0.62, lessThan(1.0), reason: '세로가 가로보다 길어야 영수증 모양이다');
   });
 }

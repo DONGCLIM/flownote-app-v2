@@ -466,19 +466,15 @@ class _InAppCameraScreenState extends State<InAppCameraScreen>
     //    #147 은 21%, #148 은 16:9 기기에서 33% 확대됐다.
     return LayoutBuilder(
       builder: (context, constraints) {
-        // 🔴 #150 세로 우선. 영수증이 세로로 길어서 세로 길이가 중요하다.
-        //    (가로 우선이면 4:3 기기에서 세로가 짧아진다)
-        //    확대가 아니라, 화면 밖으로 나가는 좌우만 안 보이는 것이다.
+        // 🔴 #151 센서가 보는 것을 하나도 자르지 않는다(contain).
+        //    자르는 순간이 곧 확대다. #150 의 "세로 우선" 은 좌우
+        //    18.6% 를 버렸고 그게 1.23배 확대로 느껴졌다.
         final ar = _liveAspect;
-        var ph = constraints.maxHeight;
-        var pw = ph * ar;
-        if (pw < constraints.maxWidth) {
-          final tryW = constraints.maxWidth;
-          final tryH = tryW / ar;
-          if (tryH <= constraints.maxHeight) {
-            pw = tryW;
-            ph = tryH;
-          }
+        var pw = constraints.maxWidth;
+        var ph = pw / ar;
+        if (ph > constraints.maxHeight) {
+          ph = constraints.maxHeight;
+          pw = ph * ar;
         }
         // 🔴 #150 가이드는 **보이는 영역을 최대한 쓴다.**
         //
@@ -497,11 +493,8 @@ class _InAppCameraScreenState extends State<InAppCameraScreen>
           gw = gh * _frameAspect;
         }
         _shownAspect = visW / visH;
-        return ClipRect(
-          child: OverflowBox(
-            maxWidth: pw,
-            maxHeight: ph,
-            child: SizedBox(
+        return Center(
+          child: SizedBox(
             width: pw,
             height: ph,
             child: Stack(
@@ -576,7 +569,6 @@ class _InAppCameraScreenState extends State<InAppCameraScreen>
                   ),
                 ),
               ],
-            ),
             ),
           ),
         );
