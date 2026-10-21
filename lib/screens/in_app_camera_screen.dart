@@ -29,18 +29,20 @@ class _InAppCameraScreenState extends State<InAppCameraScreen>
   bool _isFrontCamera = false;
   bool _isFlashOn = false;
 
-  /// 카메라를 못 열었을 때의 **폴백** 프레임 비율(가로/세로).
+  /// **가이드 프레임**의 가로/세로 비율(세로로 긴 영수증 모양).
   ///
-  /// 🔴 #149 — 고정값을 계약으로 쓰면 안 된다.
-  ///    `ResolutionPreset.max` 는 해상도만 보장하고 비율은 보장하지
-  ///    않아서, 프리뷰가 16:9 인 기기에서는 0.75 고정이 1.33배 확대를
-  ///    만든다. 그래서 실제로는 [_liveAspect] 를 쓴다.
+  /// 🔴 #150 — 이 값은 화면에 그리는 사각형 모양일 뿐이고,
+  ///    프리뷰 영상의 크기나 화각과는 무관하다. 섞지 말 것.
   ///    자세한 설명은 `ScanCameraDsScreen.frameAspect` 주석에 있다.
-  static const double _frameAspect = 0.75;
+  static const double _frameAspect = 0.62;
 
   /// 🔴 #149 지금 실제로 써야 할 프레임 비율. 컨트롤러가 보고하는
   ///    프리뷰 비율을 그대로 쓴다. 프레임과 프리뷰가 같은 비율이어야
   ///    `BoxFit.cover` 가 아무것도 확대하지 않는다.
+  /// 🔴 #150 화면에 실제로 보인 영상 영역의 가로/세로 비율.
+  /// 세로 우선 배치라 좌우가 잘릴 수 있어, 저장본도 같은 영역이어야 한다.
+  double _shownAspect = 0;
+
   double get _liveAspect {
     final c = _controller;
     if (c == null || !c.value.isInitialized) return _frameAspect;
@@ -454,32 +456,54 @@ class _InAppCameraScreenState extends State<InAppCameraScreen>
       );
     }
 
-    // 🔴 화각 계약 — `scan_camera_ds_screen.dart` 와 **똑같은 규칙**을 쓴다.
+    // 🔴 #150 화각 계약 — `scan_camera_ds_screen.dart` 와 같은 규칙.
     //
-    // 직전 버전은 `BoxFit.contain` + 센서 비율로 프리뷰를 그렸다. 화각은
-    // 정직해졌지만 프레임이 시안보다 훨씬 작아졌다("왜 갑자기 작아졌어?").
+    // **프리뷰와 가이드 프레임은 크기가 다르다.** 묶지 말 것.
+    //   프리뷰 : 센서 비율 그대로(contain) → 확대 0
+    //   가이드 : 그 위에 얹는 세로로 긴 사각형 → 영수증 맞추기 쉬움
     //
-    // 이제는 시안 비율([_frameAspect])로 프레임을 슬롯에 꽉 채우고,
-    // 프리뷰를 `BoxFit.cover` 로 채우고, 찍힌 JPEG 를 같은 비율로 잘라낸다
-    // (`_cropToFrame`). 화면과 파일이 같아지고 프레임도 커진다.
+    // ⚠️ `FittedBox(fit: BoxFit.cover)` 를 다시 넣지 말 것.
+    //    #147 은 21%, #148 은 16:9 기기에서 33% 확대됐다.
     return LayoutBuilder(
       builder: (context, constraints) {
-        // 🔴 #149 프레임을 실제 프리뷰 비율로 그린다(확대 0).
-        // 🔴 "폭 78% 최소 보장" 보정은 지웠다. 되살리지 말 것.
+        // 🔴 #150 세로 우선. 영수증이 세로로 길어서 세로 길이가 중요하다.
+        //    (가로 우선이면 4:3 기기에서 세로가 짧아진다)
+        //    확대가 아니라, 화면 밖으로 나가는 좌우만 안 보이는 것이다.
         final ar = _liveAspect;
-        var w = constraints.maxWidth;
-        var h = w / ar;
-        if (h > constraints.maxHeight) {
-          h = constraints.maxHeight;
-          w = h * ar;
+        var ph = constraints.maxHeight;
+        var pw = ph * ar;
+        if (pw < constraints.maxWidth) {
+          final tryW = constraints.maxWidth;
+          final tryH = tryW / ar;
+          if (tryH <= constraints.maxHeight) {
+            pw = tryW;
+            ph = tryH;
+          }
         }
-        // 프레임과 같은 비율이라 cover 가 확대할 거리가 없다.
-        final previewW = w;
-        final previewH = w / ar;
-        return Center(
-          child: SizedBox(
-            width: w,
-            height: h,
+        // 🔴 #150 가이드는 **보이는 영역을 최대한 쓴다.**
+        //
+        //   처음엔 가이드를 0.62 비율로 고정했는데, 센서가 좁은 기기
+        //   (19.5:9)에서는 폭이 좁아 가이드 세로가 453dp 밖에 안 됐다.
+        //   영수증은 세로로 긴데 가이드가 짧으면 아무 소용이 없다.
+        //
+        //   그래서 보이는 영역 전체를 가이드로 쓰되, 가로로 너무 넓어
+        //   영수증 모양을 벗어날 때만(비율 > _frameAspect) 폭을 줄인다.
+        //   결과: 어떤 기기에서도 가이드 세로 = 보이는 영역 세로.
+        final visW = pw < constraints.maxWidth ? pw : constraints.maxWidth;
+        final visH = ph < constraints.maxHeight ? ph : constraints.maxHeight;
+        var gw = visW;
+        var gh = visH;
+        if (gw / gh > _frameAspect) {
+          gw = gh * _frameAspect;
+        }
+        _shownAspect = visW / visH;
+        return ClipRect(
+          child: OverflowBox(
+            maxWidth: pw,
+            maxHeight: ph,
+            child: SizedBox(
+            width: pw,
+            height: ph,
             child: Stack(
               fit: StackFit.expand,
               children: [
@@ -487,66 +511,72 @@ class _InAppCameraScreenState extends State<InAppCameraScreen>
                   borderRadius: BorderRadius.circular(18),
                   child: Container(
                     color: const Color(0x0AFFFFFF),
-                    child: FittedBox(
-                      fit: BoxFit.cover,
-                      clipBehavior: Clip.hardEdge,
-                      child: SizedBox(
-                        width: previewW,
-                        height: previewH,
-                        child: CameraPreview(_controller!),
-                      ),
-                    ),
+                    child: CameraPreview(_controller!),
                   ),
                 ),
-                // 시안: 46% 높이 스캔 라인
-                Positioned(
-                  left: 26,
-                  right: 26,
-                  top: h * 0.46,
-                  child: Container(
-                    height: 2,
-                    decoration: const BoxDecoration(
-                      gradient: LinearGradient(colors: [
-                        Color(0x00EE7686),
-                        Color(0xFFEE7686),
-                        Color(0x00EE7686),
-                      ]),
-                    ),
-                  ),
-                ),
-                // 시안: 네 귀퉁이 브래킷
-                for (final c in const [
-                  (false, false),
-                  (false, true),
-                  (true, false),
-                  (true, true),
-                ])
-                  Positioned(
-                    left: c.$1 ? null : 10,
-                    right: c.$1 ? 10 : null,
-                    top: c.$2 ? null : 10,
-                    bottom: c.$2 ? 10 : null,
-                    child: _CornerBracket(right: c.$1, bottom: c.$2),
-                  ),
-                // 시안: 프레임 아래 안내문
-                const Align(
-                  alignment: Alignment.bottomCenter,
-                  child: Padding(
-                    padding: EdgeInsets.only(bottom: 18),
-                    child: Text(
-                      '영수증을 프레임 안에 맞춰주세요',
-                      style: TextStyle(
-                        fontSize: 13.5,
-                        fontWeight: FontWeight.w500,
-                        color: Color(0xB8FFFFFF),
-                        shadows: [
-                          Shadow(color: Color(0xCC000000), blurRadius: 4),
-                        ],
-                      ),
+                // 🔴 #150 가이드 요소는 프리뷰 전체가 아니라
+                //    가이드 사각형(gw x gh) 안에 그린다.
+                Center(
+                  child: SizedBox(
+                    width: gw,
+                    height: gh,
+                    child: Stack(
+                      children: [
+                        // 시안: 46% 높이 스캔 라인
+                        Positioned(
+                          left: 26,
+                          right: 26,
+                          top: gh * 0.46,
+                          child: Container(
+                            height: 2,
+                            decoration: const BoxDecoration(
+                              gradient: LinearGradient(colors: [
+                                Color(0x00EE7686),
+                                Color(0xFFEE7686),
+                                Color(0x00EE7686),
+                              ]),
+                            ),
+                          ),
+                        ),
+                        // 시안: 네 귀퉁이 브래킷
+                        for (final c in const [
+                          (false, false),
+                          (false, true),
+                          (true, false),
+                          (true, true),
+                        ])
+                          Positioned(
+                            left: c.$1 ? null : 10,
+                            right: c.$1 ? 10 : null,
+                            top: c.$2 ? null : 10,
+                            bottom: c.$2 ? 10 : null,
+                            child: _CornerBracket(right: c.$1, bottom: c.$2),
+                          ),
+                        // 시안: 프레임 아래 안내문
+                        const Align(
+                          alignment: Alignment.bottomCenter,
+                          child: Padding(
+                            padding: EdgeInsets.only(bottom: 18),
+                            child: Text(
+                              '영수증을 프레임 안에 맞춰주세요',
+                              style: TextStyle(
+                                fontSize: 13.5,
+                                fontWeight: FontWeight.w500,
+                                color: Color(0xB8FFFFFF),
+                                shadows: [
+                                  Shadow(
+                                      color: Color(0xCC000000), blurRadius: 4),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ),
               ],
+            ),
             ),
           ),
         );
@@ -576,8 +606,8 @@ class _InAppCameraScreenState extends State<InAppCameraScreen>
       final rect = ReceiptImageEditor.coverCropRect(
         imageWidth: size.width,
         imageHeight: size.height,
-        // 🔴 #149 화면에서 보인 비율은 고정 상수가 아니라 _liveAspect 다.
-        previewAspect: _liveAspect,
+        // 🔴 #150 화면에 실제로 보인 영역으로 자른다.
+        previewAspect: _shownAspect > 0 ? _shownAspect : _liveAspect,
         cameraAspect: cameraAspect,
       );
       if (rect.isFull) return shot;

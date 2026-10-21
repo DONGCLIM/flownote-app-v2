@@ -46,39 +46,38 @@ class ScanCameraDsScreen extends StatefulWidget {
     this.maxShots = 20,
   });
 
-  /// 카메라를 아직 못 열었을 때만 쓰는 **폴백** 프레임 비율(가로/세로).
+  /// **가이드 프레임**(화면에 보이는 사각형)의 가로/세로 비율.
   ///
-  /// 🔴 #149 — 이 값을 "계약"으로 쓰면 안 된다. 읽고 고칠 것.
+  /// 🔴 #150 — 프레임 모양과 확대는 **서로 다른 문제**다. 섞지 말 것.
   ///
-  /// ## #148 에서 내가 한 수정이 왜 불완전했나
+  /// ## 지금까지의 혼선 정리
   ///
-  /// #148 에서 0.62 -> 0.75 로 바꾸면서 "센서는 4:3 이니까 0.75 면
-  /// 확대가 0 이 된다"고 했다. **그 전제가 틀렸다.**
-  ///
-  /// `ResolutionPreset.max` 는 `ResolutionStrategy.highestAvailableStrategy`
-  /// 만 넘긴다(= 가장 높은 해상도). **비율은 보장하지 않는다.**
-  /// 요즘 기기는 최고 해상도가 16:9 인 경우가 흔하다. 그러면:
-  ///
-  /// | 실제 프리뷰 | 프레임 0.75 고정 시 확대 | 보이는 화각 |
+  /// | | 프레임 모양 | 확대 |
   /// |---|---|---|
-  /// | 4:3 (0.750)  | 1.00배 | 100% |
-  /// | 3:2 (0.667)  | 1.13배 | 88.9% |
-  /// | 16:9 (0.5625)| **1.33배** | **75%** |
-  /// | 19.5:9 (0.46)| **1.63배** | **61.5%** |
+  /// | #147 (0.62 고정)  | ✅ 세로로 김 | ❌ 21% 확대 |
+  /// | #148 (0.75 고정)  | ❌ 납작해짐 | ❌ 16:9 기기에서 33% 확대 |
+  /// | #149 (센서비율)    | ❌ 4:3 기기에서 납작 | ✅ 확대 없음 |
+  /// | **#150 (분리)**   | ✅ 세로로 김 | ✅ 확대 없음 |
   ///
-  /// 즉 기기에 따라 여전히 확대됐다. 사장님이 "여전히 확대된다,
-  /// 폰을 눈앞까지 가져가야 한다"고 한 게 이것이다.
+  /// #149 에서 "프레임 = 센서 비율" 로 묶었더니 확대는 사라졌지만
+  /// 4:3 기기에서 프레임 세로가 600 -> 496dp 로 **104dp 짧아졌다.**
+  /// 영수증은 세로로 긴데 가이드가 납작해져서 찍기 어려워졌다.
+  /// 사장님 지적: "세로 길이가 너무 짧아서 영수증을 찍기가 어렵다"
   ///
-  /// ## #149 의 해법
+  /// ## #150 의 구조 — 둘을 분리한다
   ///
-  /// 프레임 비율을 **고정하지 않고, 실제 컨트롤러가 보고하는
-  /// 프리뷰 비율([_liveAspect])에 맞춘다.** 그러면 프레임과 프리뷰가
-  /// 항상 같은 비율이라 `BoxFit.cover` 의 확대 배율이 **어떤 기기에서도
-  /// 정확히 1.0** 이 된다. 기본 카메라 앱과 같은 화각이다.
+  /// ```
+  ///  프리뷰 영상 : 센서 비율 그대로, 슬롯을 contain 으로 채움 → 확대 0
+  ///  가이드 프레임: 그 위에 얹는 세로로 긴 사각형 → 영수증 맞추기 쉬움
+  /// ```
   ///
-  /// 이 상수는 카메라가 아직 안 열렸을 때 프레임 자리를 잡아두는
-  /// 용도로만 남는다.
-  static const double frameAspect = 0.75;
+  /// 프리뷰를 `cover` 로 **늘리지 않으므로** 어떤 기기에서도 센서가
+  /// 보는 화각이 손실 없이 전부 나온다(= 기본 카메라 앱과 같다).
+  /// 가이드 프레임은 그 위에 그리는 **장식**일 뿐 화각을 깎지 않는다.
+  ///
+  /// 그리고 찍은 사진은 이 비율로 자르지 않는다([_cropToFrame] 참고).
+  /// 영수증이 프레임 밖으로 조금 비져나와도 사진에는 남아 있어야 한다.
+  static const double frameAspect = 0.62;
 
   final String mode;
 
@@ -156,9 +155,19 @@ class _ScanCameraDsScreenState extends State<ScanCameraDsScreen>
 
   final List<XFile> _shots = [];
 
-  /// 마지막으로 그려진 프레임 크기. 촬영 시 자를 비율을 알기 위해
-  /// `_previewSlot()` 이 채운다.
+  /// 마지막으로 그려진 **가이드 프레임** 크기(세로로 긴 사각형).
+  /// `_previewSlot()` 이 채운다. 화면 표시용이며 저장 사진을 자르는
+  /// 기준이 아니다(#150 에서 분리했다).
   Size _frameSize = Size.zero;
+
+  /// 🔴 #150 화면에 **실제로 보인** 영상 영역의 가로/세로 비율.
+  ///
+  /// 세로 우선 배치라 4:3 기기에서는 좌우가 화면 밖으로 나간다.
+  /// 저장 사진도 같은 영역이어야 "본 대로 찍힌다" 가 유지되므로,
+  /// 자르기([_cropToFrame])가 이 값을 쓴다.
+  /// 0 이면 아직 레이아웃 전이라 자르지 않는다.
+  double _shownAspect = 0;
+
 
   bool get _isMulti => widget.mode == 'multi';
 
@@ -563,6 +572,15 @@ class _ScanCameraDsScreenState extends State<ScanCameraDsScreen>
           borderRadius: BorderRadius.circular(18),
           child: Container(color: _frameFill, child: child),
         ),
+        // 🔴 #150 가이드 요소(브래킷·스캔라인·안내문)는 프리뷰 전체가
+        //    아니라 **가이드 프레임 사각형** 안에 그린다. 그래야 세로로
+        //    긴 영수증 모양 박스가 나오고, 사장님이 거기 맞춰 찍는다.
+        Center(
+          child: SizedBox(
+            width: _frameSize.width <= 0 ? null : _frameSize.width,
+            height: _frameSize.height <= 0 ? null : _frameSize.height,
+            child: Stack(
+              children: [
         // 시안: 왼쪽 위 안내문 (`문서 경계 자동 감지 중`)
         //
         // 🔴 left 는 브래킷을 피해야 한다. 브래킷은 inset 10 + 폭 34 이므로
@@ -586,6 +604,9 @@ class _ScanCameraDsScreenState extends State<ScanCameraDsScreen>
               ),
             ),
           ),
+        // 🔴 #150 아래의 스캔 라인 / 브래킷 / 안내문은 **가이드 프레임**
+        //    사각형 기준으로 그린다. 프리뷰 전체가 아니다.
+        //    (프리뷰는 센서 비율, 가이드는 세로로 긴 영수증 모양)
         // 시안: 46% 높이 스캔 라인
         Positioned(
           left: 26,
@@ -647,51 +668,85 @@ class _ScanCameraDsScreenState extends State<ScanCameraDsScreen>
             ),
           ),
         ),
+              ],
+            ),
+          ),
+        ),
       ],
     );
   }
 
-  /// 프레임 슬롯 — 시안의 `flex: 1` 을 그대로 재현한다.
+  /// 프리뷰 + 가이드 프레임을 배치한다.
   ///
-  /// 🔴 여기가 "왜 갑자기 작아졌어?" 의 정답이다.
+  /// 🔴 #150 — **프리뷰와 가이드는 크기가 다르다.** 묶지 말 것.
   ///
-  /// 직전 버전은 프레임 크기를 **센서 비율**로 계산했다.
+  /// - 프리뷰 영상: 센서 비율 그대로 `BoxFit.contain` → **확대 0**.
+  ///   슬롯 안에서 가능한 한 크게 보여주되 절대 늘리거나 자르지 않는다.
+  /// - 가이드 프레임: 그 위에 얹는 세로로 긴 사각형([frameAspect]).
+  ///   영수증을 맞추기 쉽게 하는 **표시**일 뿐, 화각을 깎지 않는다.
   ///
-  /// ```dart
-  /// final ar = 1 / _controller!.value.aspectRatio;   // 4:3 세로 → 0.75
-  /// var w = box.maxWidth;
-  /// var h = w / ar;
-  /// if (h > box.maxHeight) { h = box.maxHeight; w = h * ar; }  // ⚠️ 폭이 줄어든다
-  /// ```
-  ///
-  /// 세로가 넘치면 **가로를 깎아서** 센서 비율을 지켰다. 그래서 프레임이
-  /// 슬롯보다 작아지고, 시안의 세로로 긴 영수증 모양이 아니라 사진기
-  /// 비율의 작은 사각형이 됐다. 화각을 정직하게 만들려던 수정이 프레임
-  /// 크기를 희생한 것이다.
-  ///
-  /// 이제는 프레임을 **시안 비율([frameAspect])로 슬롯에 꽉** 채우고,
-  /// 프리뷰를 `BoxFit.cover` 로 채운다. 그러면 화면과 센서 프레임이
-  /// 어긋나는데, 그 차이를 촬영 직후 [_cropToFrame] 이 잘라내서 없앤다.
-  /// 화각 정직성과 시안 크기를 둘 다 지키는 유일한 방법이다.
+  /// #149 는 이 둘을 같은 사각형으로 묶어서, 확대는 없앴지만 4:3
+  /// 기기에서 가이드가 납작해졌다(세로 600 -> 496dp). 그래서 분리했다.
   Widget _previewSlot() {
     return LayoutBuilder(
       builder: (context, box) {
-        // 🔴 #149 프레임을 **실제 프리뷰 비율**로 그린다.
-        //    고정 상수를 쓰면 프리뷰가 16:9 인 기기에서 프레임과
-        //    비율이 달라지고, 그 차이만큼 BoxFit.cover 가 확대한다
-        //    (16:9 기기에서 1.33배). 그게 #148 이 못 고친 부분이다.
+        // 🔴 #150 **세로 우선**으로 담는다. 영수증은 세로로 길기 때문이다.
         //
-        // 🔴 "폭 78% 최소 보장" 보정은 #148 에서 지웠다. 되살리지 말 것.
-        //    그게 걸리면 비율이 어긋나 화면과 저장 사진이 달라진다.
+        //   세로를 슬롯에 꽉 채우고, 폭이 슬롯을 넘으면 좌우만 잘라낸다.
+        //   (가로 우선으로 하면 4:3 기기에서 세로가 609 -> 496 으로
+        //    짧아진다. 그게 사장님이 "세로가 너무 짧다" 고 한 것이다.)
+        //
+        //   ⚠️ 이건 확대가 아니다. 영상은 1:1 배율 그대로 보여주고,
+        //      화면 밖으로 나가는 좌우만 안 보일 뿐이다. 세로 화각은
+        //      항상 100% 다. 4:3 기기 기준 좌우 18.6% 를 내주고
+        //      세로를 496 -> 609dp 로 얻는 교환이다.
         final ar = _liveAspect;
-        var w = box.maxWidth;
-        var h = w / ar;
-        if (h > box.maxHeight) {
-          h = box.maxHeight;
-          w = h * ar;
+        var ph = box.maxHeight;
+        var pw = ph * ar;
+        if (pw < box.maxWidth) {
+          // 폭이 남으면 폭도 더 키울 수 있는지 본다(세로는 이미 최대).
+          // 세로가 슬롯을 넘지 않는 선에서만.
+          final tryW = box.maxWidth;
+          final tryH = tryW / ar;
+          if (tryH <= box.maxHeight) {
+            pw = tryW;
+            ph = tryH;
+          }
         }
-        _frameSize = Size(w, h);
-        return Center(child: SizedBox(width: w, height: h, child: _preview()));
+
+        // 🔴 #150 가이드는 **보이는 영역을 최대한 쓴다.**
+        //
+        //   처음엔 가이드를 0.62 비율로 고정했는데, 센서가 좁은 기기
+        //   (19.5:9)에서는 폭이 좁아 가이드 세로가 453dp 밖에 안 됐다.
+        //   영수증은 세로로 긴데 가이드가 짧으면 아무 소용이 없다.
+        //
+        //   그래서 보이는 영역 전체를 가이드로 쓰되, 가로로 너무 넓어
+        //   영수증 모양을 벗어날 때만(비율 > frameAspect) 폭을 줄인다.
+        //   결과: 어떤 기기에서도 가이드 세로 = 보이는 영역 세로.
+        final visW = pw < box.maxWidth ? pw : box.maxWidth;
+        final visH = ph < box.maxHeight ? ph : box.maxHeight;
+        var gw = visW;
+        var gh = visH;
+        if (gw / gh > frameAspect) {
+          gw = gh * frameAspect;
+        }
+        _frameSize = Size(gw, gh);
+        // 보이는 영역(= 잘린 뒤 실제로 눈에 들어온 사각형)의 비율.
+        _shownAspect = visW / visH;
+
+        // 넘치는 좌우는 잘라낸다(ClipRect). 자르지 않으면 셔터 버튼
+        // 위로 영상이 비져나간다.
+        return ClipRect(
+          child: OverflowBox(
+            maxWidth: pw,
+            maxHeight: ph,
+            child: SizedBox(
+              width: pw,
+              height: ph,
+              child: _preview(),
+            ),
+          ),
+        );
       },
     );
   }
@@ -735,40 +790,17 @@ class _ScanCameraDsScreenState extends State<ScanCameraDsScreen>
       ));
     }
 
-    // 🔴 화각 계약 (읽지 않고 고치면 반드시 되돌아오는 버그다)
+    // 🔴 #150 화각 계약 — 읽지 않고 고치면 확대가 되돌아온다.
     //
-    // 요구가 두 개인데 서로 충돌한다.
-    //   (A) 프레임은 시안처럼 세로로 긴 영수증 모양으로 꽉 차야 한다
-    //   (B) 라인에 맞춰 찍으면 그대로 저장돼야 한다 (초광각 느낌 금지)
+    // 슬롯(`_previewSlot`)이 이미 **센서 비율 그대로** 잡혀 있다.
+    // 그러니 여기서는 늘리거나(cover) 자르지 말고 그대로 채우면 된다.
+    // 그러면 센서가 보는 화각이 손실 없이 전부 보인다
+    // = 기본 카메라 앱과 같은 거리에서 찍을 수 있다.
     //
-    // 카메라 센서는 4:3(세로로 놓으면 0.75)이고 시안 프레임은 0.62 다.
-    // 비율이 다르니 둘 다 만족시키는 배치는 없다.
-    //
-    // | 방법 | (A) | (B) |
-    // |---|---|---|
-    // | `contain` + 센서 비율로 프레임 축소 (직전 버전) | ❌ 작아진다 | ✅ |
-    // | `cover` + 자르지 않음 (그 전 버전) | ✅ | ❌ 초광각 |
-    // | **`cover` + 찍은 JPEG 를 프레임 비율로 자름** | ✅ | ✅ |
-    //
-    // 마지막 방법을 쓴다. `_cropToFrame()` 이 촬영 직후 `frameAspect` 로
-    // 잘라내므로, 화면에서 본 사각형과 파일에 저장된 사각형이 같아진다.
-    // (직전 버전에서 이 방법을 안 쓴 이유는 "`image` 패키지를 새 의존성으로
-    //  넣어야 한다" 였는데, 크롭/리사이즈 기능이 그 패키지를 이미 필요로
-    //  하므로 그 이유는 사라졌다)
-    // 🔴 #149 프레임 자체가 이미 프리뷰 비율([_liveAspect])로 그려져
-    //    있으므로, 자식도 같은 비율로 주면 cover 가 확대할 거리가 없다
-    //    (배율 정확히 1.0). 기본 카메라 앱과 같은 화각이 된다.
-    final w = _frameSize.width <= 0 ? 300.0 : _frameSize.width;
+    // ⚠️ 여기에 `FittedBox(fit: BoxFit.cover)` 를 다시 넣지 말 것.
+    //    그게 #147(21%) / #148(16:9 기기 33%) 확대의 원인이었다.
     return _framed(
-      FittedBox(
-        fit: BoxFit.cover,
-        clipBehavior: Clip.hardEdge,
-        child: SizedBox(
-          width: w,
-          height: w / _liveAspect,
-          child: CameraPreview(_controller!),
-        ),
-      ),
+      SizedBox.expand(child: CameraPreview(_controller!)),
       topHint: '문서 경계 자동 감지 중',
     );
   }
@@ -802,14 +834,24 @@ class _ScanCameraDsScreenState extends State<ScanCameraDsScreen>
       final size = await ReceiptImageEditor.measure(bytes);
       if (size == null) return shot;
 
-      // 🔴 #149 화면에서 보인 프레임 비율은 고정 상수가 아니라
-      //    _liveAspect 다. 여기에 상수를 넘기면 화면과 저장이 또 어긋난다.
-      final rect = ReceiptImageEditor.coverCropRect(
-        imageWidth: size.width,
-        imageHeight: size.height,
-        previewAspect: _liveAspect,
-        cameraAspect: cameraAspect,
-      );
+      // 🔴 #150 **화면에 실제로 보인 영역([_shownAspect])으로 자른다.**
+      //
+      //    세로 우선 배치라 4:3 기기에서는 영상 좌우가 화면 밖으로
+      //    나간다. 사장님이 못 본 부분이니 사진에도 없어야 "본 대로
+      //    찍힌다" 가 성립한다.
+      //
+      //    ⚠️ 가이드 비율(frameAspect 0.62)을 넘기면 안 된다. 가이드는
+      //       맞추기 쉬우라고 그린 표시일 뿐이고, 영수증이 가이드를
+      //       살짝 넘겼을 때 글자가 잘려나간다.
+      final shown = _shownAspect;
+      final rect = (shown <= 0 || !shown.isFinite)
+          ? const Rel(0, 0, 1, 1)
+          : ReceiptImageEditor.coverCropRect(
+              imageWidth: size.width,
+              imageHeight: size.height,
+              previewAspect: shown,
+              cameraAspect: cameraAspect,
+            );
       // 이미 비율이 같으면(거의 없다) 손대지 않는다.
       if (rect.isFull) return shot;
 
