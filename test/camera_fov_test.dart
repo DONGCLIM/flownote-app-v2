@@ -699,4 +699,87 @@ void main() {
           reason: '$w x $h 에서 세로를 ${(ph / usableH * 100).round()}% 밖에 못 채웠다');
     }
   });
+
+  // ───────────────────────────────────────────────────────────────────
+  // 🔴 #154-b  플러그인 CameraPreview 내부의 같은 버그를 무력화해 둔다
+  //
+  // `camera-0.11.1/lib/src/camera_preview.dart:28-31` 에는 우리가 #154 에서
+  // 고친 것과 **똑같은 방향 뒤집힘 버그**가 들어 있다.
+  //
+  //   return AspectRatio(
+  //     aspectRatio: _isLandscape()
+  //         ? controller.value.aspectRatio
+  //         : (1 / controller.value.aspectRatio),   // ← 세로형 previewSize 에서 1.778
+  //
+  // 즉 우리 쪽 `_liveAspect` 만 고쳐도, CameraPreview 가 스스로 가로 비율을
+  // 적용해 버리면 프레임이 다시 눕는다.
+  //
+  // 다행히 `RenderAspectRatio._applyAspectRatio` 는 이렇게 시작한다
+  // (`flutter/lib/src/rendering/proxy_box.dart`):
+  //
+  //   if (constraints.isTight) {
+  //     return constraints.smallest;     // ← aspectRatio 를 통째로 무시
+  //   }
+  //
+  // 그래서 CameraPreview 에게 **타이트한 제약**을 주면 내부 AspectRatio 가
+  // 무력화되고, 우리가 계산한 pw x ph 가 그대로 쓰인다.
+  //
+  // ⚠️ 아래 래핑을 느슨하게(예: `Align`, `Center`, 제약 없는 `Column` 자식)
+  //    바꾸면 플러그인의 1/a 가 되살아나 프레임이 가로로 눕는다.
+  // ───────────────────────────────────────────────────────────────────
+
+  test('🔴 #154-b 타이트 제약이면 AspectRatio 는 무시된다 (플러그인 1/a 무력화 근거)',
+      () {
+    final f = File('/home/user/flutter/packages/flutter/lib/src/'
+        'rendering/proxy_box.dart');
+    if (!f.existsSync()) return; // SDK 경로가 다른 환경에서는 건너뛴다
+    final code = f.readAsStringSync();
+    final i = code.indexOf('Size _applyAspectRatio(');
+    expect(i, greaterThan(0), reason: 'RenderAspectRatio 구현을 못 찾았다');
+    final body = code.substring(i, i + 1200);
+    expect(body.contains('constraints.isTight'), isTrue,
+        reason: 'AspectRatio 가 더이상 타이트 제약을 그냥 통과시키지 않는다 — '
+            'CameraPreview 래핑 전략을 다시 검토해야 한다');
+    expect(body.contains('return constraints.smallest;'), isTrue,
+        reason: '타이트 제약에서 aspectRatio 를 무시한다는 보장이 사라졌다');
+  });
+
+  test('🔴 #154-b 플러그인 CameraPreview 에 방향 뒤집힘 식이 실제로 들어 있다', () {
+    final dirs = Directory('/home/user/.pub-cache/hosted/pub.dev')
+        .listSync()
+        .whereType<Directory>()
+        .where((d) => d.path.split('/').last.startsWith('camera-'))
+        .toList();
+    if (dirs.isEmpty) return; // pub-cache 가 없는 환경에서는 건너뛴다
+    final f = File('${dirs.first.path}/lib/src/camera_preview.dart');
+    if (!f.existsSync()) return;
+    final code = f.readAsStringSync();
+    // 이 식이 사라졌다면(플러그인이 고쳐졌다면) 우리 래핑 주석을 갱신해야 한다.
+    expect(code.contains('1 / controller.value.aspectRatio'), isTrue,
+        reason: '플러그인이 방향 버그를 고쳤다 — 우리 쪽 주석/래핑을 재검토할 것');
+  });
+
+  test('🔴 #154-b 두 카메라 화면 모두 CameraPreview 를 타이트하게 감싼다', () {
+    // scan 쪽: SizedBox.expand 가 자식에게 타이트 제약을 준다.
+    final scan = File('lib/screens/ds/scan_camera_ds_screen.dart')
+        .readAsStringSync();
+    expect(
+        RegExp(r'SizedBox\.expand\(\s*child:\s*CameraPreview\(')
+            .hasMatch(scan),
+        isTrue,
+        reason: 'scan 화면이 CameraPreview 를 느슨하게 감쌌다 — '
+            '플러그인의 1/a 가 되살아나 프레임이 가로로 눕는다');
+
+    // in_app 쪽: SizedBox(width/height) -> Stack(fit: StackFit.expand) 체인.
+    final inApp =
+        File('lib/screens/in_app_camera_screen.dart').readAsStringSync();
+    final j = inApp.indexOf('CameraPreview(_controller!)');
+    expect(j, greaterThan(0), reason: 'in_app 화면의 CameraPreview 를 못 찾았다');
+    final before = inApp.substring(0, j);
+    expect(before.contains('fit: StackFit.expand'), isTrue,
+        reason: 'in_app 화면의 CameraPreview 상위에 타이트 제약이 사라졌다');
+    expect(RegExp(r'width:\s*pw,\s*\n\s*height:\s*ph,').hasMatch(before),
+        isTrue,
+        reason: 'in_app 화면이 계산한 pw x ph 를 더이상 고정하지 않는다');
+  });
 }
