@@ -43,12 +43,19 @@ class _InAppCameraScreenState extends State<InAppCameraScreen>
   /// 세로 우선 배치라 좌우가 잘릴 수 있어, 저장본도 같은 영역이어야 한다.
   double _shownAspect = 0;
 
+  /// 🔴 #154 **세로 기준**으로 정규화한다. `1 / aspectRatio` 는
+  ///    previewSize 가 세로형으로 오는 기기에서 1.78 이 되어 프레임이
+  ///    가로로 누웠다. 자세한 설명은 `ScanCameraDsScreen` 쪽 주석 참고.
   double get _liveAspect {
     final c = _controller;
     if (c == null || !c.value.isInitialized) return _frameAspect;
-    final a = c.value.aspectRatio;
-    if (a <= 0 || !a.isFinite) return _frameAspect;
-    return 1 / a;
+    final ps = c.value.previewSize;
+    if (ps == null) return _frameAspect;
+    final w = ps.width, h = ps.height;
+    if (w <= 0 || h <= 0 || !w.isFinite || !h.isFinite) return _frameAspect;
+    final shortSide = w < h ? w : h;
+    final longSide = w < h ? h : w;
+    return shortSide / longSide;
   }
 
   // 연속 촬영 시 찍은 사진 목록
@@ -587,10 +594,14 @@ class _InAppCameraScreenState extends State<InAppCameraScreen>
       //    프리셋에 따라 프리뷰가 사진과 다른 비율일 수 있다. 예를 들어
       //    사진은 4:3 으로 찍힐 수 있어서, 프리뷰가 이미 촬영본의 중앙
       //    일부만 보여주고 있다. coverCropRect 가 그 몫까지 계산한다.
+      // 🔴 #154 여기도 방향 뒤집힘 버그가 있었다.
+      //    `1 / c.value.aspectRatio` 는 previewSize 가 세로형으로 오는
+      //    기기에서 1.78 이 되어, 자르기가 가로 기준으로 계산됐다.
+      //    _liveAspect 가 이미 세로 기준으로 정규화하므로 그걸 쓴다.
       final c = _controller;
       final double? cameraAspect =
           (c != null && c.value.isInitialized && c.value.previewSize != null)
-              ? 1 / c.value.aspectRatio
+              ? _liveAspect
               : null;
 
       final size = await ReceiptImageEditor.measure(bytes);

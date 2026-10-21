@@ -604,4 +604,99 @@ void main() {
     expect(iac.contains('static const double _frameAspect = 0.62;'), isTrue);
     expect(0.62, lessThan(1.0), reason: '세로가 가로보다 길어야 영수증 모양이다');
   });
+
+  // ─────────────────────────────────────────────────────────────
+  // 🔴 #154 "프레임이 가로로 나온다"
+  //
+  // camera 패키지의 정의:
+  //   double get aspectRatio => previewSize!.width / previewSize!.height;
+  //
+  // previewSize 는 기기/플러그인에 따라 가로형으로도 세로형으로도 온다.
+  // 내 예전 코드 `1 / aspectRatio` 는 "항상 가로형" 이라는 검증 안 된
+  // 가정이었고, 세로형으로 오는 기기에서 비율이 뒤집혔다.
+  //
+  //   previewSize 1920x1080 -> aspectRatio 1.778 -> 1/a = 0.562  세로 ✅
+  //   previewSize 1080x1920 -> aspectRatio 0.562 -> 1/a = 1.778  가로 ❌
+  //
+  // 고침: 짧은변/긴변 으로 정규화해 방향에 의존하지 않게 한다.
+  // ─────────────────────────────────────────────────────────────
+
+  /// #154 의 정규화를 그대로 재현한다.
+  double liveAspect(double w, double h) {
+    final shortSide = w < h ? w : h;
+    final longSide = w < h ? h : w;
+    return shortSide / longSide;
+  }
+
+  test('🔴 #154 previewSize 방향이 어느 쪽이든 세로로 긴 비율이 나온다', () {
+    // 같은 센서를 가로형/세로형으로 보고해도 결과가 같아야 한다.
+    expect(liveAspect(1920, 1080), closeTo(0.5625, 1e-9));
+    expect(liveAspect(1080, 1920), closeTo(0.5625, 1e-9));
+    expect(liveAspect(4000, 3000), closeTo(0.75, 1e-9));
+    expect(liveAspect(3000, 4000), closeTo(0.75, 1e-9));
+
+    // 전부 1 보다 작아야 한다 = 세로로 길다.
+    for (final (w, h) in const [
+      (1920.0, 1080.0),
+      (1080.0, 1920.0),
+      (4000.0, 3000.0),
+      (3000.0, 4000.0),
+    ]) {
+      expect(liveAspect(w, h), lessThan(1.0),
+          reason: '$w x $h 에서 비율이 1 이상이면 프레임이 가로로 눕는다');
+    }
+  });
+
+  test('🔴 #154 예전 계산은 세로형 입력에서 가로로 뒤집혔다 (되돌리지 말 것)', () {
+    // 되돌렸을 때 무슨 일이 벌어지는지 숫자로 박아 둔다.
+    double old(double w, double h) => 1 / (w / h);
+    expect(old(1920, 1080), closeTo(0.5625, 1e-9)); // 가로형 입력 -> 정상
+    expect(old(1080, 1920), closeTo(1.7778, 1e-3)); // 세로형 입력 -> 가로로 누움
+    expect(old(1080, 1920), greaterThan(1.0),
+        reason: '이 1.78 이 사장님이 본 가로 프레임이었다');
+  });
+
+  test('🔴 #154 두 카메라 화면이 방향에 의존하지 않게 계산한다', () {
+    for (final path in const [
+      'lib/screens/ds/scan_camera_ds_screen.dart',
+      'lib/screens/in_app_camera_screen.dart',
+    ]) {
+      final code = File(path)
+          .readAsLinesSync()
+          .map((l) => l.trim())
+          .where((l) => !l.startsWith('//') && !l.startsWith('///'))
+          .join('\n');
+
+      // 짧은변/긴변 정규화가 있어야 한다.
+      expect(code.contains('return shortSide / longSide;'), isTrue,
+          reason: '$path 가 세로 기준으로 정규화하지 않는다 — '
+              'previewSize 가 세로형인 기기에서 프레임이 가로로 눕는다');
+
+      // 방향 가정에 기대는 예전 식이 남아 있으면 안 된다.
+      expect(code.contains('1 / a;'), isFalse,
+          reason: '$path 에 방향 뒤집힘 버그가 되살아났다');
+      expect(code.contains('1 / c.value.aspectRatio'), isFalse,
+          reason: '$path 의 자르기가 방향 가정에 기대고 있다');
+    }
+  });
+
+  test('🔴 #154 어느 방향으로 와도 화면 폭을 꽉 채운다 (확대 0)', () {
+    // 세로로 긴 비율이므로 폭 기준으로 담으면 화면 폭을 꽉 쓴다.
+    const screenW = 412.0, usableH = 825.0;
+    for (final (w, h) in const [(1920.0, 1080.0), (1080.0, 1920.0)]) {
+      final ar = liveAspect(w, h);
+      var pw = screenW;
+      var ph = pw / ar;
+      if (ph > usableH) {
+        ph = usableH;
+        pw = ph * ar;
+      }
+      // 가로를 자르지 않으므로 확대가 없다.
+      expect(pw, closeTo(screenW, 1e-6),
+          reason: '\$w x \$h 에서 폭이 \$pw 로 깎였다 — 그러면 확대다');
+      // 세로는 화면의 80% 이상 채운다.
+      expect(ph / usableH, greaterThan(0.8),
+          reason: '$w x $h 에서 세로를 ${(ph / usableH * 100).round()}% 밖에 못 채웠다');
+    }
+  });
 }

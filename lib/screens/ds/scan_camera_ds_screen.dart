@@ -100,21 +100,46 @@ class _ScanCameraDsScreenState extends State<ScanCameraDsScreen>
   /// 카메라를 못 열었을 때의 폴백 비율.
   static const double frameAspect = ScanCameraDsScreen.frameAspect;
 
-  /// 🔴 #149 — 지금 이 순간 **실제로** 써야 할 프레임 비율(가로/세로).
+  /// 🔴 #154 지금 실제로 써야 할 **세로 기준** 프리뷰 비율(가로/세로, <1).
   ///
-  /// 컨트롤러가 열려 있으면 그 프리뷰 비율을 그대로 쓴다. 프레임과
-  /// 프리뷰 비율이 같아야 `BoxFit.cover` 가 아무것도 확대하지 않는다.
-  /// 고정 상수를 쓰면 기기마다 비율이 달라 확대가 되살아난다(#148 의 실패).
+  /// ## 프레임이 가로로 누워 버린 버그 (사장님: "가로로 만들라는 게 아니라고")
   ///
-  /// `controller.value.aspectRatio` 는 **가로/세로를 가로가 긴 기준**으로
-  /// 준다(예: 4:3 이면 1.333). 세로로 세운 화면에서 쓰려면 뒤집어야 해서
-  /// `1 / aspectRatio` 로 바꾼다.
+  /// `controller.value.aspectRatio` 는 이렇게 정의돼 있다.
+  ///
+  /// ```dart
+  /// double get aspectRatio => previewSize!.width / previewSize!.height;
+  /// ```
+  ///
+  /// 그런데 `previewSize` 가 **기기/플러그인에 따라 가로형으로도,
+  /// 세로형으로도 온다.**
+  ///
+  /// | previewSize | aspectRatio | 예전 `1 / aspectRatio` | 결과 |
+  /// |---|---|---|---|
+  /// | 1920 x 1080 (가로형) | 1.778 | 0.562 | 세로로 김 ✅ |
+  /// | 1080 x 1920 (세로형) | 0.562 | **1.778** | **가로로 누움 ❌** |
+  ///
+  /// 세로형으로 오는 기기에서 비율이 뒤집혀 프레임이 가로로 누웠다.
+  /// 그게 사장님이 본 "가로 화면" 이다. 내 `1 / a` 는 "항상 가로형으로
+  /// 온다" 는 검증 안 된 가정이었다.
+  ///
+  /// ## 고침 — 방향에 의존하지 않게 정규화한다
+  ///
+  /// 세로로 든 폰에서 영수증을 찍으므로 프리뷰는 **항상 세로로 긴**
+  /// 사각형이어야 한다. 그래서 `짧은 변 / 긴 변` 으로 계산한다.
+  /// 어느 방향으로 오든 결과가 같다(둘 다 0.5625).
+  ///
+  /// ⚠️ `1 / a` 로 되돌리지 말 것. 절반의 기기에서 가로로 눕는다.
   double get _liveAspect {
     final c = _controller;
     if (c == null || !c.value.isInitialized) return frameAspect;
-    final a = c.value.aspectRatio;
-    if (a <= 0 || !a.isFinite) return frameAspect;
-    return 1 / a;
+    final ps = c.value.previewSize;
+    if (ps == null) return frameAspect;
+    final w = ps.width, h = ps.height;
+    if (w <= 0 || h <= 0 || !w.isFinite || !h.isFinite) return frameAspect;
+    // 방향에 상관없이 항상 세로로 긴 비율(<1)을 돌려준다.
+    final shortSide = w < h ? w : h;
+    final longSide = w < h ? h : w;
+    return shortSide / longSide;
   }
   /// `--cool-neutral-10`
   static const _bg = Color(0xFF1B1D22);
@@ -823,10 +848,14 @@ class _ScanCameraDsScreenState extends State<ScanCameraDsScreen>
       //    프리셋에 따라 프리뷰가 사진과 다른 비율일 수 있다. 예를 들어
       //    사진은 4:3 으로 찍힐 수 있어서, 프리뷰가 이미 촬영본의 중앙
       //    일부만 보여주고 있다. coverCropRect 가 그 몫까지 계산한다.
+      // 🔴 #154 여기도 방향 뒤집힘 버그가 있었다.
+      //    `1 / c.value.aspectRatio` 는 previewSize 가 세로형으로 오는
+      //    기기에서 1.78 이 되어, 자르기가 가로 기준으로 계산됐다.
+      //    _liveAspect 가 이미 세로 기준으로 정규화하므로 그걸 쓴다.
       final c = _controller;
       final double? cameraAspect =
           (c != null && c.value.isInitialized && c.value.previewSize != null)
-              ? 1 / c.value.aspectRatio
+              ? _liveAspect
               : null;
 
       final size = await ReceiptImageEditor.measure(bytes);
