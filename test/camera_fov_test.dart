@@ -337,7 +337,13 @@ void main() {
     }
   });
 
-  test('🔴 CameraQuality 는 max 를 첫 후보로 두고 안전망을 갖는다', () {
+  test('🔴 #152 CameraQuality 는 veryHigh(16:9) 를 첫 후보로 둔다', () {
+    // 🔴 #152 에서 방침이 바뀌었다.
+    //    예전(#105)에는 "max 가 센서 비율(4:3)을 그대로 쓰니 첫 후보"
+    //    였다. 그런데 4:3 은 휴대폰 화면보다 납작해서, 확대 없이는
+    //    세로를 67% 밖에 못 채운다(사장님: "화면에 꽉 차게").
+    //    16:9 는 4:3 의 위아래만 잘라낸 것이라 **가로 화각이 같다**
+    //    = 폰을 드는 거리가 같다 = 확대가 아니다. 그래서 16:9 를 쓴다.
     final src = File('lib/services/camera_quality.dart').readAsStringSync();
 
     final i = src.indexOf('presets = <ResolutionPreset>[');
@@ -348,14 +354,16 @@ void main() {
     final very = list.indexOf('ResolutionPreset.veryHigh');
     final high = list.indexOf('ResolutionPreset.high');
 
-    expect(max, greaterThanOrEqualTo(0), reason: 'max 가 목록에 없다');
-    expect(max, lessThan(very),
-        reason: 'max 가 veryHigh 보다 앞에 있어야 한다. '
-            'max 만 aspectRatioStrategy 를 안 넘겨서 센서 비율(4:3)을 '
-            '그대로 쓴다 = 기본 카메라 앱과 같은 화각');
-    expect(very, lessThan(high), reason: 'veryHigh 가 high 보다 앞이어야 한다');
+    expect(very, greaterThanOrEqualTo(0), reason: 'veryHigh 가 목록에 없다');
+    expect(max, greaterThanOrEqualTo(0),
+        reason: 'max 안전망이 사라졌다 — 16:9 를 못 여는 기기가 있다');
+    expect(very, lessThan(high),
+        reason: 'veryHigh(1920x1080) 가 high(1280x720) 보다 앞이어야 한다. '
+            'high 는 짧은 변 720 이 저장 상한 1200 보다 작아 글씨가 뭉갠다');
+    expect(very, lessThan(max),
+        reason: 'max 가 먼저면 기기가 4:3 을 줘서 화면이 다시 납작해진다');
 
-    // 오래된 기기에서 max 가 실패해도 화면이 죽지 않아야 한다.
+    // 오래된 기기에서 첫 후보가 실패해도 화면이 죽지 않아야 한다.
     expect(src.contains('await controller.dispose()'), isTrue,
         reason: '실패한 컨트롤러를 정리하지 않으면 카메라가 잠긴다');
   });
@@ -469,21 +477,86 @@ void main() {
     }
   });
 
-  test('🔴 #151 여백을 줄여 프레임 공간을 확보한다 (확대가 아니라 화면으로)', () {
+  test('🔴 #152 센서에 16:9 를 먼저 요청한다 (꽉 찬 화면 + 확대 0)', () {
+    // 휴대폰 화면(0.45)은 4:3(0.75)보다 훨씬 세로로 길다.
+    // 4:3 로는 확대 없이 세로를 67% 밖에 못 채운다.
+    // 16:9 는 4:3 의 위아래를 잘라낸 것이라 **가로 화각이 같다**
+    // = 폰을 드는 거리가 같다 = 확대가 아니다.
+    final src = File('lib/services/camera_quality.dart').readAsStringSync();
+    final code = src
+        .split('\n')
+        .map((l) => l.trim())
+        .where((l) => !l.startsWith('//') && !l.startsWith('///'))
+        .join('\n');
+
+    final iVeryHigh = code.indexOf('ResolutionPreset.veryHigh');
+    final iMax = code.indexOf('ResolutionPreset.max');
+    expect(iVeryHigh, greaterThanOrEqualTo(0),
+        reason: 'veryHigh(16:9) 후보가 사라졌다');
+    expect(iMax, greaterThanOrEqualTo(0), reason: 'max 안전망이 사라졌다');
+    expect(iVeryHigh, lessThan(iMax),
+        reason: 'max 가 먼저면 기기가 4:3 을 줘서 화면이 다시 납작해진다');
+  });
+
+  test('🔴 #152 16:9 는 가로 화각을 깎지 않는다 (= 확대 아님)', () {
+    // 같은 가로를 유지할 때 16:9 는 4:3 의 위아래만 잘라낸다.
+    const fourThree = 3 / 4; // 0.75
+    const sixteenNine = 9 / 16; // 0.5625
+
+    // 세로 화각 비율 = 75%  (위아래 25% 잘림)
+    expect(sixteenNine / fourThree, closeTo(0.75, 1e-9),
+        reason: '16:9 의 세로 화각은 4:3 의 75% 다');
+
+    // 🔴 가로는 그대로이므로 피사체까지의 거리가 같다.
+    //    영수증은 세로로 길어서 가로 폭이 담기는지가 거리를 결정한다.
+    const screenW = 412.0, usableH = 825.0;
+    for (final (name, ar, fill) in const [
+      ('4:3', 0.75, 0.666),
+      ('16:9', 0.5625, 0.888),
+    ]) {
+      final pw = screenW;
+      final ph = pw / ar;
+      // 어느 쪽도 가로를 자르지 않는다 (확대 0)
+      expect(pw, closeTo(screenW, 1e-9),
+          reason: '$name 에서 가로가 깎였다 — 그러면 확대다');
+      expect(ph / usableH, closeTo(fill, 0.01),
+          reason: '$name 의 세로 채움이 예상과 다르다');
+    }
+  });
+
+  test('🔴 #152 컨트롤을 영상 위에 겹쳐 세로 공간을 영상에 준다', () {
     final ds =
         File('lib/screens/ds/scan_camera_ds_screen.dart').readAsStringSync();
-    // 좌우 여백 0, 상하도 줄였다.
-    expect(ds.contains('EdgeInsets.fromLTRB(0, 12, 0, 20)'), isTrue,
-        reason: '좌우 여백이 되살아나면 프레임이 다시 작아진다');
-    expect(ds.contains('EdgeInsets.symmetric(vertical: 10)'), isTrue,
-        reason: '프리뷰 상하 마진이 되살아나면 세로가 줄어든다');
+    final code = ds
+        .split('\n')
+        .map((l) => l.trim())
+        .where((l) => !l.startsWith('//') && !l.startsWith('///'))
+        .join('\n');
 
-    // 여백을 없앤 효과를 숫자로 고정 (갤럭시 412 기준)
-    const screenW = 412.0;
-    const oldSlotW = screenW - 40; // 좌우 20dp 씩
-    const newSlotW = screenW;
-    expect(newSlotW / oldSlotW, closeTo(1.1075, 1e-3),
-        reason: '여백 제거로 프레임이 약 11% 커진다 — 확대 없이');
+    // 영상이 화면 전체를 슬롯으로 받아야 한다.
+    expect(code.contains('Positioned.fill(child: _previewSlot())'), isTrue,
+        reason: '영상이 화면 전체를 쓰지 않는다 — Column 으로 되돌아가면 '
+            '뱃지/셔터가 영상 공간을 깎아 다시 납작해진다');
+
+    // 셔터가 영상 위에 떠 있어야 한다.
+    expect(RegExp(r'bottom: 24,\s*child: _shutterRow\(\),').hasMatch(code),
+        isTrue,
+        reason: '셔터가 영상 위에 겹쳐 있지 않다');
+  });
+
+  test('🔴 #152 저장 상한(1200px)보다 큰 해상도를 받는다', () {
+    // veryHigh = 1920x1080. 상한 1200 보다 크므로 글씨가 뭉개지지 않는다.
+    // (예전 high = 1280x720 은 720 이 상한보다 작아 문제였다)
+    const veryHighShortSide = 1080;
+    const highShortSide = 720;
+    final src =
+        File('lib/services/receipt_image_editor.dart').readAsStringSync();
+    expect(src.contains('static const int defaultMaxDimension = 1200;'), isTrue,
+        reason: '저장 상한 1200px 은 #105 에서 정한 값이다');
+    expect(veryHighShortSide, lessThan(1200),
+        reason: '짧은 변은 상한보다 작은 게 정상(긴 변 1920 이 상한을 넘는다)');
+    expect(highShortSide, lessThan(veryHighShortSide),
+        reason: 'high 로 떨어지면 해상도가 더 낮아진다');
   });
 
   test('🔴 #151 저장은 화면에 보인 영역과 같다', () {

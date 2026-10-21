@@ -498,17 +498,23 @@ class _ScanCameraDsScreenState extends State<ScanCameraDsScreen>
               onTap: _flip,
             ),
         ],
-        // 🔴 #151 좌우 여백을 없앤다.
-        //    프리뷰를 확대하지 않고(화각 100%) 프레임을 키우려면
-        //    **화면 공간을 더 주는 수밖에 없다.** 좌우 20dp 씩 40dp 를
-        //    되찾으면 갤럭시 기준 프레임이 372x496 -> 412x549 가 된다.
-        //    확대는 그대로 1.0 이다.
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(0, 12, 0, 20),
-          child: Column(
-            children: [
-              // ContentBadge accent (시안 style override)
-              Center(
+        // 🔴 #152 영상이 세로 공간을 전부 쓰도록, 뱃지와 셔터를
+        //    **영상 위에 겹쳐 올린다**(Stack).
+        //
+        //    예전에는 Column 으로 [뱃지][영상][셔터] 를 세로로 쌓아서
+        //    뱃지 24 + 셔터 약 100 + 여백이 영상 공간을 깎았다.
+        //    기본 카메라 앱처럼 컨트롤을 영상 위에 띄우면 그만큼
+        //    영상이 커진다. 확대가 아니라 **화면 공간**으로 키우는 것이다.
+        child: Stack(
+          children: [
+            // 영상 — 화면 전체를 슬롯으로 받는다.
+            Positioned.fill(child: _previewSlot()),
+            // 상단 뱃지 (영상 위에 떠 있다)
+            Positioned(
+              top: 10,
+              left: 0,
+              right: 0,
+              child: Center(
                 child: Container(
                   height: 24,
                   padding: const EdgeInsets.symmetric(horizontal: 7),
@@ -529,18 +535,15 @@ class _ScanCameraDsScreenState extends State<ScanCameraDsScreen>
                   ),
                 ),
               ),
-              // 프리뷰 슬롯. 🔴 #151 상하 마진도 20 -> 10 으로 줄여
-              //    세로 20dp 를 프레임에 돌려준다.
-              Expanded(
-                child: Container(
-                  margin: const EdgeInsets.symmetric(vertical: 10),
-                  child: _previewSlot(),
-                ),
-              ),
-              // 셔터 (시안 72x72)
-              _shutterRow(),
-            ],
-          ),
+            ),
+            // 하단 셔터 (영상 위에 떠 있다)
+            Positioned(
+              left: 20,
+              right: 20,
+              bottom: 24,
+              child: _shutterRow(),
+            ),
+          ],
         ),
       ),
     );
