@@ -358,46 +358,9 @@ void main() {
     test('🔴 종이가 세 장이고 가운데가 맨 앞이다', () {
       final p = ReceiptIllustPainter.papers;
       expect(p.length, 3);
-      // 리스트 순서 = 그리는 순서. 마지막이 맨 앞.
-      expect(p.last.width, greaterThan(p[0].width),
-          reason: '가운데(맨 앞)가 가장 넓어야 한다');
-      expect(p.last.width, greaterThan(p[1].width));
-    });
-
-    test('🔴 종이 기울기가 실측 각도다 (바깥 모서리 직선 피팅)', () {
-      final p = ReceiptIllustPainter.papers;
-      expect(p[0].turn, closeTo(-8.44, 0.01), reason: '왼쪽');
-      expect(p[1].turn, closeTo(7.85, 0.01), reason: '오른쪽');
-      expect(p[2].turn, closeTo(-1.32, 0.01), reason: '가운데');
-      // 서로 다른 방향으로 기울어야 부채처럼 보인다.
-      expect(p[0].turn * p[1].turn, lessThan(0),
-          reason: '좌우가 같은 방향으로 기울면 부채 모양이 안 나온다');
-    });
-
-    test('🔴 제목줄은 코랄, 본문줄은 회색이다 (실측)', () {
-      expect(ReceiptIllustPainter.coralLine, const Color(0xFFFEB7BB));
-      expect(ReceiptIllustPainter.greyLine, const Color(0xFFF2F1F0));
-    });
-
-    test('🔴 줄 위치가 실측 상대값이다', () {
-      expect(ReceiptIllustPainter.lineTops,
-          [0.089, 0.214, 0.312, 0.411, 0.500]);
-      expect(ReceiptIllustPainter.lineWidths.length,
-          ReceiptIllustPainter.lineTops.length);
-      // 가운데 종이는 코랄 1 + 회색 4 = 5줄
-      expect(ReceiptIllustPainter.papers.last.greyLines, 4);
-    });
-
-    test('🔴 글로우가 과하지 않다 (코랄 배경처럼 보이면 안 된다)', () {
-      final code =
-          File('lib/design/fn_receipt_illust.dart').readAsStringSync();
-      // 실측 최대 차이가 R-3 G-12 B-9 → 알파 0x1A 수준.
-      expect(code.contains('Color(0x1AFF6D78)'), isTrue,
-          reason: '글로우 알파가 바뀌었다 — 진하면 코랄 배경처럼 보인다');
-      expect(code.contains('Color(0x33FF6D78)'), isFalse,
-          reason: '처음에 넣었다가 코랄 배경처럼 보였던 그 값이다');
-      // 사방으로 고르게 퍼져야 하므로 BoxShadow 가 아니라 RadialGradient.
-      expect(code.contains('RadialGradient'), isTrue);
+      // 리스트 순서 = 그리는 순서. 마지막(가운데)이 맨 앞.
+      expect(p.last.left, greaterThan(p[0].left), reason: '가운데가 왼쪽보다 오른쪽');
+      expect(p.last.left, lessThan(p[1].left), reason: '가운데가 오른쪽보다 왼쪽');
     });
 
     test('🔴 일러스트는 그림 자산이 아니라 벡터로 그린다', () {
@@ -407,6 +370,157 @@ void main() {
       expect(code.contains('Image.asset'), isFalse,
           reason: 'assets 에 영수증 그림이 없다 — 또 빈칸이 된다');
       expect(code.contains('CustomPaint'), isTrue);
+    });
+  });
+
+  // =====================================================================
+  // 🔴 #159 — 사장님이 지적하신 두 가지.
+  //   1) "옆에 글로우도 너무 어색하게 네모져있거든"
+  //   2) "맨 오른쪽 영수증 이미지 너무 얇고 다르잖아"
+  // 둘 다 내 실측 실수였다. 재발 방지를 위해 불변식으로 고정한다.
+  // =====================================================================
+  group('#159 글로우 네모짐 · 오른쪽 종이 두께', () {
+    /// 🔴 주석을 뺀 **실제 코드만** 돌려준다.
+    /// 왜 이게 필요한가: 이 파일 주석에는 "#158 에서 RadialGradient 를
+    /// 썼다가 네모져 보였다" 같은 경위 설명이 들어 있다. 원문 전체를
+    /// 검사하면 그 설명 문구를 코드 잔재로 잘못 읽어 테스트가 깨진다.
+    String code() {
+      final raw = File('lib/design/fn_receipt_illust.dart').readAsStringSync();
+      return raw
+          .split('\n')
+          .where((l) {
+            final t = l.trimLeft();
+            return !t.startsWith('//');
+          })
+          .join('\n');
+    }
+
+    test('🔴 세 장이 모두 비슷한 크기다 (한 장만 얇으면 안 된다)', () {
+      final p = ReceiptIllustPainter.papers;
+      final ws = p.map((e) => e.width).toList();
+      final minW = ws.reduce((a, b) => a < b ? a : b);
+      final maxW = ws.reduce((a, b) => a > b ? a : b);
+      // 시안 실측: 79.2 / 80.2 / 80.9 px → 편차 1.7px (박스 243px 대비 0.7%)
+      expect(maxW - minW, lessThan(0.02),
+          reason: '#158 에서 오른쪽을 0.1934(47px)로 넣어 "너무 얇다"고 하셨다. '
+              '그건 가려지고 남은 가시 폭이었지 본래 폭이 아니다');
+      // 폭이 절반 수준으로 돌아가는 퇴행을 직접 막는다.
+      for (final w in ws) {
+        expect(w, greaterThan(0.30),
+            reason: '종이 한 장이 다시 얇아졌다');
+      }
+    });
+
+    test('🔴 세 장의 높이도 비슷하다', () {
+      final hs = ReceiptIllustPainter.papers.map((e) => e.height).toList();
+      final minH = hs.reduce((a, b) => a < b ? a : b);
+      final maxH = hs.reduce((a, b) => a > b ? a : b);
+      expect(maxH - minH, lessThan(0.02));
+    });
+
+    test('🔴 기울기가 왼쪽→오른쪽 부채꼴로 단조 감소한다', () {
+      final p = ReceiptIllustPainter.papers;
+      // papers 순서는 [왼쪽, 오른쪽, 가운데] (그리는 순서)
+      final left = p[0], right = p[1], center = p[2];
+      // 시안 실측 (바깥 변 직선 피팅, 잔차 0.30~0.45)
+      //   왼쪽 dx/dy=-0.1599 → +9.08도
+      //   가운데 좌변 -0.0187 / 우변 -0.0136 → +0.93도
+      //   오른쪽 dx/dy=+0.1363 → -7.76도
+      expect(left.turn, closeTo(9.08, 0.01), reason: '왼쪽');
+      expect(center.turn, closeTo(0.93, 0.01), reason: '가운데');
+      expect(right.turn, closeTo(-7.76, 0.01), reason: '오른쪽');
+      // 🔴 #158 에서 세 장 모두 부호가 반대였다. 방향을 명시적으로 고정한다.
+      expect(left.turn, greaterThan(0),
+          reason: '왼쪽 장은 시계 방향으로 기운다');
+      expect(right.turn, lessThan(0),
+          reason: '오른쪽 장은 반시계 방향으로 기운다 — #158 에서 반대였다');
+      // 화면 왼쪽일수록 더 시계 방향 = 부채꼴
+      expect(left.turn, greaterThan(center.turn));
+      expect(center.turn, greaterThan(right.turn));
+    });
+
+    test('🔴 글로우를 사각형으로 칠하지 않는다 (네모진 테두리의 원인)', () {
+      final c = code();
+      // 🔴 #158 은 drawRect + RadialGradient(radius 0.78) 이었다.
+      //    대각선 거리 1.0 까지 가기 전에 사각형에서 잘려 테두리가 보였다.
+      expect(c.contains('drawRect('), isFalse,
+          reason: '사각형을 칠하면 글로우 경계가 네모로 보인다');
+      expect(c.contains('RadialGradient'), isFalse,
+          reason: '방사 그라디언트는 사각 캔버스에서 잘린다');
+      // 대신 종이 실루엣을 블러한다 → 모양이 종이를 따라가므로 각이 안 생긴다.
+      expect(c.contains('MaskFilter.blur'), isTrue);
+      expect(c.contains('glowBlur'), isTrue);
+    });
+
+    test('🔴 글로우가 과하지 않다 (코랄 배경처럼 보이면 안 된다)', () {
+      // 실측 최대 차이가 R-3 G-12 B-9 → 알파 0x1A 수준.
+      expect(ReceiptIllustPainter.glowColor, const Color(0x1AFF6D78),
+          reason: '진하면 코랄 배경처럼 보인다 — #158 에서 이미 겪었다');
+      expect(code().contains('Color(0x33FF6D78)'), isFalse,
+          reason: '처음에 넣었다가 코랄 배경처럼 보였던 그 값이다');
+    });
+
+    test('🔴 글로우 번짐이 충분히 넓다 (좁으면 경계가 드러난다)', () {
+      // 실측: 종이 둘레에서 r 90px(=71dp) 까지 서서히 사라진다.
+      expect(ReceiptIllustPainter.glowBlur, greaterThanOrEqualTo(20.0));
+    });
+
+    test('🔴 줄 색이 시안 실측값이다', () {
+      // 🔴 #158 의 greyLine #F2F1F0(G=241) 은 너무 진했다.
+      //    시안 세로 프로파일상 본문줄은 (250,250,250) 이다.
+      expect(ReceiptIllustPainter.greyLine, const Color(0xFFFAFAFA));
+      // 코랄줄 코어 평균 (250,187,193)
+      expect(ReceiptIllustPainter.coralLine, const Color(0xFFFABBC1));
+    });
+
+    test('🔴 줄 위치·폭·여백이 시안 실측값이다', () {
+      final tops = ReceiptIllustPainter.lineTops;
+      final widths = ReceiptIllustPainter.lineWidths;
+      final lefts = ReceiptIllustPainter.lineLefts;
+      expect(tops, [0.1403, 0.2471, 0.3360, 0.4339, 0.5317]);
+      expect(widths, [0.593, 0.630, 0.532, 0.581, 0.420]);
+      expect(lefts, [0.1286, 0.1533, 0.1409, 0.1409, 0.1409]);
+      expect(widths.length, tops.length);
+      expect(lefts.length, tops.length);
+      // 줄은 위에서 아래로 순서대로 내려가야 한다.
+      for (var i = 1; i < tops.length; i++) {
+        expect(tops[i], greaterThan(tops[i - 1]));
+      }
+      // 가운데 종이는 코랄 1 + 회색 4 = 5줄
+      expect(ReceiptIllustPainter.papers.last.greyLines, 4);
+    });
+
+    test('🔴 줄이 종이 밖으로 삐져나가지 않는다', () {
+      final widths = ReceiptIllustPainter.lineWidths;
+      final lefts = ReceiptIllustPainter.lineLefts;
+      for (var i = 0; i < widths.length; i++) {
+        expect(lefts[i] + widths[i], lessThan(1.0),
+            reason: '$i 번 줄이 종이 오른쪽 밖으로 나간다');
+      }
+      for (final p in ReceiptIllustPainter.papers) {
+        expect(ReceiptIllustPainter.lineTops[p.greyLines], lessThan(1.0));
+      }
+    });
+
+    test('🔴 종이가 일러스트 박스 안에 들어온다', () {
+      for (final p in ReceiptIllustPainter.papers) {
+        expect(p.left, greaterThanOrEqualTo(0.0));
+        expect(p.top, greaterThanOrEqualTo(0.0));
+        expect(p.left + p.width, lessThanOrEqualTo(1.0),
+            reason: '종이가 박스 오른쪽으로 넘친다');
+        expect(p.top + p.height, lessThanOrEqualTo(1.0),
+            reason: '종이가 박스 아래로 넘친다');
+      }
+    });
+
+    test('🔴 세 장이 서로 겹쳐 보인다 (떨어지면 부채가 아니다)', () {
+      final p = ReceiptIllustPainter.papers;
+      final left = p[0], right = p[1], center = p[2];
+      // 가운데가 좌우를 각각 덮어야 한다.
+      expect(center.left, lessThan(left.left + left.width),
+          reason: '가운데와 왼쪽이 떨어져 있다');
+      expect(center.left + center.width, greaterThan(right.left),
+          reason: '가운데와 오른쪽이 떨어져 있다');
     });
   });
 }

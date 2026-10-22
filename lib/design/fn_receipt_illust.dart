@@ -70,29 +70,32 @@ class ReceiptIllustPainter extends CustomPainter {
   ///    처럼 가운데가 좌우를 확실히 덮는다.
   /// 리스트 순서가 곧 쌓이는 순서다 — 가운데가 마지막(맨 앞).
   static const papers = <PaperSpec>[
+    // 왼쪽 — 좌변 피팅 dx/dy=-0.1599 (잔차 0.45, n=69)
     PaperSpec(
-      left: 0.1440,
-      top: 0.2240,
-      width: 0.3045,
-      height: 0.6094,
-      turn: -8.44,
-      // 좌우는 가려져서 줄을 정확히 못 쟀다. 가운데 패턴을 줄여 쓴다.
+      left: 0.1437,
+      top: 0.2519,
+      width: 0.3260,
+      height: 0.5734,
+      turn: 9.08,
+      // 좌우는 가운데 장에 가려져 줄을 다 못 쟀다. 가운데 패턴을 줄여 쓴다.
       greyLines: 3,
     ),
+    // 오른쪽 — 우변 피팅 dx/dy=+0.1363 (잔차 0.30, n=71)
     PaperSpec(
-      left: 0.6580,
-      top: 0.1615,
-      width: 0.1934,
-      height: 0.6094,
-      turn: 7.85,
-      greyLines: 2,
+      left: 0.5238,
+      top: 0.1834,
+      width: 0.3299,
+      height: 0.5802,
+      turn: -7.76,
+      greyLines: 3,
     ),
+    // 가운데 — 맨 앞. 좌변 -0.0187(잔차 0.32) 우변 -0.0136(잔차 0.35)
     PaperSpec(
-      left: 0.3292,
-      top: 0.1458,
-      width: 0.3539,
-      height: 0.6198,
-      turn: -1.32,
+      left: 0.3317,
+      top: 0.1470,
+      width: 0.3329,
+      height: 0.5855,
+      turn: 0.93,
       greyLines: 4,
     ),
   ];
@@ -108,14 +111,29 @@ class ReceiptIllustPainter extends CustomPainter {
   /// | 0.500 | 27.7 | 회색 (짧다) |
   ///
   /// 종이 폭 65.8dp 기준 상대 폭 = .58 .63 .54 .60 .42
-  static const lineTops = <double>[0.089, 0.214, 0.312, 0.411, 0.500];
-  static const lineWidths = <double>[0.58, 0.63, 0.54, 0.60, 0.42];
+  static const lineTops = <double>[0.1403, 0.2471, 0.3360, 0.4339, 0.5317];
+  static const lineWidths = <double>[0.593, 0.630, 0.532, 0.581, 0.420];
 
-  /// 코랄 제목줄 색 (실측 `#FEB7BB`).
-  static const coralLine = Color(0xFFFEB7BB);
+  /// 줄 왼쪽 여백(종이 폭 대비). 코랄줄만 살짝 더 안쪽이다.
+  static const lineLefts = <double>[0.1286, 0.1533, 0.1409, 0.1409, 0.1409];
 
-  /// 회색 본문줄 색 (실측 `#FAFAFA` ~ `#F6F6F6`).
-  static const greyLine = Color(0xFFF2F1F0);
+  /// 코랄 제목줄 색. 시안 코어 평균 (250,187,193) 실측.
+  static const coralLine = Color(0xFFFABBC1);
+
+  /// 회색 본문줄 색.
+  /// 🔴 #159 보정: `#F2F1F0`(G=241) 은 **너무 진했다.**
+  ///    시안 세로 프로파일을 보면 본문줄은 (250,250,250) 으로
+  ///    거의 안 보일 만큼 연하다. 진하면 영수증이 아니라
+  ///    줄공책처럼 보인다.
+  static const greyLine = Color(0xFFFAFAFA);
+
+  /// 글로우 색. 알파는 실측 감쇠(배경 대비 최대 G-12)에 맞춘 값이다.
+  /// 🔴 진하게 넣으면 코랄 배경처럼 보인다 — #158 에서 이미 겪었다.
+  static const glowColor = Color(0x1AFF6D78);
+
+  /// 글로우 번짐 반경(박스 폭 192.7 기준 dp).
+  /// 실측상 종이 둘레에서 r 90px(=71dp) 바깥이면 사실상 0 이 된다.
+  static const double glowBlur = 26.0;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -125,22 +143,40 @@ class ReceiptIllustPainter extends CustomPainter {
     }
   }
 
+  /// 종이 세 장을 **각각 코랄로 칠한 뒤 크게 블러**해서 글로우를 만든다.
+  ///
+  /// 🔴 사각형 + 방사 그라디언트 조합을 쓰면 안 된다. 그라디언트가
+  ///    완전히 투명해지기 전에 사각형 경계에서 잘려 **네모난 테두리**가
+  ///    보인다 (#159 에서 사장님이 지적하신 바로 그 문제).
+  ///    실루엣 블러는 번지는 모양이 종이를 따라가므로 사각 경계가
+  ///    생길 수 없고, 시안처럼 종이 둘레가 가장 진하게 나온다.
+  ///
+  /// 겹치는 부분은 전부 흰 종이에 덮이므로 장마다 따로 그려도 된다.
   void _paintGlow(Canvas canvas, Size size) {
-    final rect = Rect.fromLTWH(0, 0, size.width, size.height);
-    canvas.drawRect(
-      rect,
-      Paint()
-        ..shader = const RadialGradient(
-          center: Alignment(0, 0.05),
-          radius: 0.78,
-          colors: [
-            Color(0x1AFF6D78),
-            Color(0x12FF6D78),
-            Color(0x00FF6D78),
-          ],
-          stops: [0.0, 0.52, 1.0],
-        ).createShader(rect),
-    );
+    final k = size.width / 192.7;
+    // 넓고 연한 번짐 -> 종이 가까이의 조금 진한 번짐 순서.
+    // 두 겹이라야 "둘레가 진하고 바깥으로 길게 사라지는" 시안 느낌이 난다.
+    for (final blur in <double>[glowBlur, glowBlur * 0.45]) {
+      for (final p in papers) {
+        final rect = Rect.fromLTWH(
+          p.left * size.width,
+          p.top * size.height,
+          p.width * size.width,
+          p.height * size.height,
+        );
+        canvas.save();
+        canvas.translate(rect.center.dx, rect.center.dy);
+        canvas.rotate(p.turn * math.pi / 180);
+        canvas.translate(-rect.center.dx, -rect.center.dy);
+        canvas.drawRRect(
+          RRect.fromRectAndRadius(rect, Radius.circular(6.3 * k)),
+          Paint()
+            ..color = glowColor
+            ..maskFilter = MaskFilter.blur(BlurStyle.normal, blur * k),
+        );
+        canvas.restore();
+      }
+    }
   }
 
   void _paintPaper(Canvas canvas, Size size, PaperSpec p) {
@@ -175,11 +211,11 @@ class ReceiptIllustPainter extends CustomPainter {
     );
 
     // 줄 — 0번만 코랄(제목), 나머지는 회색(본문).
-    final padL = rect.left + rect.width * 0.11;
     for (var i = 0; i <= p.greyLines; i++) {
-      final lh = (i == 0 ? 4.0 : 2.4) * k;
+      // 코랄 제목줄은 시안에서 5px 두께(=3.96dp), 본문줄은 2px 수준.
+      final lh = (i == 0 ? 3.96 : 2.0) * k;
       final lineRect = Rect.fromLTWH(
-        padL,
+        rect.left + rect.width * lineLefts[i],
         rect.top + rect.height * lineTops[i],
         rect.width * lineWidths[i],
         lh,
