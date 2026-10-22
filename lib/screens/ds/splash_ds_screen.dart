@@ -7,6 +7,7 @@ import '../../design/fn_fit.dart';
 import '../../design/fn_tokens.dart';
 import '../../providers/auth_provider.dart';
 import 'auth_ds_screens.dart';
+import 'signup_email_ds_screen.dart';
 import '../../services/firebase_status.dart';
 import '../../services/kakao_config.dart';
 import '../../services/pwa_install.dart';
@@ -155,13 +156,16 @@ class _SplashDsScreenState extends State<SplashDsScreen> {
     // 사업자 정보가 없으면 홈에서 온보딩 배너로 안내한다.
   }
 
-  /// 스플래시의 '가입하기' → 회원가입 화면 (약관 동의 포함)
+  /// 스플래시의 '가입하기' → 회원가입 **이메일 단계** 화면.
+  ///
+  /// 🔴 #155 사장님 시안은 이메일부터 따로 묻는다. 예전처럼 곧바로
+  ///    `SignUpDsScreen`(이름·비번·약관 한 판)으로 보내면 시안 1~4번
+  ///    화면이 아예 안 나온다.
   void _signUp() {
     Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) => SignUpDsScreen(
+        builder: (_) => SignupEmailDsScreen(
           initialEmail: _email.text.trim(),
-          initialPassword: _password.text,
         ),
       ),
     );

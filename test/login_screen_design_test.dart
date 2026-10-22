@@ -107,7 +107,15 @@ void main() {
     test('🔴 이메일 로그인 · 회원가입이 남아 있다', () {
       final c = code();
       expect(c.contains('auth.signIn('), isTrue);
-      expect(c.contains('SignUpDsScreen'), isTrue);
+      // 🔴 #155 회원가입 진입점이 **이메일 단계 화면**으로 바뀌었다.
+      //    예전에는 곧바로 `SignUpDsScreen`(이름·비번·약관 한 판)을 열었다.
+      //    둘 중 하나라도 열면 "회원가입이 살아 있다" 로 본다.
+      //    ⚠️ 두 이름 모두 사라지면 가입 자체를 못 하게 된 것이다.
+      expect(
+        c.contains('SignupEmailDsScreen') || c.contains('SignUpDsScreen'),
+        isTrue,
+        reason: '스플래시에서 회원가입으로 가는 길이 사라졌다',
+      );
     });
 
     test('🔴 SNS 로그인 3종이 남아 있다', () {

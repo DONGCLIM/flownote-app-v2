@@ -12,6 +12,7 @@ import '../../services/auth_service.dart';
 import 'auth_unavailable_banner.dart';
 import 'legal_doc_ds_screen.dart';
 import 'onboarding_ds_screens.dart';
+import 'signup_email_ds_screen.dart';
 
 // ═══════════════════════════════════════════════════════════════
 // 공용 — 동의 체크박스 (DS 에 체크박스 위젯이 없어 직접 구성)
@@ -218,8 +219,20 @@ class _SignUpDsScreenState extends State<SignUpDsScreen> {
       final msg = auth.error ?? '회원가입에 실패했습니다.';
       auth.clearError();
 
-      // 이미 가입된 이메일이면 그냥 오류만 띄우지 말고 로그인으로 안내한다.
+      // 🔴 #155 이미 가입된 이메일이면 시안 4번 화면으로 돌려보낸다.
+      //
+      // 이 화면이 `SignupEmailDsScreen`(이메일 단계)에서 열렸다면
+      // `pop(true)` 로 알려주고, 그쪽이 "이미 가입된 이메일이에요" 화면을
+      // 띄운다. 단독으로 열렸다면(예전 경로) 예전처럼 알림창을 띄운다.
+      //
+      // ⚠️ 여기서 바로 SignInDsScreen 으로 바꿔치기하지 말 것.
+      //    그러면 시안 4번 화면(가입된 이메일 카드 + 비밀번호 찾기)이
+      //    영영 안 보인다.
       if (msg.contains('이미 가입')) {
+        if (Navigator.of(context).canPop()) {
+          Navigator.of(context).pop(true);
+          return;
+        }
         final go = await showFnAlert(
           context,
           title: '이미 가입된 이메일이에요',
@@ -580,7 +593,9 @@ class _SignInDsScreenState extends State<SignInDsScreen> {
                   onPressed: () => Navigator.of(context).pushReplacement(
                     MaterialPageRoute(
                       builder: (_) =>
-                          SignUpDsScreen(initialEmail: _email.text.trim()),
+                          // 🔴 #155 시안대로 이메일 단계부터 시작한다.
+                          SignupEmailDsScreen(
+                              initialEmail: _email.text.trim()),
                     ),
                   ),
                 ),
