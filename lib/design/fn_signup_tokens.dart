@@ -156,4 +156,41 @@ class FnSignup {
   /// 입력창 테두리 두께 (평상시 / 오류).
   static const double fieldBorderWidth = 1.0;
   static const double fieldBorderWidthError = 1.4;
+
+  // ── 🔴 #156 비밀번호 단계 / 인증 / 완료 (시안 5장 실측) ──────
+  //
+  // | 항목 | 시안 px | ÷1.26133 | 채택 |
+  // |---|---|---|---|
+  // | 1차 입력창 top | 354 | 280.7 | (#155 와 동일) |
+  // | 2차 입력창 top | 475 | 376.6 | 간격 50 |
+  // | 2차 라벨(오류시) | 473 | 375.0 | — |
+  // | p3 버튼 top | 630 | 499.5 | — |
+  // | 워드마크 | 244x41 | 193.4x32.5 | 높이 32 |
+  //
+  // 워드마크 비율 실측 5.951 은 기존 자산(971/163 = 5.957)과 0.1% 차이라
+  // `FnBrand.wordmarkRatio` 를 그대로 쓴다. 꽃잎이 코랄이므로 `color: true`.
+
+  /// 입력창 두 개 사이 간격. 1차 아래(412) → 2차 라벨(444) = 32px → 25.4dp
+  static const double gapFieldToLabel2 = 24.0;
+
+  /// 비밀번호 단계 버튼 높이. 시안 64px ÷ 1.26133 = 50.74
+  /// (#155 의 63px→49.95 와 사실상 같다. 같은 값으로 통일한다.)
+  static const double gapField2ToButton = 30.0;
+
+  /// 완료 화면 워드마크 높이. 시안 41px ÷ 1.26133 = 32.5
+  static const double doneWordmarkHeight = 32.0;
+
+  /// 완료 화면 워드마크 아래 ~ 헤드라인. 465→514 = 49px → 38.8dp
+  static const double gapWordmarkToHeadline = 34.0;
+
+  /// 휴대폰 인증 화면: 부제 두 줄 아래 ~ 버튼. 302→343 = 41px → 32.5dp
+  static const double gapSubToVerifyButton = 30.0;
+
+  /// 보조(두 번째) 버튼 — 완료 화면의 '사업자등록증 등록하기'.
+  ///
+  /// 🔴 시안에는 코랄 버튼 하나뿐이고 사장님이 "다른 컬러로" 요청하셨다.
+  ///    코랄 연보라/연회색은 톤이 깨지므로, 같은 코랄 계열의 **연한 배경 +
+  ///    코랄 글자** 로 간다. 배경은 코랄을 8% 로 깐 값이다.
+  static const Color secondaryFill = Color(0x14FF6D78);
+  static const Color secondaryFg = Color(0xFFE85C68);
 }

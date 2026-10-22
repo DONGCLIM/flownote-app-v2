@@ -6,6 +6,8 @@ import '../../design/fn_shell.dart';
 import '../../design/fn_signup_tokens.dart';
 import '../../providers/auth_provider.dart';
 import 'auth_ds_screens.dart';
+import 'signup_parts.dart';
+import 'signup_password_ds_screen.dart';
 
 /// 🔴 #155 — 회원가입 1단계: 이메일 입력.
 ///
@@ -139,7 +141,7 @@ class SignupEmailDsScreenState extends State<SignupEmailDsScreen> {
     setState(() => _busy = true);
     final taken = await Navigator.of(context).push<bool>(
       MaterialPageRoute(
-        builder: (_) => SignUpDsScreen(initialEmail: email),
+        builder: (_) => SignupPasswordDsScreen(email: email),
       ),
     );
     if (!mounted) return;
@@ -182,85 +184,26 @@ class SignupEmailDsScreenState extends State<SignupEmailDsScreen> {
 
   // ── 조각들 ───────────────────────────────────────────────
 
-  Text _headline() {
-    final taken = _phase == _Phase.taken;
-    return Text(
-      taken ? '이미 가입된\n이메일이에요.' : '가입할 이메일을\n입력해주세요.',
-      style: const TextStyle(
-        fontFamily: 'Pretendard',
-        fontSize: FnSignup.headlineSize,
-        fontWeight: FontWeight.w800,
-        height: FnSignup.headlineHeight,
-        color: FnSignup.headline,
-      ),
-    );
-  }
+  Widget _headline() => SignupHeadline(_phase == _Phase.taken
+      ? '이미 가입된\n이메일이에요.'
+      : '가입할 이메일을\n입력해주세요.');
 
-  Text _subtitle() {
-    final taken = _phase == _Phase.taken;
-    return Text(
-      taken ? '기존 계정으로 로그인해 서비스를 이용해주세요.' : '로그인에 사용할 이메일을 입력해주세요.',
-      style: const TextStyle(
-        fontFamily: 'Pretendard',
-        fontSize: FnSignup.subtitleSize,
-        fontWeight: FontWeight.w500,
-        height: 1.45,
-        color: FnSignup.subtle,
-      ),
-    );
-  }
+  Widget _subtitle() => SignupSubtitle(_phase == _Phase.taken
+      ? '기존 계정으로 로그인해 서비스를 이용해주세요.'
+      : '로그인에 사용할 이메일을 입력해주세요.');
 
-  Widget _field() {
-    final err = _phase == _Phase.invalid;
-    return SizedBox(
-      height: FnSignup.fieldHeight,
-      child: TextField(
+  Widget _field() => SignupField(
         controller: _email,
         focusNode: _focus,
+        hint: '이메일을 입력해주세요',
+        error: _phase == _Phase.invalid,
         keyboardType: TextInputType.emailAddress,
         textInputAction: TextInputAction.done,
-        autocorrect: false,
-        enableSuggestions: false,
         inputFormatters: [
           // 이메일에 공백이 들어갈 일은 없다. 붙여넣기 사고를 막는다.
           FilteringTextInputFormatter.deny(RegExp(r'\s')),
         ],
         onSubmitted: (_) => _onPressed(),
-        style: const TextStyle(
-          fontFamily: 'Pretendard',
-          fontSize: FnSignup.fieldTextSize,
-          fontWeight: FontWeight.w500,
-          color: FnSignup.headline,
-        ),
-        cursorColor: FnSignup.coral,
-        decoration: InputDecoration(
-          isDense: true,
-          filled: true,
-          fillColor: Colors.white,
-          hintText: '이메일을 입력해주세요',
-          hintStyle: const TextStyle(
-            fontFamily: 'Pretendard',
-            fontSize: FnSignup.fieldTextSize,
-            fontWeight: FontWeight.w500,
-            color: FnSignup.placeholder,
-          ),
-          contentPadding: const EdgeInsets.symmetric(
-            horizontal: FnSignup.fieldPadH,
-            vertical: 13,
-          ),
-          enabledBorder: _border(err ? FnSignup.coral : FnSignup.fieldBorder,
-              err ? FnSignup.fieldBorderWidthError : FnSignup.fieldBorderWidth),
-          focusedBorder: _border(err ? FnSignup.coral : FnSignup.coral,
-              FnSignup.fieldBorderWidthError),
-          border: _border(FnSignup.fieldBorder, FnSignup.fieldBorderWidth),
-        ),
-      ),
-    );
-  }
-
-  OutlineInputBorder _border(Color c, double w) => OutlineInputBorder(
-        borderRadius: BorderRadius.circular(FnSignup.fieldRadius),
-        borderSide: BorderSide(color: c, width: w),
       );
 
   /// 4번 화면의 흰 카드.
@@ -309,55 +252,17 @@ class SignupEmailDsScreenState extends State<SignupEmailDsScreen> {
     );
   }
 
-  /// 코랄 채움 버튼. 비활성이면 회색.
-  Widget _primaryButton() {
-    final on = _canPress;
-    return _PressableButton(
-      height: FnSignup.buttonHeight,
-      radius: FnSignup.buttonRadius,
-      fill: on ? FnSignup.coral : FnSignup.disabledFill,
-      onTap: on ? _onPressed : null,
-      child: _busy
-          ? const SizedBox(
-              width: 18,
-              height: 18,
-              child: CircularProgressIndicator(
-                strokeWidth: 2,
-                valueColor: AlwaysStoppedAnimation(Colors.white),
-              ),
-            )
-          : Text(
-              _buttonLabel,
-              style: TextStyle(
-                fontFamily: 'Pretendard',
-                fontSize: FnSignup.buttonTextSize,
-                fontWeight: FontWeight.w700,
-                color: on ? Colors.white : FnSignup.disabledFg,
-              ),
-            ),
-    );
-  }
+  Widget _primaryButton() => SignupButton(
+        label: _buttonLabel,
+        busy: _busy,
+        onTap: _canPress ? _onPressed : null,
+      );
 
-  /// 4번 화면의 외곽선 버튼.
-  Widget _outlinedButton() {
-    return _PressableButton(
-      height: FnSignup.buttonHeight,
-      radius: FnSignup.buttonRadius,
-      fill: Colors.white,
-      border: const BorderSide(
-          color: FnSignup.coral, width: FnSignup.fieldBorderWidthError),
-      onTap: _busy ? null : _onFindPassword,
-      child: const Text(
-        '비밀번호 찾기',
-        style: TextStyle(
-          fontFamily: 'Pretendard',
-          fontSize: FnSignup.buttonTextSize,
-          fontWeight: FontWeight.w700,
-          color: FnSignup.coral,
-        ),
-      ),
-    );
-  }
+  Widget _outlinedButton() => SignupButton(
+        label: '비밀번호 찾기',
+        style: SignupButtonStyle.outlined,
+        onTap: _busy ? null : _onFindPassword,
+      );
 
   @override
   Widget build(BuildContext context) {
@@ -407,77 +312,13 @@ class SignupEmailDsScreenState extends State<SignupEmailDsScreen> {
               const SizedBox(height: FnSignup.gapLabelToField),
               _field(),
               if (invalid) ...[
-                const SizedBox(height: FnSignup.gapFieldToError),
-                const Text(
-                  '이메일 형식을 확인해주세요.',
-                  style: TextStyle(
-                    fontFamily: 'Pretendard',
-                    fontSize: FnSignup.errorSize,
-                    fontWeight: FontWeight.w500,
-                    color: FnSignup.coral,
-                  ),
-                ),
+                const SignupFieldError('이메일 형식을 확인해주세요.'),
                 const SizedBox(height: FnSignup.gapErrorToButton),
               ] else
                 const SizedBox(height: FnSignup.gapFieldToButton),
               _primaryButton(),
             ],
           ],
-        ),
-      ),
-    );
-  }
-}
-
-/// 눌림 반응이 있는 버튼. DS 의 기본 버튼은 높이/반지름이 달라서
-/// 시안 수치를 그대로 쓰려고 따로 만들었다.
-class _PressableButton extends StatefulWidget {
-  const _PressableButton({
-    required this.height,
-    required this.radius,
-    required this.fill,
-    required this.child,
-    this.border,
-    this.onTap,
-  });
-
-  final double height;
-  final double radius;
-  final Color fill;
-  final Widget child;
-  final BorderSide? border;
-  final VoidCallback? onTap;
-
-  @override
-  State<_PressableButton> createState() => _PressableButtonState();
-}
-
-class _PressableButtonState extends State<_PressableButton> {
-  bool _down = false;
-
-  @override
-  Widget build(BuildContext context) {
-    final enabled = widget.onTap != null;
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTapDown: enabled ? (_) => setState(() => _down = true) : null,
-      onTapUp: enabled ? (_) => setState(() => _down = false) : null,
-      onTapCancel: enabled ? () => setState(() => _down = false) : null,
-      onTap: widget.onTap,
-      child: AnimatedScale(
-        scale: _down ? 0.985 : 1,
-        duration: const Duration(milliseconds: 90),
-        child: Container(
-          height: widget.height,
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            color: widget.fill,
-            borderRadius: BorderRadius.circular(widget.radius),
-            border: widget.border == null
-                ? null
-                : Border.fromBorderSide(widget.border!),
-          ),
-          child: widget.child,
         ),
       ),
     );
