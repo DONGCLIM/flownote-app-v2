@@ -44,7 +44,12 @@ class ScanCameraDsScreen extends StatefulWidget {
     this.badgeLabel,
     this.frameHint = '영수증을 프레임 안에 맞춰주세요',
     this.maxShots = 20,
+    this.navTitle = '',
   });
+
+  /// 🔴 #157 앱바 제목. 사업자등록증 촬영 시안은 '사업자등록증 촬영' 이다.
+  ///    기본값 '' 는 기존 영수증 촬영 화면 그대로(제목 없음).
+  final String navTitle;
 
   /// **가이드 프레임**(화면에 보이는 사각형)의 가로/세로 비율.
   ///
@@ -506,7 +511,7 @@ class _ScanCameraDsScreenState extends State<ScanCameraDsScreen>
         if (!didPop) _onBack();
       },
       child: FnShell(
-        navTitle: '',
+        navTitle: widget.navTitle,
         onBack: _onBack,
         bg: _bg,
         trailing: [

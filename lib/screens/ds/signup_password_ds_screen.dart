@@ -10,6 +10,7 @@ import '../../design/fn_shell.dart';
 import '../../providers/auth_provider.dart';
 import 'legal_doc_ds_screen.dart';
 import '../../design/fn_signup_tokens.dart';
+import 'biz_signup_ds_screens.dart';
 import 'signup_parts.dart';
 
 /// 🔴 #156 — 회원가입 2단계: 비밀번호 설정.
@@ -371,7 +372,10 @@ class SignupDoneDsScreen extends StatelessWidget {
             SignupButton(
               label: '사업자등록증 등록하러 가기',
               style: SignupButtonStyle.secondary,
-              onTap: () => Navigator.of(context).popUntil((r) => r.isFirst),
+              // 🔴 #157 시안 5장(안내→촬영→인식→확인→완료)으로 이어진다.
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const BizIntroDsScreen()),
+              ),
             ),
           ],
         ),

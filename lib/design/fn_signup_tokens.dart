@@ -193,4 +193,54 @@ class FnSignup {
   ///    코랄 글자** 로 간다. 배경은 코랄을 8% 로 깐 값이다.
   static const Color secondaryFill = Color(0x14FF6D78);
   static const Color secondaryFg = Color(0xFFE85C68);
+
+  // ── 🔴 #157 사업자등록증 등록 흐름 (시안 5장 실측) ──────────
+  //
+  // 🔴 b4(정보 확인)만 시안 폭이 **388px** 이고 나머지는 473px 이다.
+  //    배율을 따로 계산해야 한다: 388/375 = 1.03467
+  //    그렇게 환산하니 입력창 47.4dp, 버튼 49.3dp 로 다른 화면과 정확히
+  //    맞아떨어져 375dp 기준이 교차검증됐다.
+  //
+  // | 항목 | 시안 | 환산 | 채택 |
+  // |---|---|---|---|
+  // | b1 버튼1 top | 585px/473 | 463.8dp | — |
+  // | b1 버튼2(외곽선) | 671px | 532.0dp | 간격 19 → 12 |
+  // | b3 진행바 높이 | 7px | 5.5dp | **6** |
+  // | b3 진행바 채움 | 0.739 | — | 80% 표기와 맞음 |
+  // | b4 입력칸 간격 | 96px/388 | 92.8dp | 라벨+칸+여백 |
+  // | b5 체크카드 | 188px | 149.0dp | — |
+  //
+  // 색 실측
+  // - 진행바 트랙 `#FFE4DB`
+  // - 카드 그림자: 카드 아래 10px 가 `#EDE9E6` 까지 어두워진다 → 아주 연함
+  // - b5 체크 아이콘은 코랄
+
+  /// 진행바 높이. 시안 7px ÷ 1.26133 = 5.55
+  static const double progressHeight = 6.0;
+
+  /// 진행바 트랙(안 채워진 부분). 실측 `#FFE4DB`.
+  static const Color progressTrack = Color(0xFFFFE4DB);
+
+  /// 카드 그림자 — 시안에서 카드 아래 약 10px 가 `#EDE9E6` 까지 내려간다.
+  /// 진하게 넣으면 시안보다 떠 보이므로 아주 연하게 간다.
+  static const List<BoxShadow> cardShadow = [
+    BoxShadow(
+      color: Color(0x0F000000),
+      blurRadius: 12,
+      offset: Offset(0, 3),
+    ),
+  ];
+
+  /// b4 필수 표시 `*` 와 안내문 색 (코랄과 같다).
+  static const Color requiredMark = coral;
+
+  /// b4 각 입력 묶음 사이 간격. 시안 96px ÷ 1.03467 = 92.8
+  /// (라벨 11.6 + 간격 + 칸 47.4 를 빼면 순수 여백은 약 22dp)
+  static const double gapBetweenFieldGroups = 22.0;
+
+  /// b5 체크 목록 줄 간격. 시안 39px ÷ 1.26133 = 30.9
+  static const double checkRowGap = 18.0;
+
+  /// b5 체크 아이콘 크기.
+  static const double checkIconSize = 16.0;
 }
