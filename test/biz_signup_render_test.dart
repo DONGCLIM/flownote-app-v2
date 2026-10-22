@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 
+import 'package:flow_note/design/fn_receipt_illust.dart';
 import 'package:flow_note/design/fn_signup_tokens.dart';
 import 'package:flow_note/providers/auth_provider.dart';
 import 'package:flow_note/screens/ds/biz_signup_ds_screens.dart';
@@ -328,6 +329,84 @@ void main() {
       ]) {
         expect(c.contains(t), isTrue, reason: t);
       }
+    });
+  });
+
+  group('#158 영수증 일러스트 — 비어 있던 자리', () {
+    testWidgets('🔴 가입 완료 화면에 일러스트가 실제로 그려진다', (tester) async {
+      await pump(tester, const BizFinishDsScreen());
+      // 🔴 #157 에서는 이게 없었다. SizedBox 로 공간만 두고 그림을 안 그렸다.
+      expect(find.byType(FnReceiptIllust), findsOneWidget,
+          reason: '영수증 그림이 또 사라졌다 — 사장님이 바로 알아채신 문제다');
+    });
+
+    testWidgets('🔴 일러스트가 가운데 정렬이다 (시안 실측: 중심 236.0 vs 236.5)',
+        (tester) async {
+      await pump(tester, const BizFinishDsScreen());
+      final r = tester.getRect(find.byType(FnReceiptIllust));
+      expect(r.center.dx, closeTo(375 / 2, 1.0));
+    });
+
+    testWidgets('🔴 일러스트 크기가 시안 실측값이다', (tester) async {
+      await pump(tester, const BizFinishDsScreen());
+      final r = tester.getRect(find.byType(FnReceiptIllust));
+      // 시안 243x192px ÷ 1.26133 = 192.7 x 152.2dp
+      expect(r.width, closeTo(192.7, 1.0));
+      expect(r.height, closeTo(152.2, 1.5));
+    });
+
+    test('🔴 종이가 세 장이고 가운데가 맨 앞이다', () {
+      final p = ReceiptIllustPainter.papers;
+      expect(p.length, 3);
+      // 리스트 순서 = 그리는 순서. 마지막이 맨 앞.
+      expect(p.last.width, greaterThan(p[0].width),
+          reason: '가운데(맨 앞)가 가장 넓어야 한다');
+      expect(p.last.width, greaterThan(p[1].width));
+    });
+
+    test('🔴 종이 기울기가 실측 각도다 (바깥 모서리 직선 피팅)', () {
+      final p = ReceiptIllustPainter.papers;
+      expect(p[0].turn, closeTo(-8.44, 0.01), reason: '왼쪽');
+      expect(p[1].turn, closeTo(7.85, 0.01), reason: '오른쪽');
+      expect(p[2].turn, closeTo(-1.32, 0.01), reason: '가운데');
+      // 서로 다른 방향으로 기울어야 부채처럼 보인다.
+      expect(p[0].turn * p[1].turn, lessThan(0),
+          reason: '좌우가 같은 방향으로 기울면 부채 모양이 안 나온다');
+    });
+
+    test('🔴 제목줄은 코랄, 본문줄은 회색이다 (실측)', () {
+      expect(ReceiptIllustPainter.coralLine, const Color(0xFFFEB7BB));
+      expect(ReceiptIllustPainter.greyLine, const Color(0xFFF2F1F0));
+    });
+
+    test('🔴 줄 위치가 실측 상대값이다', () {
+      expect(ReceiptIllustPainter.lineTops,
+          [0.089, 0.214, 0.312, 0.411, 0.500]);
+      expect(ReceiptIllustPainter.lineWidths.length,
+          ReceiptIllustPainter.lineTops.length);
+      // 가운데 종이는 코랄 1 + 회색 4 = 5줄
+      expect(ReceiptIllustPainter.papers.last.greyLines, 4);
+    });
+
+    test('🔴 글로우가 과하지 않다 (코랄 배경처럼 보이면 안 된다)', () {
+      final code =
+          File('lib/design/fn_receipt_illust.dart').readAsStringSync();
+      // 실측 최대 차이가 R-3 G-12 B-9 → 알파 0x1A 수준.
+      expect(code.contains('Color(0x1AFF6D78)'), isTrue,
+          reason: '글로우 알파가 바뀌었다 — 진하면 코랄 배경처럼 보인다');
+      expect(code.contains('Color(0x33FF6D78)'), isFalse,
+          reason: '처음에 넣었다가 코랄 배경처럼 보였던 그 값이다');
+      // 사방으로 고르게 퍼져야 하므로 BoxShadow 가 아니라 RadialGradient.
+      expect(code.contains('RadialGradient'), isTrue);
+    });
+
+    test('🔴 일러스트는 그림 자산이 아니라 벡터로 그린다', () {
+      final code =
+          File('lib/design/fn_receipt_illust.dart').readAsStringSync();
+      // assets/ 에 영수증 그림이 없다. Image.asset 을 쓰면 빈칸이 된다.
+      expect(code.contains('Image.asset'), isFalse,
+          reason: 'assets 에 영수증 그림이 없다 — 또 빈칸이 된다');
+      expect(code.contains('CustomPaint'), isTrue);
     });
   });
 }

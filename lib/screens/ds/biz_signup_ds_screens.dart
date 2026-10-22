@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../../design/fn_feedback.dart';
+import '../../design/fn_receipt_illust.dart';
 import '../../design/fn_shell.dart';
 import '../../design/fn_signup_tokens.dart';
 import '../../providers/auth_provider.dart';
@@ -541,7 +542,13 @@ class BizFinishDsScreen extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const SizedBox(height: 120),
+            // 🔴 #158 여기가 비어 있었다. 시안에는 영수증 세 장 그림이 있다.
+            //    (#157 에서 SizedBox 로 공간만 두고 그림을 안 그렸다)
+            //    시안 일러스트 top 248px -> 196.6dp. 앱바(56) 를 빼면 141dp.
+            const SizedBox(height: 56),
+            const Center(child: FnReceiptIllust()),
+            // 일러스트 아래(443px=351dp) ~ 헤드라인(492px=390dp) = 39dp
+            const SizedBox(height: 30),
             const SignupHeadline('1분 만에 준비가 끝났어요', center: true),
             const SizedBox(height: FnSignup.gapHeadlineToSub),
             const SignupSubtitle(
