@@ -44,7 +44,7 @@ class ScanCameraDsScreen extends StatefulWidget {
     this.badgeLabel,
     this.frameHint = '영수증을 프레임 안에 맞춰주세요',
     this.maxShots = 20,
-    this.navTitle = '',
+    this.navTitle = '영수증 촬영',
   });
 
   /// 🔴 #157 앱바 제목. 사업자등록증 촬영 시안은 '사업자등록증 촬영' 이다.
@@ -150,10 +150,13 @@ class _ScanCameraDsScreenState extends State<ScanCameraDsScreen>
   static const _bg = Color(0xFF1B1D22);
 
   /// 시안 배지 배경 `rgba(242,104,122,.3)`
-  static const _badgeBg = Color(0x4DF2687A);
+  /// 🔴 #161 시안 실측 — 불투명 `#FF6B7A`.
+  ///    전에는 반투명(0x4D)이라 영상 위에서 흐리게 보였다.
+  static const _badgeBg = Color(0xFFFF6B7A);
 
   /// 시안 배지 글자 `#FFC9CE`
-  static const _badgeFg = Color(0xFFFFC9CE);
+  /// 시안 배지 글자 — 흰색에 가깝다 (실측 `#FFC5CB` 는 안티앨리어싱).
+  static const _badgeFg = Color(0xFFFFFFFF);
 
 
 

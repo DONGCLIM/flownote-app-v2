@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../../design/fn_tokens.dart';
+import '../../design/fn_scan_tokens.dart';
 import '../../design/fn_shell.dart';
 import '../../design/fn_card.dart';
 import '../../design/fn_badge_ds.dart';
@@ -303,7 +304,11 @@ class _ScanReviewDsScreenState extends State<ScanReviewDsScreen> {
       child: Stack(
         children: [
           FnShell(
-            navTitle: n > 1 ? '인식 결과 ${_index + 1}/$n' : '인식 결과 확인',
+            // 🔴 #161 시안 제목 표기 — `인식 결과 확인 (1/4)`
+            navTitle: n > 1
+                ? '인식 결과 확인 (${_index + 1}/$n)'
+                : '인식 결과 확인',
+            bg: FnScan.bg,
             onBack: _confirmExit,
             trailing: [
               if (n > 1)
@@ -753,67 +758,119 @@ class _DraftPaneState extends State<_DraftPane> {
   /// 시안(`AppH7 scan-review`)의 h230 뷰어보다 이 방식이 원본 대조에 편하다는
   /// 사용자 피드백을 반영한 것이다.
   Widget _viewer() {
-    return Container(
-      decoration: const BoxDecoration(
-        border: Border(bottom: BorderSide(color: FnColors.lineNeutral)),
-      ),
-      child: Column(
-        children: [
-          // ── 회전 / 확대 툴바 ──
-          Container(
-            color: FnColors.fillNormal,
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-            child: Row(
-              children: [
-                const Icon(Icons.image_outlined,
-                    size: 14, color: FnColors.labelAssistive),
-                const SizedBox(width: 6),
-                const Text(
-                  '원본 영수증',
-                  style: TextStyle(
-                    fontFamily: 'Pretendard',
-                    fontSize: 12,
-                    fontWeight: FontWeight.w500,
-                    color: FnColors.labelAlternative,
+    // 🔴 #161 시안 ④ — 둥근 검정 사진 카드 + 바닥에 떠 있는 줌 알약.
+    //
+    //   시안 실측(440x1024, 1.1196 px/dp)
+    //     사진 카드 x 25-414 (좌우 22.3dp), y 141-464 (h 288.5dp)
+    //     줌 알약   x 28-411, 카드 바닥에서 14dp 띄움, h 40dp
+    //
+    // 전에는 상단에 회색 툴바(`원본 영수증` + 회전/확대)를 띄웠는데
+    // 시안에는 그런 줄이 없다. 회전은 줌 알약 안으로 옮겼다.
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+          FnScan.resPhotoPad, 14, FnScan.resPhotoPad, 0),
+      child: SizedBox(
+        height: FnScan.resPhotoH,
+        child: Stack(
+          children: [
+            Positioned.fill(
+              child: ClipRRect(
+                borderRadius:
+                    BorderRadius.circular(FnScan.resPhotoRadius),
+                child: PanZoomPhoto(
+                  height: FnScan.resPhotoH,
+                  background: FnScan.camBg,
+                  quarterTurns: _rotation,
+                  imageProvider: XFileImage.providerOf(d.file),
+                  onTap: _showFull,
+                  image: XFileImage(
+                    d.file,
+                    fit: BoxFit.fill,
+                    errorBuilder: (_, __, ___) =>
+                        const Center(child: _PaperMock()),
                   ),
                 ),
-                const Spacer(),
-                _toolBtn(
-                  Icons.rotate_left,
-                  () => setState(() => _rotation = (_rotation - 1 + 4) % 4),
-                ),
-                const SizedBox(width: 8),
-                _toolBtn(
-                  Icons.rotate_right,
-                  () => setState(() => _rotation = (_rotation + 1) % 4),
-                ),
-                const SizedBox(width: 8),
-                _toolBtn(Icons.zoom_in_rounded, _showFull),
+              ),
+            ),
+            Positioned(
+              left: 6,
+              right: 6,
+              bottom: FnScan.resZoomBottom,
+              child: _zoomBar(),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// 시안 줌 알약 — `전체보기` | 회전 | 확대 배율
+  Widget _zoomBar() {
+    return Container(
+      height: FnScan.resZoomH,
+      padding: const EdgeInsets.symmetric(horizontal: 14),
+      decoration: BoxDecoration(
+        color: FnScan.resZoomBg,
+        borderRadius: BorderRadius.circular(FnScan.resZoomH / 2),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          // 전체보기
+          GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: _showFull,
+            child: const Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.crop_free_rounded, size: 16, color: Colors.white),
+                SizedBox(width: 6),
+                Text('전체보기',
+                    style: TextStyle(
+                      fontFamily: 'Pretendard',
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
+                      color: Colors.white,
+                    )),
               ],
             ),
           ),
-          // ── 이미지 본체 (핀치줌 + 배율1에서도 밀어서 이동) ──
-          //
-          // 🔴 예전에는 `InteractiveViewer(constrained: true)` 기본값이라
-          //    배율 1 에서 이동량이 정확히 0 이었다. 핀치줌을 해야 비로소
-          //    이동이 됐다 — 사장님이 신고한 그 증상이다.
-          //    `PanZoomPhoto` 가 사진 원본 비율대로 자식 크기를 잡아서
-          //    배율 1 에서도 넘치는 부분을 밀어 볼 수 있게 한다.
-          PanZoomPhoto(
-            height: 260,
-            background: widget.viewerBg,
-            quarterTurns: _rotation,
-            imageProvider: XFileImage.providerOf(d.file),
-            onTap: _showFull,
-            // 바깥에서 원본 비율대로 크기를 잡아 주므로 여기선 fill 이다.
-            // fitWidth 로 두면 이중 계산이 돼서 여백이 생긴다.
-            image: XFileImage(
-              d.file,
-              fit: BoxFit.fill,
-              errorBuilder: (_, __, ___) => const Center(child: _PaperMock()),
-            ),
+          // 회전 — 시안의 −/+ 자리. 영수증은 돌려볼 일이 많아 남겨 둔다.
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _zoomBtn(Icons.rotate_left_rounded,
+                  () => setState(() => _rotation = (_rotation - 1 + 4) % 4)),
+              const SizedBox(width: 10),
+              Text('${_rotation * 90}°',
+                  style: const TextStyle(
+                    fontFamily: 'Pretendard',
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: FnScan.coral,
+                  )),
+              const SizedBox(width: 10),
+              _zoomBtn(Icons.rotate_right_rounded,
+                  () => setState(() => _rotation = (_rotation + 1) % 4)),
+            ],
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _zoomBtn(IconData icon, VoidCallback onTap) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: Container(
+        width: 24,
+        height: 24,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          border: Border.all(color: Colors.white.withValues(alpha: .4)),
+        ),
+        child: Icon(icon, size: 14, color: Colors.white),
       ),
     );
   }

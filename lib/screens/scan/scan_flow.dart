@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -10,6 +11,7 @@ import '../../design/fn_sheet.dart';
 import '../../services/gallery_intake.dart';
 import '../../services/subscription_service.dart';
 import '../ds/scan_camera_ds_screen.dart';
+import '../ds/scan_gallery_ds_screen.dart';
 import '../ds/scan_processing_ds_screen.dart';
 import '../ds/scan_review_ds_screen.dart';
 import '../paywall_screen.dart';
@@ -67,6 +69,50 @@ class ScanFlow {
   static Future<void> startFromGallery(BuildContext context,
       {DateTime? forcedDate}) async {
     if (!await _ensureQuota(context)) return;
+    if (!context.mounted) return;
+
+    // 🔴 #161 앱에서는 **우리가 그린 갤러리 화면**을 띄운다.
+    //
+    //    OS 기본 피커는 우리 톤앤톤(크림 배경·코랄 강조·3열 그리드)으로
+    //    바꿀 수 없다. 사장님 시안 ① 을 그대로 쓰려면 앨범을 직접 읽어야
+    //    해서 `ScanGalleryDsScreen` 을 만들었다.
+    //
+    //    권한이 거부되거나 앨범을 못 읽으면 그 화면이 빈 손으로 돌아온다.
+    //    그때는 아래 기존 경로(OS 피커)로 그대로 흘러간다 — 사진을 못
+    //    고르는 상황을 만들지 않기 위해서다.
+    if (!kIsWeb) {
+      final picked = await Navigator.push<List<PickedGalleryPhoto>>(
+        context,
+        MaterialPageRoute(
+          builder: (_) => ScanGalleryDsScreen(
+            maxShots: SubscriptionService.instance.burstLimit,
+          ),
+        ),
+      );
+      if (!context.mounted) return;
+      if (picked != null && picked.isNotEmpty) {
+        // `PickedPhoto` 는 웹 전용 조건부 타입이라 여기서 쓰지 않는다.
+        // 이미 바이트를 손에 쥐고 있으므로 메모리 `XFile` 로 감싸
+        // 기존 정리 경로(`prepare`)에 그대로 태운다.
+        final intake = await GalleryIntake.prepare(
+          picked
+              .map((e) => XFile.fromData(
+                    e.bytes,
+                    name: e.name,
+                    mimeType: 'image/jpeg',
+                    length: e.bytes.lengthInBytes,
+                  ))
+              .toList(),
+        );
+        if (!context.mounted) return;
+        if (intake.usable.isEmpty) return;
+        await _runTrimmed(context, intake.usable, forcedDate: forcedDate);
+        return;
+      }
+      // picked == null  → 사장님이 뒤로가기를 눌렀다. 아무 일도 하지 않는다.
+      // picked 가 비었고 null 이 아니면 선택 없이 완료한 것이므로 역시 종료.
+      if (picked != null) return;
+    }
 
     // 🔴 웹에서는 `image_picker` 를 **거치지 않는다.**
     //
