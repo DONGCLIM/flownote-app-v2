@@ -12,6 +12,10 @@
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="29" tools:replace="android:maxSdkVersion"/>
     <!-- 저장소 권한 (Android 13+) -->
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES"/>
+    <!-- Android 14+ "일부만 허용" — 사진 전체 접근을 거부하고
+         몇 장만 골라 주는 경우에도 갤러리 화면이 동작하도록 한다.
+         이 권한이 없으면 14+ 에서 부분 허용 시 빈 목록이 뜨는다. -->
+    <uses-permission android:name="android.permission.READ_MEDIA_VISUAL_USER_SELECTED"/>
 
     <!-- 알림 권한 (Android 13+) -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>

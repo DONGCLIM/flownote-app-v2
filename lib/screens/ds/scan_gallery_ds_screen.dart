@@ -148,7 +148,14 @@ class _ScanGalleryDsScreenState extends State<ScanGalleryDsScreen> {
     setState(() => _loading = true);
     final out = <PickedGalleryPhoto>[];
     for (final a in _selected) {
-      final b = await a.originBytes;
+      // 원본(`originBytes`)으로 20장을 받으면 장당 3~8MB 가 한꺼번에
+      // 메모리에 쌓여 구형 폰에서 죽는다. 영수증 글자는 긴 변 2000px 면
+      // 충분히 읽힌다 (인식 직전에 GalleryIntake 가 1600 으로 다시 줄인다).
+      // 주의: originBytes 로 되돌리지 말 것.
+      final b = await a.thumbnailDataWithSize(
+        const ThumbnailSize(2000, 2000),
+        quality: 92,
+      );
       if (b == null) continue;
       out.add(PickedGalleryPhoto(name: await a.titleAsync, bytes: b));
     }
