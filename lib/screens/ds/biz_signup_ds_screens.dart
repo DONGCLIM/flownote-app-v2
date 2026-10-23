@@ -50,6 +50,13 @@ class BizIntroDsScreen extends StatelessWidget {
           mainAxisAlignment: MainAxisAlignment.center,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            // 🔴 #160 — 사장님: "두번째 화면에서도 똑같이 텍스트 위에
+            //    같이 보일 수 있게 해줘."
+            //    5번(가입 완료) 화면과 **같은 그림 · 같은 간격(30dp)** 을 쓴다.
+            //    세로 여유 확인: 아이폰 SE(667) 에서도 일러스트를 넣고
+            //    167dp 가 남는다 → 넘치지 않는다.
+            const Center(child: FnReceiptIllust()),
+            const SizedBox(height: 30),
             const SignupHeadline('사업자등록증을\n촬영해주세요', center: true),
             const SizedBox(height: FnSignup.gapHeadlineToSub),
             const SignupSubtitle(
@@ -167,6 +174,9 @@ class BizReadingDsScreenState extends State<BizReadingDsScreen>
           mainAxisAlignment: MainAxisAlignment.center,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            // 🔴 #160 — 2번 화면과 같은 처리. 세로 여유 167dp 확인함.
+            const Center(child: FnReceiptIllust()),
+            const SizedBox(height: 30),
             const SignupHeadline('사업자등록증을\n읽고 있어요', center: true),
             const SizedBox(height: FnSignup.gapHeadlineToSub),
             const SignupSubtitle(

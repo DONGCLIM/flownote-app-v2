@@ -523,4 +523,103 @@ void main() {
           reason: '가운데와 오른쪽이 떨어져 있다');
     });
   });
+  // =====================================================================
+  // 🔴 #160 — 사장님: "두번째 화면에서도 똑같이 첫번째 이미지내의 왼쪽
+  //    이미지처럼 텍스트 위에 같이 보일 수 있게 해줘. 세번째 화면에서도
+  //    마찬가지로 부탁해."
+  //    = 촬영 안내(2번) · 읽고 있어요(3번) 에도 영수증 그림을 넣는다.
+  //
+  // ⚠️ 이 두 화면은 FnShell 안의 **스크롤 없는** Column 이다.
+  //    (FnShell 은 자식을 Expanded 로 감쌀 뿐 스크롤하지 않는다)
+  //    그래서 그림을 넣으면 작은 화면에서 넘칠 수 있다.
+  //    아이폰 SE(375x667) 에서도 안 넘치는지 테스트로 고정한다.
+  // =====================================================================
+  group('#160 촬영 안내 · 인식 중 화면에도 영수증 그림', () {
+    testWidgets('🔴 촬영 안내(2번) 화면에 그림이 있다', (tester) async {
+      await pump(tester, const BizIntroDsScreen());
+      expect(find.byType(FnReceiptIllust), findsOneWidget,
+          reason: '2번 화면 글자 위가 비어 있다');
+    });
+
+    testWidgets('🔴 인식 중(3번) 화면에 그림이 있다', (tester) async {
+      await pump(tester, const BizReadingDsScreen());
+      expect(find.byType(FnReceiptIllust), findsOneWidget,
+          reason: '3번 화면 글자 위가 비어 있다');
+    });
+
+    testWidgets('🔴 2번 — 그림이 헤드라인 "위"에 있다', (tester) async {
+      await pump(tester, const BizIntroDsScreen());
+      final illust = tester.getRect(find.byType(FnReceiptIllust));
+      final head = tester.getRect(find.text('사업자등록증을\n촬영해주세요'));
+      expect(illust.bottom, lessThanOrEqualTo(head.top),
+          reason: '그림이 글자 아래로 내려갔다');
+      // 5번 화면과 같은 30dp 간격
+      expect(head.top - illust.bottom, closeTo(30, 2.0));
+    });
+
+    testWidgets('🔴 3번 — 그림이 헤드라인 "위"에 있다', (tester) async {
+      await pump(tester, const BizReadingDsScreen());
+      final illust = tester.getRect(find.byType(FnReceiptIllust));
+      final head = tester.getRect(find.text('사업자등록증을\n읽고 있어요'));
+      expect(illust.bottom, lessThanOrEqualTo(head.top));
+      expect(head.top - illust.bottom, closeTo(30, 2.0));
+    });
+
+    testWidgets('🔴 세 화면이 같은 그림을 쓴다 (크기도 같다)', (tester) async {
+      await pump(tester, const BizIntroDsScreen());
+      final a = tester.getRect(find.byType(FnReceiptIllust));
+      await pump(tester, const BizReadingDsScreen());
+      final b = tester.getRect(find.byType(FnReceiptIllust));
+      await pump(tester, const BizFinishDsScreen());
+      final c = tester.getRect(find.byType(FnReceiptIllust));
+      expect(a.size, b.size);
+      expect(b.size, c.size);
+      expect(a.width, closeTo(192.7, 1.0));
+    });
+
+    testWidgets('🔴 2번 — 그림이 가운데 정렬이다', (tester) async {
+      await pump(tester, const BizIntroDsScreen());
+      final r = tester.getRect(find.byType(FnReceiptIllust));
+      expect(r.center.dx, closeTo(375 / 2, 1.0));
+    });
+
+    testWidgets('🔴 3번 — 그림이 가운데 정렬이다', (tester) async {
+      await pump(tester, const BizReadingDsScreen());
+      final r = tester.getRect(find.byType(FnReceiptIllust));
+      expect(r.center.dx, closeTo(375 / 2, 1.0));
+    });
+
+    // 🔴 넘침 검사 — 스크롤이 없는 화면이라 이게 제일 중요하다.
+    testWidgets('🔴 2번 — 아이폰 SE(667) 에서 넘치지 않는다', (tester) async {
+      tester.view.physicalSize = const Size(375, 667);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(
+        const MaterialApp(home: BizIntroDsScreen()),
+      );
+      await tester.pump();
+      expect(tester.takeException(), isNull,
+          reason: '작은 화면에서 레이아웃이 넘쳤다');
+      // 맨 아래 버튼이 화면 안에 들어와야 한다.
+      final btn = tester.getRect(find.text('직접 입력할게요'));
+      expect(btn.bottom, lessThan(667),
+          reason: '아래 버튼이 화면 밖으로 밀렸다');
+    });
+
+    testWidgets('🔴 3번 — 아이폰 SE(667) 에서 넘치지 않는다', (tester) async {
+      tester.view.physicalSize = const Size(375, 667);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(
+        const MaterialApp(home: BizReadingDsScreen()),
+      );
+      await tester.pump();
+      expect(tester.takeException(), isNull,
+          reason: '작은 화면에서 레이아웃이 넘쳤다');
+      final btn = tester.getRect(find.text('인식 결과 확인하기'));
+      expect(btn.bottom, lessThan(667));
+      // 애니메이션 타이머를 끝내 둔다(안 그러면 테스트가 안 끝난다).
+      await tester.pump(const Duration(milliseconds: 2600));
+    });
+  });
 }
