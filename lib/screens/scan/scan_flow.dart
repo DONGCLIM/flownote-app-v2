@@ -317,17 +317,38 @@ class ScanFlow {
       // 아무리 밝게 찍어도 안 되니 원인을 찾을 방법이 없었다.
       // 진단 정보를 버리는 UI 는 친절한 게 아니라 무책임한 것이다.
       final why = _failureReason(processed);
-      final retry = await showFnAlert(
+
+      // 🔴 #162 — 버튼이 `닫기` 하나뿐이면 흐름이 끊긴다.
+      //
+      // 402(크레딧)·429(사용량)처럼 **사진 문제가 아닌** 실패는
+      // 다시 찍어도 소용없지만 같은 사진으로 다시 돌리면 대부분 된다.
+      // 그래서 세 가지를 구분한다.
+      //   canRetry : 다시 찍기   (구도·조명 문제)
+      //   canRerun : 다시 시도   (서버·크레딧 문제, 사진 그대로)
+      //   둘 다 아님: 닫기만     (키 누락 등 앱을 고쳐야 하는 문제)
+      final String confirm;
+      if (why.canRetry) {
+        confirm = '다시 찍기';
+      } else if (why.canRerun) {
+        confirm = '다시 시도';
+      } else {
+        confirm = '닫기';
+      }
+      final act = await showFnAlert(
         context,
         title: why.title,
         message: why.message,
         icon: why.icon,
         iconColor: FnColors.statusNegative,
-        confirmLabel: why.canRetry ? '다시 찍기' : '닫기',
-        cancelLabel: why.canRetry ? '닫기' : null,
+        confirmLabel: confirm,
+        cancelLabel: (why.canRetry || why.canRerun) ? '닫기' : null,
       );
-      if (retry && why.canRetry && context.mounted) {
+      if (!act || !context.mounted) return;
+      if (why.canRetry) {
         await start(context, forcedDate: forcedDate);
+      } else if (why.canRerun) {
+        // 사진을 다시 고르지 않는다. 방금 그 사진 그대로 다시 인식한다.
+        await runWithFiles(context, files, forcedDate: forcedDate);
       }
       return;
     }
@@ -381,13 +402,24 @@ enum _ScanMode { single, burst }
 @immutable
 class _Failure {
   const _Failure(this.title, this.message,
-      {this.icon = Icons.error_outline_rounded, this.canRetry = true});
+      {this.icon = Icons.error_outline_rounded,
+      this.canRetry = true,
+      this.canRerun = false});
   final String title;
   final String message;
   final IconData icon;
 
-  /// 다시 찍어서 해결될 문제인가. 키 누락·네트워크는 다시 찍어도 그대로다.
+  /// 다시 **찍어서** 해결될 문제인가. 키 누락·네트워크는 다시 찍어도 그대로다.
   final bool canRetry;
+
+  /// 같은 사진으로 **그대로 다시 돌리면** 해결될 수 있는가.
+  ///
+  /// 사장님 리포트(#162): 402 `prepayment credits are depleted` 가 떴을 때
+  /// 버튼이 `닫기` 하나뿐이라 **흐름이 거기서 끝나 다음으로 못 넘어갔다.**
+  /// 크레딧·사용량 제한·일시적 서버 거절은 사진 문제가 아니라서 다시
+  /// 찍으라고 해도 소용이 없고, 반대로 잠시 뒤 같은 사진으로 다시
+  /// 돌리면 대부분 성공한다. 그 길을 열어 둔다.
+  final bool canRerun;
 }
 
 /// 실패 문구를 분류한 결과의 **제목만** 돌려준다 (테스트용).
@@ -491,12 +523,25 @@ _Failure _failureReason(List<ScanDraft> drafts) {
       icon: Icons.smart_toy_outlined,
     );
   }
-  if (has('API 오류') || has('quota') || has('429')) {
+  // 402(결제/크레딧) · 429(사용량) · 5xx 는 **사진 문제가 아니다.**
+  // 다시 찍으라고 하면 사장님이 헛수고를 하게 되고, 버튼이 `닫기` 뿐이면
+  // 흐름이 거기서 끊겨 다음 화면으로 못 간다. (#162 리포트)
+  // 같은 사진으로 그대로 다시 돌릴 수 있게 한다.
+  if (has('API 오류') || has('quota') || has('429') || has('402')) {
+    final credit = has('402') ||
+        has('prepayment') ||
+        has('credits are depleted') ||
+        has('billing');
     return _Failure(
-      'AI 서버가 요청을 거절했어요',
-      '아래 내용을 확인해 주세요.\n\n$all',
+      credit ? 'AI 사용량이 모두 찼어요' : 'AI 서버가 요청을 거절했어요',
+      credit
+          ? '사진이나 촬영 문제가 아니에요.\n'
+              'AI 사용 크레딧이 떨어져서 잠시 인식을 못 했어요.\n'
+              '충전되면 같은 사진 그대로 다시 인식할 수 있어요.\n\n$all'
+          : '아래 내용을 확인해 주세요.\n\n$all',
       icon: Icons.cloud_off_rounded,
       canRetry: false,
+      canRerun: true,
     );
   }
   // 🔴 예상 못 한 오류는 **조명 탓으로 돌리지 않는다.**
