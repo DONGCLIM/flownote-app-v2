@@ -40,13 +40,14 @@ void main() {
       expect(FnTabIntent.pending.value, isNull, reason: '요청이 소비되지 않았다');
     });
 
-    testWidgets('🔴 홈으로가기와 캘린더보기가 같은 동작이면 안 된다', (t) async {
+    testWidgets('🔴 두 버튼이 같은 동작이면 안 된다', (t) async {
       final src = _read('lib/screens/ds/scan_done_ds_screen.dart');
-      // 두 버튼이 서로 다른 탭 키를 남겨야 한다
+      // 🔴 #163 시안에서 '캘린더 보기' 가 '매입 내역 보기' 로 바뀌었다.
+      //    검사의 뜻은 그대로다 — 두 버튼이 **서로 다른 탭**으로 가야 한다.
       expect(src.contains("_leaveTo('home'"), isTrue,
           reason: '홈으로가기가 home 탭을 지정하지 않는다');
-      expect(src.contains("_leaveTo('calendar'"), isTrue,
-          reason: '캘린더보기가 calendar 탭을 지정하지 않는다');
+      expect(src.contains("_leaveTo('settle'"), isTrue,
+          reason: '매입 내역 보기가 settle 탭을 지정하지 않는다');
       // 예전 버그: 둘 다 popUntil 만 했다
       final popOnly = src.split('\n').where((l) {
         final s = l.trim();

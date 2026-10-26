@@ -5,6 +5,10 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:image_picker/image_picker.dart';
 
 import 'package:flow_note/design/fn_scan_tokens.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flow_note/design/fn_amount_check_dialog.dart';
+import 'package:flow_note/screens/ds/scan_confirm_list_ds_screen.dart';
+import 'package:flow_note/screens/ds/scan_done_ds_screen.dart';
 import 'package:flow_note/screens/ds/scan_processing_ds_screen.dart';
 import 'package:flow_note/screens/scan/scan_draft.dart';
 
@@ -19,12 +23,21 @@ import 'package:flow_note/screens/scan/scan_draft.dart';
 /// 조용히 바뀌는 것**을 막는다. 자기참조(토큰끼리 비교)는 사보타주를
 /// 못 잡으므로 전부 **리터럴**과 비교한다.
 void main() {
+  setUp(() => SharedPreferences.setMockInitialValues({}));
+
   Future<void> pump(WidgetTester t, Widget w) async {
     t.view.physicalSize = const Size(393 * 3, 852 * 3);
     t.view.devicePixelRatio = 3.0;
     addTearDown(t.view.reset);
     await t.pumpWidget(MaterialApp(home: w));
     await t.pump(const Duration(milliseconds: 60));
+  }
+
+  /// 인식 중 화면은 OCR 이 끝나면 `Future.delayed(420ms)` 뒤에 pop 한다.
+  /// 그 타이머를 남겨 두면 `A Timer is still pending` 으로 테스트가 깨진다.
+  /// 검사 끝에 호출해 타이머를 흘려보낸다.
+  Future<void> drain(WidgetTester t) async {
+    await t.pump(const Duration(milliseconds: 600));
   }
 
   group('#161 스캔 시안 토큰', () {
@@ -68,10 +81,20 @@ void main() {
     testWidgets('🔴 시안 제목·부제가 보인다', (t) async {
       await pump(
           t, ScanProcessingDsScreen(drafts: [ScanDraft(file: XFile('/x.jpg'))]));
-      expect(find.text('영수증을 읽고 있어요'), findsOneWidget);
-      expect(find.text('품목과 금액을 꼼꼼하게 정리하고 있어요.'), findsOneWidget);
-      expect(find.text('인식 진행 중'), findsOneWidget);
+      // ⚠️ OCR 은 테스트에서 곧바로 실패하고 _done 이 켜진다. 그러면
+      //    제목이 '인식이 끝났어요' 로 바뀐다. 둘 중 하나면 된다.
+      expect(
+          find.text('영수증을 읽고 있어요').evaluate().isNotEmpty ||
+              find.text('인식이 끝났어요').evaluate().isNotEmpty,
+          isTrue,
+          reason: '시안 제목이 둘 다 없다');
+      expect(
+          find.text('인식 진행 중').evaluate().isNotEmpty ||
+              find.text('인식 완료').evaluate().isNotEmpty,
+          isTrue,
+          reason: '진행 카드 라벨이 없다');
       expect(find.text('결과 확인하기'), findsOneWidget);
+      await drain(t);
     });
 
     testWidgets('🔴 영수증 일러스트가 글자 위에 있다', (t) async {
@@ -84,14 +107,19 @@ void main() {
       expect(illu.isNotEmpty, isTrue,
           reason: '일러스트(폭 208dp)가 사라졌다');
       final illuY = t.getTopLeft(find.byWidget(illu.first.widget)).dy;
-      final headY = t.getTopLeft(find.text('영수증을 읽고 있어요')).dy;
+      final head = find.text('영수증을 읽고 있어요').evaluate().isNotEmpty
+          ? find.text('영수증을 읽고 있어요')
+          : find.text('인식이 끝났어요');
+      final headY = t.getTopLeft(head).dy;
       expect(illuY, lessThan(headY), reason: '그림이 글자 아래로 내려갔다');
+      await drain(t);
     });
 
     testWidgets('🔴 Pro 혜택 카드는 더이상 없다 (시안에 없음)', (t) async {
       await pump(
           t, ScanProcessingDsScreen(drafts: [ScanDraft(file: XFile('/x.jpg'))]));
       expect(find.textContaining('Pro 업그레이드'), findsNothing);
+      await drain(t);
     });
 
     test('🔴 비율 배치(Spacer flex 3/4)로 되돌리지 않았다', () {
@@ -219,4 +247,123 @@ void main() {
           reason: '사장님이 조명·구도를 고치려 헛수고하게 된다');
     });
   });
+
+  // ===================================================================
+  // 🔴 #163 — 저장 직전 3단계 (사장님 시안 3장)
+  //   ① 금액 재확인 팝업   FnAmountCheckDialog
+  //   ② 인식 결과 목록     ScanConfirmListDsScreen
+  //   ③ 저장 완료          ScanDoneDsScreen
+  // ===================================================================
+  group('#163 저장 직전 3단계', () {
+    test('🔴 팝업 토큰이 시안 실측값이다', () {
+      // 딤 40% — 크림(254,249,245)이 (151,148,147)로 내려앉은 값에서 역산
+      expect(FnScan.askDim, closeTo(0.40, 0.005));
+      expect(FnScan.askPad, closeTo(24.5, 0.05));
+      expect(FnScan.askPrimary, const Color(0xFFFF98A0));
+    });
+
+    test('🔴 목록·완료 토큰이 시안 실측값이다', () {
+      expect(FnScan.listPad, closeTo(18.4, 0.05));
+      expect(FnScan.listItemH, closeTo(92.0, 0.05));
+      expect(FnScan.listGap, closeTo(5.0, 0.05));
+      expect(FnScan.listSaveBtn, const Color(0xFFFE717A));
+      expect(FnScan.doneCircle, closeTo(78.1, 0.05));
+      expect(FnScan.doneCircleBg, const Color(0xFFFF6C78));
+    });
+
+    testWidgets('🔴 팝업 문구가 시안 그대로다', (t) async {
+      await pump(t, const Center(child: FnAmountCheckDialog()));
+      expect(find.text('금액을 한 번 더 확인하셨나요?'), findsOneWidget);
+      expect(find.text('인식 오류가 있으면\n세무 신고 시 금액이 달라질 수 있어요.'),
+          findsOneWidget);
+      expect(find.text('이상 없어요'), findsOneWidget);
+      expect(find.text('다시 검토하기'), findsOneWidget);
+      expect(find.text('이 안내는 하루에 한 번만 표시돼요'), findsOneWidget);
+    });
+
+    test('🔴 팝업이 마지막 장 저장 직전에 걸려 있다', () {
+      final code =
+          File('lib/screens/ds/scan_review_ds_screen.dart').readAsStringSync();
+      expect(code.contains('FnAmountCheckDialog.ask(context)'), isTrue,
+          reason: '팝업이 흐름에서 빠졌다');
+      // '다시 검토하기' 를 누르면 저장으로 넘어가지 않아야 한다.
+      expect(code.contains('if (!await FnAmountCheckDialog.ask(context)) {'),
+          isTrue,
+          reason: '팝업 결과를 무시하고 그냥 저장하고 있다');
+    });
+
+    test('🔴 팝업은 하루에 한 번만 뜬다', () {
+      final code =
+          File('lib/design/fn_amount_check_dialog.dart').readAsStringSync();
+      expect(code.contains('shownToday()'), isTrue);
+      expect(code.contains('if (await shownToday()) return true;'), isTrue,
+          reason: '매번 뜨면 읽지 않고 누르게 되어 목적을 잃는다');
+    });
+
+    testWidgets('🔴 목록이 실제 가게명·금액을 보여준다 (예시 고정값 아님)',
+        (t) async {
+      final ds = [
+        _draft('대한꽃도매', 256000, 3),
+        _draft('화람원예', 184000, 5),
+      ];
+      await pump(
+          t, ScanConfirmListDsScreen(drafts: ds, onSaveAll: () {}));
+      expect(find.text('대한꽃도매'), findsOneWidget);
+      expect(find.text('화람원예'), findsOneWidget);
+      expect(find.text('인식된 영수증'), findsOneWidget);
+      expect(find.text('2장'), findsOneWidget);
+      expect(find.text('영수증 목록 2건'), findsOneWidget);
+      expect(find.text('모두 저장하기'), findsOneWidget);
+    });
+
+    test('🔴 목록에서 썸네일을 되살리지 않았다 (시안에 없음)', () {
+      final code = File('lib/screens/ds/scan_confirm_list_ds_screen.dart')
+          .readAsStringSync();
+      expect(code.contains('_Thumb()'), isFalse,
+          reason: '시안에 없는 썸네일이 되살아났다');
+      expect(code.contains('FnScan.listSaveBtn'), isTrue,
+          reason: '저장 버튼이 시안 코랄을 안 쓴다');
+    });
+
+    testWidgets('🔴 완료 화면이 시안 문구·버튼이다', (t) async {
+      await pump(
+          t,
+          const ScanDoneDsScreen(
+            summary: ScanSummary(
+                total: 4,
+                success: 4,
+                failed: 0,
+                amount: 583000,
+                itemCount: 14),
+          ));
+      await t.pump(const Duration(milliseconds: 400));
+      expect(find.text('모두 저장 완료'), findsOneWidget);
+      expect(find.text('매입 내역과 캘린더에 자동으로 반영되었어요'), findsOneWidget);
+      expect(find.text('저장된 영수증'), findsOneWidget);
+      expect(find.text('매입 내역 보기'), findsOneWidget);
+      expect(find.text('홈으로 가기'), findsOneWidget);
+    });
+
+    test('🔴 완료 화면 체크 원이 코랄이다 (연녹색으로 되돌리지 말 것)', () {
+      final code =
+          File('lib/screens/ds/scan_done_ds_screen.dart').readAsStringSync();
+      expect(code.contains('FnScan.doneCircleBg'), isTrue);
+      expect(code.contains('FnColors.leaf95'), isFalse,
+          reason: '예전 연녹색 원이 되살아났다');
+      // '매입 내역 보기' 는 내역(settle) 탭으로 가야 한다.
+      expect(code.contains("_leaveTo('settle', null)"), isTrue,
+          reason: '내역 보기가 엉뚱한 탭으로 간다');
+    });
+  });
+}
+
+/// #163 목록 화면 테스트용 간이 draft.
+ScanDraft _draft(String store, double total, int items) {
+  final d = ScanDraft(file: XFile('/x.jpg'));
+  d.storeName = store;
+  d.date = DateTime(2026, 7, 24);
+  for (var i = 0; i < items; i++) {
+    d.items.add(DraftItem(name: '품목$i', quantity: 1, unitPrice: total / items));
+  }
+  return d;
 }

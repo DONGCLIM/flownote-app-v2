@@ -141,4 +141,62 @@ class FnScan {
 
   /// 하단 버튼 사이 간격. 실측 214-220px → 5.4dp.
   static const double resBtnGap = 5.4;
+
+  // ───────────────────── 금액 재확인 팝업 (#163 ①) ─────────────────────
+
+  /// 시안 실측(450x1024, 1.1450 px/dp) — 흰 카드.
+  ///   카드   y 285.6-579.9 (h 294.3) / x 24.5-367.7 (w 343.2)
+  ///   제목   카드 위에서 25.3dp
+  ///   부제   65.5 / 85.6dp (두 줄)
+  ///   버튼1  117.0dp, 높이 60.3dp
+  ///   버튼2  187.8dp, 높이 60.3dp
+  ///   안내   261.1dp
+  static const double askPad = 24.5;
+
+  /// 팝업 카드 모서리.
+  static const double askRadius = 22.0;
+
+  /// 팝업 버튼 높이.
+  static const double askBtnH = 56.0;
+
+  /// 팝업 버튼 모서리.
+  static const double askBtnRadius = 14.0;
+
+  /// 뒤 배경을 덮는 검정 농도. 실측 크림(254,249,245)이 (151,148,147)로
+  /// 내려앉았다 → 알파 0.40.
+  static const double askDim = 0.40;
+
+  /// 주 버튼(이상 없어요) 면. 실측 rgb(255,152,160).
+  static const Color askPrimary = Color(0xFFFF98A0);
+
+  // ───────────────────── 인식 결과 목록 (#163 ②) ─────────────────────
+
+  /// 좌우 여백. 요약 카드·항목 카드 모두 실측 18.4dp.
+  static const double listPad = 18.4;
+
+  /// 항목 카드 높이. 실측 110px / 1.1959 = 92.0dp.
+  static const double listItemH = 92.0;
+
+  /// 카드 사이 간격. 실측 6px = 5.0dp.
+  static const double listGap = 5.0;
+
+  /// 카드 모서리.
+  static const double listRadius = 18.0;
+
+  /// 저장 버튼 면. 실측 rgb(254,113,122).
+  static const Color listSaveBtn = Color(0xFFFE717A);
+
+  // ───────────────────── 저장 완료 (#163 ③) ─────────────────────
+
+  /// 체크 동그라미 지름. 실측 78.1dp.
+  static const double doneCircle = 78.1;
+
+  /// 체크 동그라미 면. 실측 rgb(255,108,120).
+  static const Color doneCircleBg = Color(0xFFFF6C78);
+
+  /// 요약 카드 좌우 여백. 실측 18.3dp.
+  static const double donePad = 18.3;
+
+  /// 요약 카드 높이. 실측 146px / 1.2036 = 121.3dp.
+  static const double doneCardH = 121.3;
 }

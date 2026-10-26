@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../../design/fn_tokens.dart';
+import '../../design/fn_amount_check_dialog.dart';
 import '../../design/fn_scan_tokens.dart';
 import '../../design/fn_shell.dart';
 import '../../design/fn_card.dart';
@@ -116,6 +117,18 @@ class _ScanReviewDsScreenState extends State<ScanReviewDsScreen> {
     //    목록으로 한 번 더 보여준다. 여러 장을 연속으로 넘기다 보면
     //    앞에 뭘 확인했는지 기억이 안 난다는 요청.
     //    1건뿐이면 방금 그 화면이 곧 목록이므로 건너뛴다.
+    // 🔴 #163 ① 마지막 장을 넘기기 직전에 금액을 한 번 더 묻는다.
+    //
+    //    인식이 틀린 채로 저장되면 세무 신고 금액이 달라진다. 그런데
+    //    여러 장을 연속으로 넘기다 보면 확인 없이 지나치기 쉽다.
+    //    시안 문구대로 **하루에 한 번만** 띄운다 — 매번 띄우면 읽지 않고
+    //    누르게 되어 애초 목적을 잃는다.
+    if (!await FnAmountCheckDialog.ask(context)) {
+      // '다시 검토하기' — 저장으로 넘어가지 않고 이 화면에 머문다.
+      return;
+    }
+    if (!mounted) return;
+
     final live = _liveDrafts;
     if (live.length > 1) {
       await Navigator.of(context).push<void>(
