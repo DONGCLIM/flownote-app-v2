@@ -267,12 +267,14 @@ void main() {
           reason: '시안 모양과 달라서 커스텀 벨로 바꿨다');
     });
 
-    testWidgets('벨을 누르면 안내가 뜬다 (연결 유지)', (t) async {
+    testWidgets('🔴 벨을 누르면 알림목록이 열린다 (#164)', (t) async {
+      // 예전에는 '알림은 준비 중이에요' 스낵바였다. #164 에서 화면이
+      // 생겼으므로 실제로 그 화면이 열려야 한다.
       await _pumpShell(t);
       await t.tap(find.byType(FnBellIcon));
-      await t.pump();
-      await t.pump(const Duration(milliseconds: 100));
-      expect(find.text('알림은 준비 중이에요'), findsOneWidget);
+      await t.pumpAndSettle(const Duration(milliseconds: 600));
+      expect(find.text('알림목록'), findsOneWidget);
+      expect(find.text('알림은 준비 중이에요'), findsNothing);
     });
   });
 

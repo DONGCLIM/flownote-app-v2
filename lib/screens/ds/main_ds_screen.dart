@@ -6,8 +6,10 @@ import '../../design/fn_home_tokens.dart';
 import '../../design/fn_tab_intent.dart';
 import '../../widgets/lazy_tabs.dart';
 import '../../providers/receipt_provider.dart';
+import '../../services/notice_feed.dart';
 import 'calendar_ds_screen.dart';
 import 'home_ds_screen.dart';
+import 'notice_list_ds_screen.dart';
 import 'profile_ds_screen.dart';
 import 'scan_ds_screen.dart';
 import 'settle_ds_screen.dart';
@@ -73,11 +75,21 @@ class _MainDsScreenState extends State<MainDsScreen> {
     // 저장 완료 화면의 '캘린더 보기' 처럼, 깊은 화면에서 남긴
     // 탭 이동 요청을 받는다. (#113)
     FnTabIntent.pending.addListener(_onTabIntent);
+
+    // 🔴 알림 벨의 빨간 점은 '안 읽은 알림이 있나' 로 정해진다.
+    //    듣고 있지 않으면 알림을 읽어도 점이 그대로 남는다.
+    NoticeFeed.instance.addListener(_onNotice);
+    NoticeFeed.instance.load();
+  }
+
+  void _onNotice() {
+    if (mounted) setState(() {});
   }
 
   @override
   void dispose() {
     FnTabIntent.pending.removeListener(_onTabIntent);
+    NoticeFeed.instance.removeListener(_onNotice);
     super.dispose();
   }
 
@@ -99,15 +111,14 @@ class _MainDsScreenState extends State<MainDsScreen> {
     setState(() => _index = i);
   }
 
-  /// 알림 벨 — 아직 알림 화면이 없다. 준비 중임을 알리고 끝낸다.
-  /// (없는 화면으로 보내 깨뜨리지 않는다)
+  /// 알림 벨 — 알림목록 화면을 연다. (#164)
+  ///
+  /// 예전에는 '알림은 준비 중이에요' 스낵바였다. 화면이 생겼으므로
+  /// 실제로 연결한다.
   void _onBell() {
-    final m = ScaffoldMessenger.maybeOf(context);
-    if (m == null) return;
-    m.showSnackBar(const SnackBar(
-      content: Text('알림은 준비 중이에요'),
-      duration: Duration(seconds: 2),
-    ));
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const NoticeListDsScreen()),
+    );
   }
 
   void _onTab(String key) {
@@ -129,7 +140,9 @@ class _MainDsScreenState extends State<MainDsScreen> {
       //   예전 제목 헤더로 돌아간다 (되돌리기 쉽게 남겨 둔다).
       navTitle: _titles[_index],
       brandHeader: true,
-      bellDot: true,
+      // 🔴 안 읽은 알림이 있을 때만 빨간 점을 찍는다.
+      //    전에는 늘 true 라 읽어도 점이 사라지지 않았다.
+      bellDot: NoticeFeed.instance.hasUnread,
       onBellTap: _onBell,
       floatingTabs: true,
       bg: FnHome.bgWarm,

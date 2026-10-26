@@ -80,34 +80,36 @@ void main() {
 
     testWidgets('🔴 상단에 아바타(코랄 그라디언트 원)가 있다', (t) async {
       await _pumpProfile(t);
+      // #164 에서 Container -> DecoratedBox 로 바뀌었다(Positioned.fill).
       final circles = find
           .byWidgetPredicate((w) =>
-              w is Container &&
+              w is DecoratedBox &&
               w.decoration is BoxDecoration &&
               (w.decoration as BoxDecoration).shape == BoxShape.circle &&
               (w.decoration as BoxDecoration).gradient != null)
           .evaluate()
           .map((e) =>
-              ((e.widget as Container).decoration as BoxDecoration).gradient)
+              ((e.widget as DecoratedBox).decoration as BoxDecoration).gradient)
           .whereType<LinearGradient>()
           .toList();
       expect(circles, isNotEmpty, reason: '그라디언트 원이 없다');
-      // 시안 실측 대각 #FF787C -> #FFA08E
-      expect(circles.first.colors, contains(const Color(0xFFFF787C)));
-      expect(circles.first.colors, contains(const Color(0xFFFFA08E)));
+      // #164 재실측: 대각 #FF6F7C -> #F5AF99
+      expect(circles.first.colors, contains(const Color(0xFFFF6F7C)));
+      expect(circles.first.colors, contains(const Color(0xFFF5AF99)));
     });
 
     testWidgets('🔴 아바타 크기가 시안과 같다 (98x99dp)', (t) async {
       await _pumpProfile(t);
       final c = find.byWidgetPredicate((w) =>
-          w is Container &&
+          w is DecoratedBox &&
           w.decoration is BoxDecoration &&
           (w.decoration as BoxDecoration).gradient != null &&
           (w.decoration as BoxDecoration).shape == BoxShape.circle);
       expect(c, findsWidgets);
       final s = t.getSize(c.first);
+      // #164 재실측 98.2 정원.
       expect(s.width, closeTo(98, 2), reason: '시안 98.2dp');
-      expect(s.height, closeTo(99, 2), reason: '시안 99.1dp');
+      expect(s.height, closeTo(98, 2), reason: '시안 98.2dp');
     });
 
     testWidgets('🔴 상호명과 부가정보 줄이 보인다', (t) async {
@@ -146,14 +148,13 @@ void main() {
       expect(find.textContaining('마케팅'), findsWidgets);
     });
 
-    testWidgets('기능 유지 — 사업자 정보 접이식이 살아 있다', (t) async {
+    testWidgets('기능 유지 — 사업자 정보로 가는 길이 살아 있다', (t) async {
+      // 🔴 #164 시안에는 접이식 '사업자 정보' 카드가 없다. 대신
+      //    '사업자 정보 수정' 한 줄로 들어간다. 정보를 보거나 고칠
+      //    길 자체가 사라지면 안 되므로 그 줄의 존재를 확인한다.
       await _pumpProfile(t);
-      expect(find.text('사업자 정보'), findsOneWidget);
-      await t.tap(find.text('사업자 정보'));
-      await t.pump(const Duration(milliseconds: 250));
+      expect(find.text('사업자 정보 수정'), findsOneWidget);
       expect(t.takeException(), isNull);
-      // 펼치면 항목 라벨이 나온다.
-      expect(find.text('사업자등록번호'), findsOneWidget);
     });
 
     testWidgets('🔴 코랄 무료 플랜 배지가 보인다', (t) async {
@@ -175,10 +176,11 @@ void main() {
       expect(t.takeException(), isNull);
     });
 
-    testWidgets('🔴 좁은 화면에서도 사업자 정보 배지가 잘리지 않는다', (t) async {
+    testWidgets('🔴 좁은 화면(320)에서도 목록 글자가 잘리지 않는다', (t) async {
+      // #164 시안에서 '전자세금계산서 연동용' 배지가 사라졌다.
+      //    대신 가장 긴 줄이 좁은 화면에서 넘치지 않는지 본다.
       await _pumpProfile(t, size: const Size(320, 1200));
-      // 42px 오버플로를 고치면서 배지를 지우거나 숨기지 않았음을 확인한다.
-      expect(find.text('전자세금계산서 연동용'), findsOneWidget);
+      expect(find.text('이용약관 및 개인정보 처리방침'), findsOneWidget);
       expect(t.takeException(), isNull);
     });
   });
@@ -255,7 +257,7 @@ void main() {
           reason: '다시 누르면 꺼져야 한다');
     });
 
-    testWidgets('🔴 카드 좌우 여백이 시안 20dp 다', (t) async {
+    testWidgets('🔴 카드 좌우 여백이 시안 24dp 다', (t) async {
       await _pumpNotif(t, size: const Size(390, 900));
       final card = find.ancestor(
         of: find.text('영수증 처리 알림'),
@@ -267,8 +269,10 @@ void main() {
       );
       expect(card, findsWidgets);
       final r = t.getRect(card.first);
-      expect(r.left, closeTo(20, 1.5), reason: '시안 좌 19.8dp');
-      expect(390 - r.right, closeTo(20, 1.5), reason: '시안 우 19.8dp');
+      // #164 재실측: 좌 24.1dp (이전 #141 실측 19.8 은 환산비가 틀렸다)
+      expect(r.left, closeTo(24, 1.5), reason: '시안 좌 24.1dp');
+      // #164 재실측: 우 24.1dp
+      expect(390 - r.right, closeTo(24, 1.5), reason: '시안 우 24.1dp');
     });
 
     testWidgets('좁은 화면(320)에서도 오버플로가 없다', (t) async {
