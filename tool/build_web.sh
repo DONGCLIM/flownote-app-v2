@@ -86,6 +86,42 @@ echo "==> 결과물:"
 du -sh build/web 2>/dev/null || true
 ls -la build/web/main.dart.js 2>/dev/null || true
 
+# ── 🔴 키가 진짜 들어갔는지 결과물에서 확인한다 ────────────────────
+#
+# 왜 이게 필요한가 (#165 사고):
+#   `flutter build web` 을 직접 돌려 배포한 적이 있다. 키가 전부 빈
+#   문자열로 컴파일돼서 **웹 로그인이 통째로 죽었다** — 카카오 버튼은
+#   '준비 중' 이 되고, google_sign_in / firebase_auth 플러그인 등록이
+#   깨지면서 구글 로그인까지 같이 멎었다.
+#
+#   그때도 부팅 로그에 '⚠️ OCR 키가 빌드에 없습니다' 가 찍혀 있었는데
+#   아무도 안 읽었다. 그래서 **읽을 필요가 없게** 빌드를 멈춘다.
+#
+#   이 검사는 `--dart-define-from-file` 로 넘긴 값이 실제로 번들
+#   안에 문자열로 남았는지를 본다. 들어갔다면 반드시 있다.
+check_injected() {
+  local file="$1" name="$2"
+  [[ -f "$file" ]] || return 0
+  local val
+  val=$(python3 -c "import json,sys; print(json.load(open('$file')).get('$name',''))" 2>/dev/null || echo "")
+  [[ -n "$val" ]] || return 0
+  if grep -qF -- "$val" build/web/main.dart.js; then
+    echo "   OK  $name 이 번들에 들어갔습니다"
+  else
+    echo >&2
+    echo "!! 빌드 중단: $name 이 번들에 없습니다." >&2
+    echo "   secrets/ 에는 값이 있는데 결과물에 없습니다." >&2
+    echo "   --dart-define-from-file 이 적용되지 않았습니다." >&2
+    echo "   이대로 배포하면 로그인/스캔이 전부 죽습니다." >&2
+    exit 1
+  fi
+}
+
+echo
+echo "==> 주입 검증 (#165 재발 방지)"
+check_injected secrets/gemini.json GEMINI_API_KEY
+check_injected secrets/kakao.json  KAKAO_JS_KEY
+
 if [[ "$DEPLOY" == "1" ]]; then
   echo
   # 서비스 계정으로 인증한다. `firebase login` 은 브라우저가 필요해서
