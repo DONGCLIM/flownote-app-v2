@@ -80,6 +80,26 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // ── 문의하기 (제안 및 피드백) ────────────────────────────
+    //   `inquiry_service.dart` 가 쓴다. 답변은 관리자가 콘솔에서 본다.
+    //
+    //   - 생성: 로그인 사용자. 단, 남의 이름으로 쓸 수 없게
+    //           uid 가 본인과 같아야 하고, 상태는 '접수' 로만 시작한다.
+    //   - 읽기/수정/삭제: 금지.
+    //     🔴 읽기를 열면 아무나 남의 문의를 다 긁어갈 수 있다.
+    //        본인 글만 보여주는 화면이 생기면 그때
+    //        `allow read: if isOwner(resource.data.uid)` 로 연다.
+    match /inquiries/{docId} {
+      allow create: if isSignedIn()
+                    && request.resource.data.uid == request.auth.uid
+                    && request.resource.data.status == '접수'
+                    && request.resource.data.content is string
+                    && request.resource.data.content.size() > 0
+                    && request.resource.data.content.size() <= 1000;
+      allow read: if false;
+      allow update, delete: if false;
+    }
+
     // ── 그 외 모든 경로 차단 ─────────────────────────────────
     match /{document=**} {
       allow read, write: if false;

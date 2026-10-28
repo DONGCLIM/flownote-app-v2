@@ -8,6 +8,7 @@ import '../../services/pwa_install.dart';
 import '../../services/subscription_service.dart';
 import 'add_to_home_sheet.dart';
 import 'auth_ds_screens.dart';
+import 'inquiry_ds_screen.dart';
 import 'legal_doc_ds_screen.dart';
 import 'notice_list_ds_screen.dart';
 import 'notification_settings_ds_screen.dart';
@@ -157,7 +158,13 @@ class _ProfileDsScreenState extends State<ProfileDsScreen> {
                             builder: (_) => const NoticeListDsScreen()),
                       ),
                 ),
-                ('제안 및 피드백', () => _todo(context, '제안 및 피드백')),
+                (
+                  '제안 및 피드백',
+                  () => Navigator.of(context).push(
+                        MaterialPageRoute(
+                            builder: (_) => const InquiryDsScreen()),
+                      ),
+                ),
                 ('이용약관 및 개인정보 처리방침', () => _openLegal(context)),
               ],
             ),
@@ -228,11 +235,6 @@ class _ProfileDsScreenState extends State<ProfileDsScreen> {
     Navigator.of(context).popUntil((r) => r.isFirst);
   }
 
-  static void _todo(BuildContext context, String label) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('$label은 준비 중이에요')),
-    );
-  }
 }
 
 /// 시안 상단 — 배지 + 아바타 + 상호명 + 대표자 줄.
