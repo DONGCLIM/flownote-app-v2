@@ -7,6 +7,7 @@ import '../../services/inquiry_picker.dart';
 import '../../services/inquiry_service.dart';
 import '../../theme/fn_ds.dart';
 import '../../widgets/fn_inquiry_parts.dart';
+import 'inquiry_list_ds_screen.dart';
 
 /// 문의 쓰기 / 고치기 — 사장님 시안 1:1.
 ///
@@ -40,10 +41,16 @@ import '../../widgets/fn_inquiry_parts.dart';
 /// 🔴 화면을 둘로 나누지 않았다. 쓰기와 고치기는 칸이 똑같아서
 ///    따로 만들면 한쪽만 고쳐 놓고 다른 쪽을 잊게 된다.
 class InquiryDsScreen extends StatefulWidget {
-  const InquiryDsScreen({super.key, this.origin});
+  const InquiryDsScreen({super.key, this.origin, this.fromList = false});
 
   /// 고칠 글. null 이면 새로 쓰기.
   final Inquiry? origin;
+
+  /// 내 문의 내역 목록에서 들어왔는가.
+  ///
+  /// 보내고 나서 목록으로 갈 때, 목록을 새로 띄울지(프로필에서 바로 들어온
+  /// 경우) 그냥 돌아갈지(이미 목록이 뒤에 있는 경우)를 가른다.
+  final bool fromList;
 
   @override
   State<InquiryDsScreen> createState() => _InquiryDsScreenState();
@@ -226,6 +233,26 @@ class _InquiryDsScreenState extends State<InquiryDsScreen> {
     }
   }
 
+  /// 확인을 누른 뒤 내 문의 내역으로 보낸다.
+  ///
+  /// 🔴 글쓰기 화면을 목록으로 **바꿔치기**한다 (`pushReplacement`).
+  ///    그냥 쌓으면 목록에서 뒤로가기를 눌렀을 때 방금 보낸 글쓰기 화면이
+  ///    다시 나와서, 같은 글을 두 번 보내게 된다.
+  ///
+  /// 🔴 목록에서 들어온 경우에는 새로 쌓지 않고 그냥 돌아간다
+  ///    ([InquiryDsScreen.fromList]). 목록이 두 장 겹치면 뒤로가기를
+  ///    두 번 눌러야 한다. 방금 쓴 글은 `watch()` 스트림이 맨 위에 올려준다.
+  void _goToMyList() {
+    final nav = Navigator.of(context);
+    if (widget.fromList) {
+      nav.pop(true);
+      return;
+    }
+    nav.pushReplacement(
+      MaterialPageRoute<void>(builder: (_) => const InquiryListDsScreen()),
+    );
+  }
+
   Future<void> _submit() async {
     FocusScope.of(context).unfocus();
     setState(() => _sending = true);
@@ -240,7 +267,7 @@ class _InquiryDsScreenState extends State<InquiryDsScreen> {
         if (!mounted) return;
         await _showDone();
         if (!mounted) return;
-        Navigator.of(context).pop(true);
+        _goToMyList();
       } else {
         await InquiryService.instance.update(
           origin: origin,
@@ -265,7 +292,14 @@ class _InquiryDsScreenState extends State<InquiryDsScreen> {
     }
   }
 
-  /// 접수 안내. 누르고 나서야 화면을 닫는다.
+  /// 접수 안내 팝업.
+  ///
+  /// 🔴 전체 화면이 아니라 팝업이다. 글을 보낸 뒤 화면이 통째로 바뀌면
+  ///    사장님이 지금 어디에 있는지 알기 어렵다. 팝업은 뒤에 쓰던 화면이
+  ///    비쳐 보여서 무엇을 끝냈는지가 남는다.
+  ///
+  /// 🔴 바깥을 눌러도 닫히지 않게 막아 둔다 (`barrierDismissible: false`).
+  ///    모르고 닫히면 보낸 건지 아닌지 알 수 없다.
   Future<void> _showDone() {
     return showDialog<void>(
       context: context,
@@ -289,11 +323,12 @@ class _InquiryDsScreenState extends State<InquiryDsScreen> {
                     size: 28, color: Colors.white),
               ),
               const SizedBox(height: FnDs.gapM),
-              const Text('문의가 접수되었습니다',
+              const Text('문의가 접수되었어요',
                   textAlign: TextAlign.center, style: FnDs.tsSection),
               const SizedBox(height: FnDs.gapXs),
               const Text(
-                '확인 후 계정에 등록된 이메일로\n답변드릴게요.',
+                '남겨주신 내용을 확인한 후 빠르게 답변드릴게요.\n'
+                '답변은 \'내 문의 내역\'에서 확인하실 수 있어요.',
                 textAlign: TextAlign.center,
                 style: FnDs.tsSub,
               ),

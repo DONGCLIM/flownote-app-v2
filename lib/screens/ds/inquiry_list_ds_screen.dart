@@ -96,7 +96,8 @@ class InquiryListDsScreen extends StatelessWidget {
                   label: '문의하기',
                   onTap: () => Navigator.of(context).push(
                     MaterialPageRoute<bool>(
-                        builder: (_) => const InquiryDsScreen()),
+                        builder: (_) =>
+                            const InquiryDsScreen(fromList: true)),
                   ),
                 ),
               ),
