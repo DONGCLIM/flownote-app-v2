@@ -16,6 +16,20 @@ service firebase.storage {
       return request.auth != null;
     }
 
+    function isOwnerUid(uid) {
+      return isSignedIn() && request.auth.uid == uid;
+    }
+
+    // 관리자 한 명.
+    //
+    // 🔴 `inquiry_service.dart` 의 `adminEmail`, `firestore.rules` 의
+    //    `isAdmin()` 과 **세 곳이 모두 같은 주소**여야 한다.
+    function isAdmin() {
+      return isSignedIn()
+             && request.auth.token.email == 'flownote.kr@gmail.com'
+             && request.auth.token.email_verified == true;
+    }
+
     // ── 학습용 영수증 이미지 ─────────────────────────────────
     //   🔴 실제 업로드 경로는 `receipts/{docId}.jpg` 이다.
     //      (training_data_service.dart `_uploadImage()` → _storage.ref('receipts/...'))
@@ -43,17 +57,25 @@ service firebase.storage {
       allow read, write: if request.auth != null && request.auth.uid == uid;
     }
 
-    // ── 문의 첨부 파일 ───────────────────────────────────────
+    // ── 문의 첨부 사진 ───────────────────────────────────────
     //   경로: inquiries/<uid>/<문의id>/<순번>_<파일명>
-    //   본인 폴더에만 쓸 수 있다. 올린 직후 getDownloadURL() 을
-    //   부르므로 본인 읽기는 허용한다. 10MB 상한은 앱(InquiryService)
-    //   과 같은 값이다 — 한쪽만 바꾸면 "앱은 통과시켰는데 서버가
-    //   거부" 하는 혼란이 생긴다.
+    //
+    //   - 쓰기: 본인 폴더에만. **사진만**, 5MB 이하.
+    //     앱이 올리기 전에 긴 쪽 1600px / 약 1MB 로 줄이므로
+    //     5MB 는 넉넉한 안전선이다. `InquiryService.maxFileBytes`
+    //     와 **같은 값**이어야 한다 — 한쪽만 바꾸면 "앱은 통과시켰는데
+    //     서버가 거부" 하는 혼란이 생긴다.
+    //   - 읽기: 본인, 그리고 관리자.
+    //     🔴 관리자가 못 읽으면 답변할 때 첨부 사진이 깨져 보인다.
+    //     🔴 다른 사람은 링크를 알아도 열리지 않는다.
+    //   - 삭제: 본인(글을 지울 때) 또는 관리자.
     match /inquiries/{uid}/{allPaths=**} {
       allow write: if request.auth != null
                    && request.auth.uid == uid
-                   && request.resource.size < 10 * 1024 * 1024;
-      allow read: if request.auth != null && request.auth.uid == uid;
+                   && request.resource.size < 5 * 1024 * 1024
+                   && request.resource.contentType.matches('image/.*');
+      allow read: if isOwnerUid(uid) || isAdmin();
+      allow delete: if isOwnerUid(uid) || isAdmin();
     }
 
     // ── 그 외 차단 ───────────────────────────────────────────

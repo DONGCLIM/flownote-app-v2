@@ -8,7 +8,7 @@ import '../../services/pwa_install.dart';
 import '../../services/subscription_service.dart';
 import 'add_to_home_sheet.dart';
 import 'auth_ds_screens.dart';
-import 'inquiry_ds_screen.dart';
+import 'inquiry_list_ds_screen.dart';
 import 'legal_doc_ds_screen.dart';
 import 'notice_list_ds_screen.dart';
 import 'notification_settings_ds_screen.dart';
@@ -159,10 +159,13 @@ class _ProfileDsScreenState extends State<ProfileDsScreen> {
                       ),
                 ),
                 (
+                  // 🔴 글쓰기로 바로 가지 않고 목록으로 간다. 보낸 문의와
+                  //    답변을 여기서 확인해야 하기 때문이다.
+                  //    관리자 계정이면 같은 화면이 '전체 문의' 가 된다.
                   '제안 및 피드백',
                   () => Navigator.of(context).push(
                         MaterialPageRoute(
-                            builder: (_) => const InquiryDsScreen()),
+                            builder: (_) => const InquiryListDsScreen()),
                       ),
                 ),
                 ('이용약관 및 개인정보 처리방침', () => _openLegal(context)),

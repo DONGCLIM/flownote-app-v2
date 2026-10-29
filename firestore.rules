@@ -24,6 +24,19 @@ service cloud.firestore {
       return isSignedIn() && request.auth.uid == uid;
     }
 
+    // 관리자 한 명.
+    //
+    // 🔴 `inquiry_service.dart` 의 `adminEmail` 과 **같은 주소**여야 한다.
+    //    한쪽만 바꾸면 앱에는 답변 버튼이 보이는데 저장이 거부된다.
+    //
+    // 🔴 `email_verified` 를 같이 본다. 메일 주소만 보면, 확인되지 않은
+    //    주소로 가입해 관리자 행세를 할 여지가 생긴다.
+    function isAdmin() {
+      return isSignedIn()
+             && request.auth.token.email == 'flownote.kr@gmail.com'
+             && request.auth.token.email_verified == true;
+    }
+
     // ── 사용자 개인정보 ──────────────────────────────────────
     //   users/{uid}                  회원 정보 + 사업자 정보 + 동의 이력
     //   users/{uid}/receipts/{id}    영수증 클라우드 백업
@@ -81,23 +94,56 @@ service cloud.firestore {
     }
 
     // ── 문의하기 (제안 및 피드백) ────────────────────────────
-    //   `inquiry_service.dart` 가 쓴다. 답변은 관리자가 콘솔에서 본다.
+    //   `inquiry_service.dart` 가 쓴다. 앱 화면과 이 규칙은 **같은 내용**
+    //   이어야 한다. 앱에서만 막으면 서버에 직접 요청해서 뚫을 수 있고,
+    //   규칙에서만 막으면 앱이 '권한 없음' 으로 멈춘다.
     //
-    //   - 생성: 로그인 사용자. 단, 남의 이름으로 쓸 수 없게
-    //           uid 가 본인과 같아야 하고, 상태는 '접수' 로만 시작한다.
-    //   - 읽기/수정/삭제: 금지.
-    //     🔴 읽기를 열면 아무나 남의 문의를 다 긁어갈 수 있다.
-    //        본인 글만 보여주는 화면이 생기면 그때
-    //        `allow read: if isOwner(resource.data.uid)` 로 연다.
+    //   | | 작성자 | 관리자 |
+    //   |---|---|---|
+    //   | 읽기 | 본인 글만 | 전부 |
+    //   | 수정 | 접수 상태 + 카테고리·내용·첨부만 | 답변 칸만 |
+    //   | 삭제 | 언제든 | 언제든 |
+    //
+    //   🔴 `hasOnly()` 로 바꿀 수 있는 칸을 못 박았다. 이게 없으면
+    //      작성자가 자기 글의 `status` 를 '답변완료' 로 바꾸거나
+    //      `answer` 에 아무 말이나 적어 넣을 수 있다.
     match /inquiries/{docId} {
       allow create: if isSignedIn()
                     && request.resource.data.uid == request.auth.uid
                     && request.resource.data.status == '접수'
+                    && request.resource.data.answer == ''
+                    && request.resource.data.answeredAt == null
                     && request.resource.data.content is string
                     && request.resource.data.content.size() > 0
-                    && request.resource.data.content.size() <= 1000;
-      allow read: if false;
-      allow update, delete: if false;
+                    && request.resource.data.content.size() <= 1000
+                    && request.resource.data.get('attachmentUrls', []).size() <= 3;
+
+      // 남의 글은 아예 읽히지 않는다.
+      allow read: if isOwner(resource.data.uid) || isAdmin();
+
+      allow update: if
+        // (가) 작성자가 고치는 경우 — 답변 전에만, 내용 칸만.
+        (
+          isOwner(resource.data.uid)
+          && resource.data.status == '접수'
+          && resource.data.get('answer', '') == ''
+          && request.resource.data.uid == resource.data.uid
+          && request.resource.data.diff(resource.data).affectedKeys()
+               .hasOnly(['category', 'content',
+                         'attachmentUrls', 'attachmentNames', 'updatedAt'])
+          && request.resource.data.content is string
+          && request.resource.data.content.size() > 0
+          && request.resource.data.content.size() <= 1000
+          && request.resource.data.get('attachmentUrls', []).size() <= 3
+        )
+        // (나) 관리자가 답변하는 경우 — 답변 칸만. 남의 글 내용은 못 바꾼다.
+        || (
+          isAdmin()
+          && request.resource.data.diff(resource.data).affectedKeys()
+               .hasOnly(['answer', 'answeredAt', 'status'])
+        );
+
+      allow delete: if isOwner(resource.data.uid) || isAdmin();
     }
 
     // ── 그 외 모든 경로 차단 ─────────────────────────────────
