@@ -450,43 +450,44 @@ class _HomeDsScreenState extends State<HomeDsScreen> {
   /// 예전 `_guideCard` + `_priceCard` 를 시안의 한 묶음으로 합쳤다.
   /// 제목/부제는 카드 밖, 본문은 흰 카드 안 — 시안과 같은 구성이다.
   Widget _guideSection(FnDemoData d) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        const Padding(
-          padding: EdgeInsets.only(left: 2, bottom: 2),
-          child: Text(
-            '스마트 사입 가이드',
-            style: TextStyle(
-              fontFamily: 'Pretendard',
-              fontSize: 16,
-              fontWeight: FontWeight.w700,
-              color: FnHome.title,
+    // 🔴 제목·부제·카드가 한 덩어리로 눌린다.
+    //    예전에는 흰 카드만 눌렸다. 사장님이 제목을 눌렀을 때 아무 일도
+    //    안 일어나면 "고장났나" 하게 된다. 그래서 묶음 전체를 감쌌다.
+    //
+    // 🔴 `behavior: opaque` 를 준다. Column 의 글자 사이 빈 곳은 기본값
+    //    (`deferToChild`)이면 터치를 안 받아서, 여백을 누르면 반응이 없다.
+    return _Tappable(
+      onTap: _openGuide,
+      radius: FnHome.radius,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Padding(
+            padding: EdgeInsets.only(left: 2, bottom: 2),
+            child: Text(
+              '스마트 사입 가이드',
+              style: TextStyle(
+                fontFamily: 'Pretendard',
+                fontSize: 16,
+                fontWeight: FontWeight.w700,
+                color: FnHome.title,
+              ),
             ),
           ),
-        ),
-        const Padding(
-          padding: EdgeInsets.only(left: 2, bottom: 12),
-          child: Text(
-            '지난 매입 데이터로 올해 시즌과 월별 사입 기준을 세워요',
-            style: TextStyle(
-              fontFamily: 'Pretendard',
-              fontSize: 12.5,
-              height: 1.4,
-              color: FnHome.body,
+          const Padding(
+            padding: EdgeInsets.only(left: 2, bottom: 12),
+            child: Text(
+              '지난 매입 데이터로 올해 시즌과 월별 사입 기준을 세워요',
+              style: TextStyle(
+                fontFamily: 'Pretendard',
+                fontSize: 12.5,
+                height: 1.4,
+                color: FnHome.body,
+              ),
             ),
           ),
-        ),
-        _Tappable(
-          onTap: () => _isPro
-              ? _push(const GuideDsScreen())
-              : _proModal(
-                  '🔒 스마트 사입 가이드는\nPro 전용이에요',
-                  '지난 시즌과 월별 흐름을 분석해\n다음 사입을 더 알뜰하게 준비하도록 도와드려요.',
-                ),
-          radius: FnHome.radius,
-          child: Container(
+          Container(
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
             decoration: BoxDecoration(
               // 시안 실측 순백. 그림자 Δ 15.9.
@@ -530,8 +531,23 @@ class _HomeDsScreenState extends State<HomeDsScreen> {
               ],
             ),
           ),
-        ),
-      ],
+        ],
+      ),
+    );
+  }
+
+  /// 스마트 사입 가이드 열기.
+  ///
+  /// 제목·부제·카드 어디를 눌러도 같은 곳으로 간다. 분기가 두 군데로
+  /// 갈라지면 한쪽만 고쳐 놓고 다른 쪽을 잊게 되므로 함수로 모았다.
+  void _openGuide() {
+    if (_isPro) {
+      _push(const GuideDsScreen());
+      return;
+    }
+    _proModal(
+      '🔒 스마트 사입 가이드는\nPro 전용이에요',
+      '지난 시즌과 월별 흐름을 분석해\n다음 사입을 더 알뜰하게 준비하도록 도와드려요.',
     );
   }
 
@@ -732,7 +748,9 @@ class _Tappable extends StatelessWidget {
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(radius),
-        child: child,
+        // 🔴 글자 사이 빈 곳도 눌리게 한다. 기본값이면 자식 위젯이
+        //    있는 자리만 터치를 받아서, 여백을 누르면 아무 일도 안 난다.
+        child: Container(color: Colors.transparent, child: child),
       ),
     );
   }
