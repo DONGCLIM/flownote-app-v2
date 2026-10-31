@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../design/fn_tokens.dart';
+import '../../design/fn_feedback.dart';
 import '../../design/fn_shell.dart';
 import '../../design/fn_card.dart';
 import '../../design/fn_badge_ds.dart';
@@ -10,6 +11,7 @@ import '../../design/fn_avatar.dart';
 import '../../providers/receipt_provider.dart';
 import '../../services/flower_season_service.dart';
 import '../../services/subscription_service.dart';
+import '../../theme/fn_ds.dart';
 import 'fn_data.dart';
 import 'season_ds_screen.dart';
 
@@ -625,28 +627,63 @@ class CompareDsScreen extends StatelessWidget {
 class GuideDsScreen extends StatelessWidget {
   const GuideDsScreen({super.key});
 
-  static const _menu = [
-    (
-      title: '① 시즌 매입 비교',
-      desc: '지난 시즌 및 전년 동월 대비 사입 지출 금액을 비교해요.',
+  /// 🔴 지금 보이는 숫자는 전부 **예시값**이다.
+  ///    사장님 지시: "데이터는 예시값으로 채우고, 실제 기능은 만들지 마."
+  ///    실제 계산을 붙일 자리는 `docs/TODO_기능연결.md` 에 적어 두었다.
+  static const String budgetSpend = '27.4만원';
+  static const String budgetPlan = '금요일 사입 예정 · 3개 품목';
+  static const String budgetCap = '한도 400,000원';
+  static const String budgetLeft = '12.6만원';
+
+  /// 막대 채움 비율. 27.4 / 40.0
+  static const double budgetRatio = 0.685;
+
+  static const _menu = <_GuideRow>[
+    _GuideRow(
+      icon: Icons.receipt_long_outlined,
+      title: '시즌 매입 비교',
+      desc: '올해 매입을 전년 동기·월 평균과 비교해요.',
+      left: '1~7월 +7.5%',
+      right: '전년 동기 대비',
+      highlight: false,
       page: 'season',
     ),
-    // 꽃별 계절 시세는 내 매입 내역이 아니라 양재 경매 2년치에서 나온다.
-    // 그래서 '내 지출을 비교'하는 ①과 성격이 다르고, 따로 둔다.
-    (
-      title: '② 꽃별 계절 시세',
-      desc: '어떤 꽃이 몇 월에 비싸고 싼지, 최근 2년 양재 경매에서 반복된 흐름을 알려드려요.',
-      page: 'flowerSeason',
-    ),
-    (
-      title: '③ 원가 계산기',
-      desc: '꽃 조합·수량으로 레시피 원가를 산출하고, 목표 마진율에 맞는 판매가를 계산해요.',
+    _GuideRow(
+      icon: Icons.calculate_outlined,
+      title: '원가 계산기',
+      desc: '꽃 조합과 수량으로 판매가와 마진을 계산해요.',
+      left: '권장가 307,200원',
+      right: '마진 60%',
+      highlight: true,
       page: 'cost',
     ),
-    (
-      title: '④ 예산 검토',
-      desc: '다음 사입에 필요한 꽃 리스트를 입력하면, 최근 시세로 예상 구매 예산을 검토해요.',
+    _GuideRow(
+      icon: Icons.account_balance_wallet_outlined,
+      title: '예산 검토',
+      desc: '직전 매입 단가로 예상 예산을 계산해요.',
+      left: '한도 40만원 중 27.4만원',
+      right: '69% 사용',
+      highlight: true,
       page: 'budget',
+    ),
+    // 아래 두 가지는 아직 화면이 없다. 눌러도 넘어가지 않고 안내만 띄운다.
+    _GuideRow(
+      icon: Icons.fact_check_outlined,
+      title: '저장된 사입 리스트',
+      desc: '날짜별 사입 리스트와 예산을 확인해요.',
+      left: '3건 저장 · 1회 평균 13.8만원',
+      right: '최근 07.24',
+      highlight: false,
+      page: 'saved',
+    ),
+    _GuideRow(
+      icon: Icons.edit_note_outlined,
+      title: '사입 메모장',
+      desc: '사입 메모와 부케 스케치를 함께 기록해요.',
+      left: '마지막 기록 07.24',
+      right: '메모 2줄',
+      highlight: false,
+      page: 'memo',
     ),
   ];
 
@@ -654,47 +691,232 @@ class GuideDsScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return FnShell(
       navTitle: '스마트 사입 가이드',
+      bg: FnDs.bg,
       onBack: () => Navigator.of(context).pop(),
-      child: FnColumn(
-        gap: 12,
-        children: _menu
-            .map(
-              (m) => FnCard(
-                bordered: true,
-                onTap: () => Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (_) => switch (m.page) {
-                      'season' => const GuideSeasonDsScreen(),
-                      'flowerSeason' => const SeasonDsScreen(),
-                      'cost' => const GuideCostDsScreen(),
-                      _ => const GuideBudgetDsScreen(),
-                    },
+      child: ColoredBox(
+        color: FnDs.bg,
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(
+              FnDs.pagePad, 18, FnDs.pagePad, FnDs.gapXl),
+          children: [
+            const _GuideBudgetCard(),
+            const SizedBox(height: FnDs.gapS),
+            for (final m in _menu) ...[
+              _GuideMenuCard(row: m, onTap: () => _open(context, m.page)),
+              const SizedBox(height: FnDs.gapS),
+            ],
+            const SizedBox(height: FnDs.gap2xs),
+            const Text(
+              '내 영수증의 매입 단가를 기준으로 계산해요.\n'
+              '저장하면 다음 사입에 이어서 쓸 수 있어요.',
+              style: FnDs.tsSub,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// 🔴 아직 없는 화면은 넘어가지 않고 안내만 띄운다.
+  ///    빈 화면으로 보내면 사장님이 "고장났나" 하게 된다.
+  void _open(BuildContext context, String page) {
+    final screen = switch (page) {
+      'season' => const GuideSeasonDsScreen(),
+      'cost' => const GuideCostDsScreen(),
+      'budget' => const GuideBudgetDsScreen(),
+      _ => null,
+    };
+    if (screen == null) {
+      showFnToast(context, '곧 준비해서 알려드릴게요.');
+      return;
+    }
+    Navigator.of(context).push(MaterialPageRoute(builder: (_) => screen));
+  }
+}
+
+/// 가이드 목록 한 줄에 들어가는 값.
+@immutable
+class _GuideRow {
+  const _GuideRow({
+    required this.icon,
+    required this.title,
+    required this.desc,
+    required this.left,
+    required this.right,
+    required this.highlight,
+    required this.page,
+  });
+
+  final IconData icon;
+  final String title;
+  final String desc;
+
+  /// 아래 줄 왼쪽 — 진하게.
+  final String left;
+
+  /// 아래 줄 오른쪽.
+  final String right;
+
+  /// 오른쪽 글자를 코랄로 쓸지. (마진·사용률처럼 눈여겨볼 값)
+  final bool highlight;
+
+  final String page;
+}
+
+/// 맨 위 "이번 주 사입 준비" 카드.
+class _GuideBudgetCard extends StatelessWidget {
+  const _GuideBudgetCard();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(FnDs.cardPad),
+      decoration: FnDs.cardDeco(),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('이번 주 사입 준비', style: FnDs.tsSection),
+          const SizedBox(height: FnDs.gapS),
+          const Text('예상 예산', style: FnDs.tsSub),
+          const SizedBox(height: FnDs.gap2xs),
+          const Text(
+            GuideDsScreen.budgetSpend,
+            style: TextStyle(
+              fontFamily: FnDs.font,
+              fontSize: FnDs.font2xl,
+              fontWeight: FontWeight.w800,
+              letterSpacing: -0.5,
+              color: FnDs.coral,
+            ),
+          ),
+          const SizedBox(height: FnDs.gapS),
+          Row(
+            children: [
+              const Expanded(
+                child: Text(
+                  GuideDsScreen.budgetPlan,
+                  style: TextStyle(
+                    fontFamily: FnDs.font,
+                    fontSize: FnDs.fontS,
+                    color: FnDs.title,
                   ),
                 ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text(m.title,
-                            style: _t15.copyWith(fontWeight: FontWeight.w700)),
-                        const Icon(Icons.chevron_right_rounded,
-                            size: 18, color: FnColors.labelAssistive),
-                      ],
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      m.desc,
-                      style: _t13.copyWith(
-                          color: FnColors.labelAlternative, height: 1.5),
-                    ),
-                  ],
-                ),
               ),
-            )
-            .toList(),
+              const Text(GuideDsScreen.budgetCap, style: FnDs.tsSub),
+            ],
+          ),
+          const SizedBox(height: FnDs.gapXs),
+          // 막대. 🔴 Stack 으로 겹치지 않고 Row 로 비율을 나눈다 —
+          //    Stack 은 부모 폭을 모를 때 0 으로 찌그러진다.
+          ClipRRect(
+            borderRadius: BorderRadius.circular(5),
+            child: SizedBox(
+              height: 8,
+              child: Row(
+                children: [
+                  Expanded(
+                    flex: (GuideDsScreen.budgetRatio * 1000).round(),
+                    child: const ColoredBox(color: FnDs.coral),
+                  ),
+                  Expanded(
+                    flex: 1000 - (GuideDsScreen.budgetRatio * 1000).round(),
+                    child: const ColoredBox(color: FnDs.coralFaint),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: FnDs.gapXs),
+          Text.rich(
+            TextSpan(
+              style: const TextStyle(
+                fontFamily: FnDs.font,
+                fontSize: FnDs.fontS,
+                fontWeight: FontWeight.w600,
+                color: FnDs.title,
+              ),
+              children: const [
+                TextSpan(text: '한도까지 '),
+                TextSpan(
+                    text: GuideDsScreen.budgetLeft,
+                    style: TextStyle(color: FnDs.coral)),
+                TextSpan(text: ' 남았어요'),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 가이드 목록 카드 한 장.
+class _GuideMenuCard extends StatelessWidget {
+  const _GuideMenuCard({required this.row, required this.onTap});
+
+  final _GuideRow row;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.all(FnDs.cardPad),
+        decoration: FnDs.cardDeco(),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(row.icon, size: 17, color: FnDs.coral),
+                const SizedBox(width: FnDs.gapXs),
+                Expanded(
+                  child: Text(
+                    row.title,
+                    style: const TextStyle(
+                      fontFamily: FnDs.font,
+                      fontSize: FnDs.fontL,
+                      fontWeight: FontWeight.w700,
+                      color: FnDs.title,
+                    ),
+                  ),
+                ),
+                const Icon(Icons.chevron_right_rounded,
+                    size: 18, color: FnDs.chevron),
+              ],
+            ),
+            const SizedBox(height: FnDs.gapXs),
+            Text(row.desc, style: FnDs.tsSub),
+            const SizedBox(height: FnDs.gapS),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Expanded(
+                  child: Text(
+                    row.left,
+                    style: const TextStyle(
+                      fontFamily: FnDs.font,
+                      fontSize: FnDs.fontS,
+                      fontWeight: FontWeight.w700,
+                      color: FnDs.title,
+                    ),
+                  ),
+                ),
+                Text(
+                  row.right,
+                  style: TextStyle(
+                    fontFamily: FnDs.font,
+                    fontSize: FnDs.fontXs,
+                    fontWeight: row.highlight ? FontWeight.w700 : FontWeight.w400,
+                    color: row.highlight ? FnDs.coral : FnDs.sub,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
