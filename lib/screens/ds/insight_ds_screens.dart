@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../../design/fn_tokens.dart';
 import '../../design/fn_feedback.dart';
 import '../../design/fn_shell.dart';
+import '../../design/fn_sheet.dart';
 import '../../design/fn_card.dart';
 import '../../design/fn_badge_ds.dart';
 import '../../design/fn_charts_ds.dart';
@@ -12,6 +13,7 @@ import '../../providers/receipt_provider.dart';
 import '../../services/flower_season_service.dart';
 import '../../services/subscription_service.dart';
 import '../../theme/fn_ds.dart';
+import '../../widgets/fn_inquiry_parts.dart';
 import 'fn_data.dart';
 import 'season_ds_screen.dart';
 
@@ -922,61 +924,732 @@ class _GuideMenuCard extends StatelessWidget {
   }
 }
 
-/// ```js
-/// Shell('시즌 매입 비교')
-///   Card bordered: '상반기 사입 지출 추이' 13 label-alternative mb8 + BarChart(6개월, 320x90)
-///   Card bordered: [전년 동월 대비  +9% (700, blue-50)] / [지난 시즌 평균 대비  +4%]
-///   div wds-body2-normal label-alternative '같은 달·같은 시즌 지출과 비교해...'
+/// 시즌 매입 비교 — 사장님 시안 1:1.
+///
+/// ## 배치 (시안 순서)
+///
 /// ```
-class GuideSeasonDsScreen extends StatelessWidget {
+///   [←] 시즌 매입 비교
+///   기간을 설정하면 올해 매입을 전년 동기 또는
+///   올해 월평균과 비교할 수 있어요.
+///   ┌ 시작 월 [1월]   종료 월 [7월]              ┐  _SeasonFilterCard
+///   └ (전년 동기) (올해 월평균)                   ┘
+///   ┌ 선택 기간 매입 / [전년 대비 +7.5%]         ┐  _SeasonTotalCard
+///   │ 27,890,000원                               │
+///   └ 전년 동기            25,940,000원          ┘
+///   ┌ 기간 비교 — 묶음 막대 7쌍                   ┐  _SeasonBarsCard
+///   ┌ 품목군별 증감 — 4줄                         ┐  _SeasonItemsCard
+///   ┌ 성수기 지도 — 7칸 진하기                    ┐  _SeasonHeatCard
+///   ┌ 월별 매입 추이 — 실선/점선                  ┐  _SeasonTrendCard
+///   ┌ 2026년 1~7월 / 전년 동기 / 증감             ┐  _SeasonSumCard
+///   ┌ 데이터 분석                                 ┐  _SeasonNoteCard
+/// ```
+///
+/// 🔴 여기 숫자는 전부 **예시값**이다. 사장님 지시: "데이터는 예시값으로
+///    채우고, 실제 기능은 만들지 마." 붙일 자리는 `docs/TODO_기능연결.md`.
+///
+/// 🔴 시작/종료 월과 비교 기준 두 가지는 **눌리기는 한다.** 누르면 화면이
+///    바뀌지만 숫자는 그대로다. 아예 안 눌리면 고장으로 보이고, 숫자까지
+///    바뀌면 거짓말이 된다. 그래서 고른 값만 표시하고 안내를 띄운다.
+class GuideSeasonDsScreen extends StatefulWidget {
   const GuideSeasonDsScreen({super.key});
+
+  // ── 예시값 ────────────────────────────────────────────────
+  static const String total = '27,890,000원';
+  static const String prevTotal = '25,940,000원';
+  static const String diffPct = '전년 대비 +7.5%';
+  static const String diffAmount = '+1,950,000원';
+  static const String rangeLabel = '2026년 1~7월';
+
+  /// 묶음 막대 — (달, 올해, 전년). 단위 만원.
+  static const List<(String, double, double)> bars = [
+    ('1월', 352, 331),
+    ('2월', 298, 312),
+    ('3월', 436, 398),
+    ('4월', 389, 423),
+    ('5월', 472, 404),
+    ('6월', 904, 766),
+    ('7월', 538, 560),
+  ];
+
+  /// 성수기 진하기 0~1.
+  static const List<(String, double)> heat = [
+    ('1월', 0.28),
+    ('2월', 0.20),
+    ('3월', 0.52),
+    ('4월', 0.14),
+    ('5월', 0.64),
+    ('6월', 0.42),
+    ('7월', 1.00),
+  ];
+
+  /// 월별 추이 — (올해, 전년).
+  static const List<double> trendNow = [352, 298, 436, 389, 472, 904, 538];
+  static const List<double> trendPrev = [331, 312, 398, 423, 404, 766, 560];
+
+  static const List<(String, String, String)> items = [
+    ('절화(꽃)', '전년 대비 +2%', '18,965,200원'),
+    ('부자재', '전년 대비 +34%', '5,578,000원'),
+    ('화분·식물', '전년 대비 -4%', '2,231,200원'),
+    ('기타', '전년 대비 +43%', '1,115,600원'),
+  ];
+
+  static const List<String> months = [
+    '1월', '2월', '3월', '4월', '5월', '6월', '7월',
+    '8월', '9월', '10월', '11월', '12월',
+  ];
+
+  @override
+  State<GuideSeasonDsScreen> createState() => _GuideSeasonDsScreenState();
+}
+
+class _GuideSeasonDsScreenState extends State<GuideSeasonDsScreen> {
+  String _from = '1월';
+  String _to = '7월';
+
+  /// 0 = 전년 동기, 1 = 올해 월평균.
+  int _basis = 0;
 
   @override
   Widget build(BuildContext context) {
     return FnShell(
       navTitle: '시즌 매입 비교',
+      bg: FnDs.bg,
       onBack: () => Navigator.of(context).pop(),
-      child: FnColumn(
-        gap: 14,
+      child: ColoredBox(
+        color: FnDs.bg,
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(
+              FnDs.pagePad, 14, FnDs.pagePad, FnDs.gapXl),
+          children: [
+            const Text(
+              '기간을 설정하면 올해 매입을 전년 동기 또는\n'
+              '올해 월평균과 비교할 수 있어요.',
+              style: FnDs.tsSub,
+            ),
+            const SizedBox(height: FnDs.gapM),
+            _SeasonFilterCard(
+              from: _from,
+              to: _to,
+              basis: _basis,
+              onFrom: (v) => setState(() => _from = v),
+              onTo: (v) => setState(() => _to = v),
+              onBasis: (v) => setState(() => _basis = v),
+            ),
+            const SizedBox(height: FnDs.gapS),
+            const _SeasonTotalCard(),
+            const SizedBox(height: FnDs.gapS),
+            const _SeasonBarsCard(),
+            const SizedBox(height: FnDs.gapS),
+            const _SeasonItemsCard(),
+            const SizedBox(height: FnDs.gapS),
+            const _SeasonHeatCard(),
+            const SizedBox(height: FnDs.gapS),
+            const _SeasonTrendCard(),
+            const SizedBox(height: FnDs.gapS),
+            const _SeasonSumCard(),
+            const SizedBox(height: FnDs.gapS),
+            const _SeasonNoteCard(),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// 카드 공통 껍데기 — 제목 + 선택 부제 + 내용.
+class _SeasonCard extends StatelessWidget {
+  const _SeasonCard({this.title, this.subtitle, required this.child});
+
+  final String? title;
+  final String? subtitle;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(FnDs.cardPad),
+      decoration: FnDs.cardDeco(),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          FnCard(
-            bordered: true,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text('상반기 사입 지출 추이',
-                    style: _t13.copyWith(color: FnColors.labelAlternative)),
-                const SizedBox(height: 8),
-                Center(
-                  child: FnBarChart(
-                    data: List.generate(
-                      6,
-                      (i) => FnChartDatum(
-                          label: FnDemo.demoMonths[i],
-                          value: FnDemo.demoSpend[i]),
+          if (title != null) ...[
+            Text(title!, style: FnDs.tsSection),
+            const SizedBox(height: FnDs.gap2xs),
+          ],
+          if (subtitle != null) ...[
+            Text(subtitle!, style: FnDs.tsSub),
+            const SizedBox(height: FnDs.gapS),
+          ],
+          child,
+        ],
+      ),
+    );
+  }
+}
+
+/// 기간·비교 기준 고르기.
+class _SeasonFilterCard extends StatelessWidget {
+  const _SeasonFilterCard({
+    required this.from,
+    required this.to,
+    required this.basis,
+    required this.onFrom,
+    required this.onTo,
+    required this.onBasis,
+  });
+
+  final String from;
+  final String to;
+  final int basis;
+  final ValueChanged<String> onFrom;
+  final ValueChanged<String> onTo;
+  final ValueChanged<int> onBasis;
+
+  @override
+  Widget build(BuildContext context) {
+    return _SeasonCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('시작 월', style: FnDs.tsSub),
+                    const SizedBox(height: 6),
+                    FnCategoryPicker(
+                      value: from,
+                      onTap: () => _pickMonth(context, from, onFrom, '시작 월'),
                     ),
-                    width: 300,
-                    height: 90,
+                  ],
+                ),
+              ),
+              const SizedBox(width: FnDs.gapS),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('종료 월', style: FnDs.tsSub),
+                    const SizedBox(height: 6),
+                    FnCategoryPicker(
+                      value: to,
+                      onTap: () => _pickMonth(context, to, onTo, '종료 월'),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: FnDs.gapS),
+          Row(
+            children: [
+              _BasisPill(
+                label: '전년 동기',
+                selected: basis == 0,
+                onTap: () => onBasis(0),
+              ),
+              const SizedBox(width: FnDs.gapXs),
+              _BasisPill(
+                label: '올해 월평균',
+                selected: basis == 1,
+                onTap: () => onBasis(1),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _pickMonth(BuildContext context, String now,
+      ValueChanged<String> onPick, String title) async {
+    final picked = await showFnOptionSheet<String>(
+      context,
+      title: title,
+      selected: now,
+      options: [
+        for (final m in GuideSeasonDsScreen.months)
+          FnSheetOption<String>(value: m, label: m),
+      ],
+    );
+    if (picked != null) onPick(picked);
+  }
+}
+
+/// 비교 기준 알약 버튼.
+class _BasisPill extends StatelessWidget {
+  const _BasisPill({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        decoration: BoxDecoration(
+          color: selected ? FnDs.coral : FnDs.card,
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(color: selected ? FnDs.coral : FnDs.line),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontFamily: FnDs.font,
+            fontSize: FnDs.fontXs,
+            fontWeight: FontWeight.w700,
+            color: selected ? FnDs.onCoral : FnDs.sub,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 선택 기간 매입 — 가운데 정렬 큰 숫자.
+class _SeasonTotalCard extends StatelessWidget {
+  const _SeasonTotalCard();
+
+  @override
+  Widget build(BuildContext context) {
+    return _SeasonCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          const Text('선택 기간 매입', style: FnDs.tsSub),
+          const SizedBox(height: FnDs.gapXs),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+            decoration: BoxDecoration(
+              color: FnDs.coral,
+              borderRadius: BorderRadius.circular(999),
+            ),
+            child: const Text(
+              GuideSeasonDsScreen.diffPct,
+              style: TextStyle(
+                fontFamily: FnDs.font,
+                fontSize: FnDs.fontXs,
+                fontWeight: FontWeight.w700,
+                color: FnDs.onCoral,
+              ),
+            ),
+          ),
+          const SizedBox(height: FnDs.gapXs),
+          const Text(GuideSeasonDsScreen.total, style: FnDs.tsAmount),
+          const SizedBox(height: FnDs.gapM),
+          const Divider(height: 1, thickness: 1, color: FnDs.hair),
+          const SizedBox(height: FnDs.gapS),
+          Row(
+            children: [
+              const Expanded(child: Text('전년 동기', style: FnDs.tsBody)),
+              const Text(
+                GuideSeasonDsScreen.prevTotal,
+                style: TextStyle(
+                  fontFamily: FnDs.font,
+                  fontSize: FnDs.fontM,
+                  fontWeight: FontWeight.w700,
+                  color: FnDs.title,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 기간 비교 — 달마다 두 개씩 묶음 막대.
+///
+/// 🔴 그림(CustomPaint)이 아니라 네모를 쌓아 만들었다. 테스트에서 높이를
+///    바로 잴 수 있고, 글꼴 크기를 키워도 안 깨진다.
+class _SeasonBarsCard extends StatelessWidget {
+  const _SeasonBarsCard();
+
+  static const double _h = 120;
+
+  @override
+  Widget build(BuildContext context) {
+    const rows = GuideSeasonDsScreen.bars;
+    final top = rows
+        .map((e) => e.$2 > e.$3 ? e.$2 : e.$3)
+        .reduce((a, b) => a > b ? a : b);
+
+    return _SeasonCard(
+      title: '기간 비교',
+      subtitle: '2026년 · 전년 동기 · 단위: 만원',
+      child: Column(
+        children: [
+          SizedBox(
+            height: _h,
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                for (final r in rows)
+                  Expanded(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 3),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          _bar(r.$3 / top, FnDs.hair),
+                          const SizedBox(width: 3),
+                          _bar(r.$2 / top, FnDs.coral),
+                        ],
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 6),
+          Row(
+            children: [
+              for (final r in rows)
+                Expanded(
+                  child: Text(r.$1,
+                      textAlign: TextAlign.center, style: FnDs.tsSub),
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _bar(double ratio, Color color) => Expanded(
+        child: Container(
+          // 값이 0 이어도 막대가 보이도록 최소 높이를 준다.
+          height: (_h * ratio).clamp(4.0, _h),
+          decoration: BoxDecoration(
+            color: color,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(3)),
+          ),
+        ),
+      );
+}
+
+/// 품목군별 증감.
+class _SeasonItemsCard extends StatelessWidget {
+  const _SeasonItemsCard();
+
+  @override
+  Widget build(BuildContext context) {
+    const rows = GuideSeasonDsScreen.items;
+    return _SeasonCard(
+      title: '품목군별 증감',
+      child: Column(
+        children: [
+          for (var i = 0; i < rows.length; i++) ...[
+            if (i > 0) const SizedBox(height: FnDs.gapS),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        rows[i].$1,
+                        style: const TextStyle(
+                          fontFamily: FnDs.font,
+                          fontSize: FnDs.fontM,
+                          fontWeight: FontWeight.w700,
+                          color: FnDs.title,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(rows[i].$2, style: FnDs.tsSub),
+                    ],
+                  ),
+                ),
+                Text(
+                  rows[i].$3,
+                  style: const TextStyle(
+                    fontFamily: FnDs.font,
+                    fontSize: FnDs.fontM,
+                    fontWeight: FontWeight.w700,
+                    color: FnDs.title,
                   ),
                 ),
               ],
             ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+/// 성수기 지도 — 진하기로 달을 비교.
+class _SeasonHeatCard extends StatelessWidget {
+  const _SeasonHeatCard();
+
+  @override
+  Widget build(BuildContext context) {
+    const cells = GuideSeasonDsScreen.heat;
+    return _SeasonCard(
+      title: '성수기 지도',
+      child: Column(
+        children: [
+          Row(
+            children: [
+              for (final c in cells)
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 2),
+                    child: AspectRatio(
+                      aspectRatio: 1,
+                      child: Container(
+                        decoration: BoxDecoration(
+                          // 진할수록 그 달 매입이 많았다는 뜻.
+                          color: Color.lerp(
+                              FnDs.coralFaint, FnDs.coral, c.$2),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+            ],
           ),
-          FnCard(
-            bordered: true,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                _KV('전년 동월 대비', '+9%'),
-                const SizedBox(height: 8),
-                _KV('지난 시즌 평균 대비', '+4%'),
-              ],
+          const SizedBox(height: 6),
+          Row(
+            children: [
+              for (final c in cells)
+                Expanded(
+                  child: Text(c.$1,
+                      textAlign: TextAlign.center, style: FnDs.tsSub),
+                ),
+            ],
+          ),
+          const SizedBox(height: FnDs.gapS),
+          const Align(
+            alignment: Alignment.centerLeft,
+            child: Text(
+              '6월이 올해 최대 성수기예요. 지난해보다 18% 늘었어요.\n'
+              '내년 예산은 904만원 단위로 계획해 보세요.',
+              style: FnDs.tsSub,
             ),
           ),
-          Text(
-            '같은 달·같은 시즌 지출과 비교해 사입 규모가 적정한지 확인해보세요.',
-            style: _t14.copyWith(color: FnColors.labelAlternative, height: 1.5),
+        ],
+      ),
+    );
+  }
+}
+
+/// 월별 매입 추이 — 올해 실선, 전년 점선.
+class _SeasonTrendCard extends StatelessWidget {
+  const _SeasonTrendCard();
+
+  @override
+  Widget build(BuildContext context) {
+    return _SeasonCard(
+      title: '월별 매입 추이',
+      subtitle: '2026년 실선 · 2025년 점선',
+      child: Column(
+        children: [
+          SizedBox(
+            height: 120,
+            width: double.infinity,
+            child: CustomPaint(
+              painter: _SeasonTrendPainter(
+                now: GuideSeasonDsScreen.trendNow,
+                prev: GuideSeasonDsScreen.trendPrev,
+              ),
+            ),
+          ),
+          const SizedBox(height: 6),
+          Row(
+            children: [
+              for (final b in GuideSeasonDsScreen.bars)
+                Expanded(
+                  child: Text(b.$1,
+                      textAlign: TextAlign.center, style: FnDs.tsSub),
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 두 줄을 겹쳐 그린다. 올해는 실선, 전년은 점선.
+class _SeasonTrendPainter extends CustomPainter {
+  const _SeasonTrendPainter({required this.now, required this.prev});
+
+  final List<double> now;
+  final List<double> prev;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (now.isEmpty) return;
+    final top = [...now, ...prev].reduce((a, b) => a > b ? a : b);
+    if (top <= 0) return;
+
+    Offset at(List<double> v, int i) {
+      // 양 끝이 테두리에 붙지 않게 안쪽으로 조금 들인다.
+      final dx = now.length == 1
+          ? size.width / 2
+          : size.width * i / (now.length - 1);
+      final dy = size.height - (size.height - 8) * (v[i] / top) - 4;
+      return Offset(dx, dy);
+    }
+
+    // 전년 — 점선.
+    final dashed = Paint()
+      ..color = FnDs.hair
+      ..strokeWidth = 2
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round;
+    for (var i = 0; i < prev.length - 1; i++) {
+      _dashLine(canvas, at(prev, i), at(prev, i + 1), dashed);
+    }
+
+    // 올해 — 실선.
+    final line = Paint()
+      ..color = FnDs.coral
+      ..strokeWidth = 2.4
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round;
+    final path = Path()..moveTo(at(now, 0).dx, at(now, 0).dy);
+    for (var i = 1; i < now.length; i++) {
+      path.lineTo(at(now, i).dx, at(now, i).dy);
+    }
+    canvas.drawPath(path, line);
+
+    final dot = Paint()..color = FnDs.coral;
+    for (var i = 0; i < now.length; i++) {
+      canvas.drawCircle(at(now, i), 2.6, dot);
+    }
+  }
+
+  void _dashLine(Canvas canvas, Offset a, Offset b, Paint p) {
+    const dash = 4.0, gap = 3.0;
+    final total = (b - a).distance;
+    if (total == 0) return;
+    final step = (b - a) / total;
+    var done = 0.0;
+    while (done < total) {
+      final end = (done + dash).clamp(0.0, total);
+      canvas.drawLine(a + step * done, a + step * end, p);
+      done = end + gap;
+    }
+  }
+
+  @override
+  bool shouldRepaint(_SeasonTrendPainter old) =>
+      old.now != now || old.prev != prev;
+}
+
+/// 합계 — 올해 / 전년 / 증감.
+class _SeasonSumCard extends StatelessWidget {
+  const _SeasonSumCard();
+
+  @override
+  Widget build(BuildContext context) {
+    return _SeasonCard(
+      child: Column(
+        children: [
+          _row(GuideSeasonDsScreen.rangeLabel, GuideSeasonDsScreen.total,
+              bold: true),
+          const SizedBox(height: FnDs.gapXs),
+          _row('전년 동기', GuideSeasonDsScreen.prevTotal),
+          const SizedBox(height: FnDs.gapS),
+          const Divider(height: 1, thickness: 1, color: FnDs.hair),
+          const SizedBox(height: FnDs.gapS),
+          _row('증감', GuideSeasonDsScreen.diffAmount,
+              bold: true, valueColor: FnDs.coral),
+        ],
+      ),
+    );
+  }
+
+  Widget _row(String label, String value,
+      {bool bold = false, Color? valueColor}) {
+    return Row(
+      children: [
+        Expanded(
+          child: Text(
+            label,
+            style: TextStyle(
+              fontFamily: FnDs.font,
+              fontSize: FnDs.fontS,
+              fontWeight: bold ? FontWeight.w700 : FontWeight.w400,
+              color: bold ? FnDs.title : FnDs.body,
+            ),
+          ),
+        ),
+        Text(
+          value,
+          style: TextStyle(
+            fontFamily: FnDs.font,
+            fontSize: FnDs.fontM,
+            fontWeight: FontWeight.w700,
+            color: valueColor ?? FnDs.title,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// 데이터 분석 — 문장으로 풀어 준다.
+class _SeasonNoteCard extends StatelessWidget {
+  const _SeasonNoteCard();
+
+  @override
+  Widget build(BuildContext context) {
+    return _SeasonCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 16,
+                height: 16,
+                decoration: BoxDecoration(
+                  color: FnDs.coral,
+                  borderRadius: BorderRadius.circular(4),
+                ),
+              ),
+              const SizedBox(width: FnDs.gapXs),
+              const Text('데이터 분석', style: FnDs.tsSection),
+            ],
+          ),
+          const SizedBox(height: FnDs.gapS),
+          const Text(
+            '선택 기간 매입은 전년 동기보다 7.5% 늘었어요.\n'
+            '6월 증가폭이 가장 크고(+18%), 4월 지출은 8% 줄었어요.\n'
+            '기간 중 한 달 평균 매입은 3,984,286원이에요.',
+            style: FnDs.tsBody,
+          ),
+          const SizedBox(height: FnDs.gapS),
+          const Text(
+            '최근 3개월은 감소세예요.\n'
+            '재고가 부족하지 않은지 함께 확인해 보세요.',
+            style: FnDs.tsBody,
+          ),
+          const SizedBox(height: FnDs.gapS),
+          const Text(
+            '품목군 중 기타의 변동이 +43%로 가장 컸어요.',
+            style: FnDs.tsBody,
           ),
         ],
       ),
