@@ -47,7 +47,7 @@ void main() {
 
     testWidgets('상품 구성 칩 네 개가 시안대로다', (t) async {
       await pump(t, const GuideCostDsScreen());
-      for (final s in ['웨딩 부케', '기념 화환', '센터피스', '작은 꽃집']) {
+      for (final s in ['웨딩 부케', '개업 화환', '센터피스', '작은 꽃집']) {
         expect(find.text(s), findsOneWidget, reason: '$s 칩이 없다');
       }
     });
@@ -65,12 +65,12 @@ void main() {
       }
       expect(find.text('품목명'), findsNWidgets(3));
       expect(find.text('직전 영수증 단가 기준'), findsNWidgets(3));
-      expect(find.text('품목 추가'), findsOneWidget);
+      expect(find.text('항목 추가'), findsOneWidget);
     });
 
-    testWidgets('직접비·로스율·판매 배수가 시안대로다', (t) async {
+    testWidgets('작업비·로스율·판매 배수가 시안대로다', (t) async {
       await pumpTall(t, const GuideCostDsScreen());
-      expect(find.text('직접비 · 부대비용'), findsOneWidget);
+      expect(find.text('작업비 · 부대비용'), findsOneWidget);
       expect(find.text('3,000원'), findsWidgets);
       expect(find.text('로스율'), findsOneWidget);
       expect(find.text('8%'), findsOneWidget);
@@ -87,7 +87,7 @@ void main() {
         '꽃', '110,000원',
         '부자재', '1,000원',
         '로스', '8,880원',
-        '직접비',
+        '작업비',
         '총 원가', '122,880원',
       ]) {
         expect(find.text(s), findsWidgets, reason: '$s 가 없다');
@@ -120,7 +120,7 @@ void main() {
     testWidgets('맨 아래 안내 두 줄이 있다', (t) async {
       await pumpTall(t, const GuideCostDsScreen());
       expect(
-        find.text('동일 구성으로 최근 30일간 12건 판매됐고,\n'
+        find.text('동일 구성으로 최근 30일간 12건 판매했고,\n'
             '평균 판매가는 318,500원이었어요.'),
         findsOneWidget,
       );

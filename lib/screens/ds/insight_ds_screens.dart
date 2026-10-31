@@ -1665,16 +1665,16 @@ class _SeasonNoteCard extends StatelessWidget {
 ///   [←] 원가 계산기
 ///   최근 영수증의 매입 단가에
 ///   로스율과 직접비를 더해 판매가와 마진율을 계산해요.
-///   (웨딩 부케)(기념 화환)(센터피스)(작은 꽃집)   _CostPresetChips
+///   (웨딩 부케)(개업 화환)(센터피스)(작은 꽃집)   _CostPresetChips
 ///   ┌ 상품 구성            3개 품목 · 111,000원 ┐ _CostItemsCard
 ///   │  품목명 [장미(레드)]                        │
 ///   │  수량 [10단]  단가 [8,000원]                │
 ///   │  직전 영수증 단가 기준          80,000원    │
 ///   │  … 3개 …                                    │
-///   └  + 품목 추가                                ┘
-///   ┌ 직접비·부대비용 [3,000원]  로스율 [8%]     ┐ _CostExtraCard
+///   └  + 항목 추가                                ┘
+///   ┌ 작업비·부대비용 [3,000원]  로스율 [8%]     ┐ _CostExtraCard
 ///   └ 판매 배수  (×2)(×2.5)(×3)                  ┘
-///   ┌ 원가 구성 — 꽃/부자재/로스/직접비/총 원가  ┐ _CostBreakdownCard
+///   ┌ 원가 구성 — 꽃/부자재/로스/작업비/총 원가  ┐ _CostBreakdownCard
 ///   ┌ 권장 판매가 307,200원 / 마진율 / 대당 이익 ┐ _CostPriceCard
 ///   ┌ 가격대 제안 — 기본·추천·프리미엄           ┐ _CostTiersCard
 ///   동일 구성으로 최근 30일간 …
@@ -1692,7 +1692,7 @@ class GuideCostDsScreen extends StatefulWidget {
   // ── 예시값 ────────────────────────────────────────────────
   static const List<String> presets = [
     '웨딩 부케',
-    '기념 화환',
+    '개업 화환',
     '센터피스',
     '작은 꽃집',
   ];
@@ -1715,7 +1715,7 @@ class GuideCostDsScreen extends StatefulWidget {
     ('꽃', '110,000원'),
     ('부자재', '1,000원'),
     ('로스', '8,880원'),
-    ('직접비', '3,000원'),
+    ('작업비', '3,000원'),
   ];
 
   static const String totalCost = '122,880원';
@@ -1779,7 +1779,7 @@ class _GuideCostDsScreenState extends State<GuideCostDsScreen> {
             const _CostTiersCard(),
             const SizedBox(height: FnDs.gapS),
             const Text(
-              '동일 구성으로 최근 30일간 12건 판매됐고,\n'
+              '동일 구성으로 최근 30일간 12건 판매했고,\n'
               '평균 판매가는 318,500원이었어요.',
               style: FnDs.tsSub,
             ),
@@ -1972,7 +1972,7 @@ class _CostItemsCard extends StatelessWidget {
                   Icon(Icons.add_rounded, size: 16, color: FnDs.coral),
                   SizedBox(width: 4),
                   Text(
-                    '품목 추가',
+                    '항목 추가',
                     style: TextStyle(
                       fontFamily: FnDs.font,
                       fontSize: FnDs.fontS,
@@ -1990,7 +1990,7 @@ class _CostItemsCard extends StatelessWidget {
   }
 }
 
-/// 직접비·로스율·판매 배수.
+/// 작업비·로스율·판매 배수.
 class _CostExtraCard extends StatelessWidget {
   const _CostExtraCard({required this.mult, required this.onMult});
 
@@ -2010,7 +2010,7 @@ class _CostExtraCard extends StatelessWidget {
             children: [
               Expanded(
                 child: _CostField(
-                  label: '직접비 · 부대비용',
+                  label: '작업비 · 부대비용',
                   value: GuideCostDsScreen.directCost,
                 ),
               ),
