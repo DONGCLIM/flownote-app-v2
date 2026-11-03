@@ -1665,7 +1665,7 @@ class _SeasonNoteCard extends StatelessWidget {
 ///   [←] 원가 계산기
 ///   최근 영수증의 매입 단가에
 ///   로스율과 직접비를 더해 판매가와 마진율을 계산해요.
-///   (웨딩 부케)(개업 화환)(센터피스)(작은 꽃집)   _CostPresetChips
+///   (꽃다발)(꽃바구니)(화병꽂이)(플라워박스)(직접입력) _CostPresetChips
 ///   ┌ 상품 구성            3개 품목 · 111,000원 ┐ _CostItemsCard
 ///   │  품목명 [장미(레드)]                        │
 ///   │  수량 [10단]  단가 [8,000원]                │
@@ -1690,12 +1690,21 @@ class GuideCostDsScreen extends StatefulWidget {
   const GuideCostDsScreen({super.key});
 
   // ── 예시값 ────────────────────────────────────────────────
+  /// 상품 묶음 칩. (사장님 지정, #176)
+  ///
+  /// 🔴 마지막 `직접입력` 은 아직 **고르기만** 된다. 누르면 칠해지지만
+  ///    이름을 적는 칸은 안 나온다. 사장님 지시로 입력 기능은 뒤로 미뤘다.
+  ///    할 일은 `docs/TODO_기능연결.md` 의 원-4 에 적어 두었다.
   static const List<String> presets = [
-    '웨딩 부케',
-    '개업 화환',
-    '센터피스',
-    '작은 꽃집',
+    '꽃다발',
+    '꽃바구니',
+    '화병꽂이',
+    '플라워박스',
+    '직접입력',
   ];
+
+  /// 직접입력 칩의 자리. 이 번호를 눌렀을 때만 이름 칸이 필요하다.
+  static const int customPresetIndex = 4;
 
   /// (품목명, 수량, 단가, 금액)
   static const List<(String, String, String, String)> items = [
@@ -1736,8 +1745,8 @@ class GuideCostDsScreen extends StatefulWidget {
 }
 
 class _GuideCostDsScreenState extends State<GuideCostDsScreen> {
-  /// 고른 상품 구성. 시안은 '작은 꽃집'(마지막)이 켜져 있다.
-  int _preset = 3;
+  /// 고른 상품 구성. 처음에는 가장 흔한 '꽃다발'이 켜져 있다.
+  int _preset = 0;
 
   /// 고른 판매 배수. 시안은 ×2.5(가운데).
   int _mult = 1;

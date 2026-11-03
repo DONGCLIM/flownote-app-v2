@@ -45,9 +45,16 @@ void main() {
       );
     });
 
-    testWidgets('상품 구성 칩 네 개가 시안대로다', (t) async {
+    testWidgets('상품 구성 칩 다섯 개가 사장님 지정대로다', (t) async {
       await pump(t, const GuideCostDsScreen());
-      for (final s in ['웨딩 부케', '개업 화환', '센터피스', '작은 꽃집']) {
+      // 🔴 칩 줄은 가로 ListView 라 화면을 넘어가는 칩은 그려지지 않는다.
+      //    마지막 '직접입력' 을 보려면 밀어야 한다.
+      for (final s in ['꽃다발', '꽃바구니', '화병꽂이']) {
+        expect(find.text(s), findsOneWidget, reason: '$s 칩이 없다');
+      }
+      await t.drag(find.text('꽃다발'), const Offset(-220, 0));
+      await t.pump(const Duration(milliseconds: 200));
+      for (final s in ['플라워박스', '직접입력']) {
         expect(find.text(s), findsOneWidget, reason: '$s 칩이 없다');
       }
     });
@@ -144,20 +151,33 @@ void main() {
       expect(tiers.style!.color, FnDs.coral);
     });
 
-    testWidgets('🔴 처음에 작은 꽃집과 ×2.5 가 켜져 있다', (t) async {
+    testWidgets('🔴 처음에 꽃다발과 ×2.5 가 켜져 있다', (t) async {
       await pumpTall(t, const GuideCostDsScreen());
-      expect(t.widget<Text>(find.text('작은 꽃집')).style!.color, FnDs.onCoral);
-      expect(t.widget<Text>(find.text('웨딩 부케')).style!.color, FnDs.sub);
+      expect(t.widget<Text>(find.text('꽃다발')).style!.color, FnDs.onCoral);
+      expect(t.widget<Text>(find.text('꽃바구니')).style!.color, FnDs.sub);
       expect(t.widget<Text>(find.text('×2.5')).style!.color, FnDs.onCoral);
       expect(t.widget<Text>(find.text('×2')).style!.color, FnDs.sub);
     });
 
     testWidgets('🔴 다른 칩을 누르면 그쪽이 켜진다', (t) async {
       await pump(t, const GuideCostDsScreen());
-      await t.tap(find.text('웨딩 부케'));
+      await t.tap(find.text('꽃바구니'));
       await t.pump(const Duration(milliseconds: 200));
-      expect(t.widget<Text>(find.text('웨딩 부케')).style!.color, FnDs.onCoral);
-      expect(t.widget<Text>(find.text('작은 꽃집')).style!.color, FnDs.sub);
+      expect(t.widget<Text>(find.text('꽃바구니')).style!.color, FnDs.onCoral);
+      expect(t.widget<Text>(find.text('꽃다발')).style!.color, FnDs.sub);
+    });
+
+    testWidgets('🔴 직접입력은 칠해지기만 하고 이름 칸은 아직 없다', (t) async {
+      await pump(t, const GuideCostDsScreen());
+      // 칩 줄을 끝까지 밀어야 '직접입력' 이 화면에 들어온다.
+      await t.drag(find.text('꽃다발'), const Offset(-220, 0));
+      await t.pump(const Duration(milliseconds: 200));
+
+      await t.tap(find.text('직접입력'));
+      await t.pump(const Duration(milliseconds: 200));
+      expect(t.widget<Text>(find.text('직접입력')).style!.color, FnDs.onCoral);
+      // 이름을 적는 칸은 사장님 지시로 아직 만들지 않았다.
+      expect(find.byType(TextField), findsNothing);
     });
 
     testWidgets('🔴 판매 배수를 누르면 그쪽이 켜진다', (t) async {

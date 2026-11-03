@@ -4,6 +4,96 @@
 사장님 지시: "데이터는 예시값으로 채우고, 실제 기능(데이터 불러오기·계산 등)은
 만들지 마. 나중에 연결할 기능은 이 파일에 화면별로 목록으로 적어줘."
 
+---
+
+## 📌 작업 규칙·현재 상태 (새 대화를 시작하면 이 절부터 읽는다)
+
+> 🔴 **대화창이 바뀌어도 이 절만 읽으면 바로 이어서 일할 수 있게 적어 둔다.**
+> 사장님 지시(#177): "새 대화창에서 읽을 요약본을 저장소에 넣어 둬."
+
+### 지금 상태
+
+| 항목 | 값 |
+|---|---|
+| 브랜치 | `genspark_ai_developer` |
+| 올리는 곳 | `origin` = `https://github.com/DONGCLIM/flownote-app-v2.git` (PR #1 → `main`) |
+| 최신 커밋 | 이 문서를 고친 커밋. 확인은 `git log --oneline -1` |
+| 웹 주소 | https://flownote-404ef.web.app |
+| Firebase 프로젝트 | `flownote-404ef` (Blaze) |
+
+### 배포하는 법
+
+```bash
+export PATH="$PATH:/home/user/flutter/bin"
+export GOOGLE_APPLICATION_CREDENTIALS="$PWD/.fbkey/sa.json"
+
+./tool/build_web.sh --deploy          # 웹 (빌드 + 배포)
+npx firebase deploy --only firestore:rules,storage --project flownote-404ef
+```
+
+🔴 **`flutter build web` 을 직접 치지 않는다.** `--dart-define` 이 빠져서
+카카오·Gemini 키가 안 들어가고, 그러면 **로그인이 통째로 죽는다.**
+예전에 한 번 그렇게 사고를 냈다(#165). 지금은 `build_web.sh` 가 번들에
+키가 들어갔는지 확인하고 없으면 멈춘다.
+
+🚫 **APK 는 만들지 않는다.** 사장님이 "APK 수정하라고 할 때까지 웹만" 하셨다.
+
+### 개편을 끝낸 화면
+
+| 화면 | 파일 | 클래스 |
+|---|---|---|
+| 제안 및 피드백(문의) 목록 | `lib/screens/ds/inquiry_list_ds_screen.dart` | `InquiryListDsScreen` |
+| 문의 쓰기·고치기 | `lib/screens/ds/inquiry_ds_screen.dart` | `InquiryDsScreen` |
+| 문의 상세·답변 | `lib/screens/ds/inquiry_detail_ds_screen.dart` | `InquiryDetailDsScreen` |
+| 스마트 사입 가이드 | `lib/screens/ds/insight_ds_screens.dart` | `GuideDsScreen` |
+| 시즌 매입 비교 | `lib/screens/ds/insight_ds_screens.dart` | `GuideSeasonDsScreen` |
+| 원가 계산기 | `lib/screens/ds/insight_ds_screens.dart` | `GuideCostDsScreen` |
+| 공지·알림 목록 | `lib/screens/ds/notice_list_ds_screen.dart` | `NoticeListDsScreen` |
+
+딸린 조각: `lib/theme/fn_ds.dart`(디자인 기준), `lib/widgets/fn_inquiry_parts.dart`(공용 조각 9개),
+`lib/services/inquiry_service.dart`, `lib/services/inquiry_picker.dart`.
+
+### 작업 규칙 (사장님이 정하신 것)
+
+| # | 규칙 | 왜 |
+|---|---|---|
+| 1 | **색·크기·여백은 `lib/theme/fn_ds.dart` 하나만 본다.** `FnColors`·`FnHome`·`FnScan`·`FnProfile` 같은 옛 토큰을 새 화면에 섞지 않는다. | 예전에 코랄이 여덟 가지, 크림 배경이 세 가지였다 |
+| 2 | **공용 조각을 다시 쓴다.** `fn_inquiry_parts.dart`(`FnPrimaryButton`·`FnCategoryPicker` 등), `fn_shell.dart`, `fn_sheet.dart`, `fn_feedback.dart`. 비슷한 걸 또 만들지 않는다. | 같은 걸 두 개 만들면 한쪽만 고치고 잊는다 |
+| 3 | 🚫 **구 화면 `lib/screens/*.dart` (ds 폴더 밖)는 절대 고치지 않는다.** | 사장님 지시 |
+| 4 | **화면만 먼저 만든다.** 숫자는 예시값으로 채우고 실제 계산·저장은 붙이지 않는다. 붙일 자리는 이 문서에 적는다. | 사장님 지시 |
+| 5 | **비슷한 화면이 이미 있으면 새로 만들지 말고 그걸 고친다.** 어느 파일을 고쳤는지 보고에 적는다. | 화면이 둘로 갈라지면 어느 게 진짜인지 모른다 |
+| 6 | **테스트 파일을 새로 만들지 않는다.** 그 화면의 기존 테스트 파일에 보탠다. | 사장님 지시 |
+| 7 | **테스트는 그 화면 것만 돌린다.** 전체 `flutter test` 는 2분 넘게 걸려서 시키실 때만 돌린다. | 사장님 지시 |
+| 8 | 🚫 **배포는 사장님이 "배포해" 하실 때만 한다.** | 사장님 지시 |
+| 9 | **배포한 뒤 md5·라이브 대조는 생략한다.** 사장님이 그만하라고 하셨다. | 보고가 길어진다 |
+| 10 | **시안 글자가 잘 안 보이면 짐작하지 말고 먼저 여쭌다.** | 짐작으로 적었다가 다섯 군데를 다시 고친 적이 있다(#176) |
+| 11 | **보고는 5줄 이내.** "완료 여부" 와 "사장님이 결정하실 것" 만. | 사장님 지시 |
+| 12 | 🚫 **키를 함부로 지우거나 새로 만들지 않는다.** `secrets/`, `.fbkey/sa.json` 포함. 릴리즈 서명키는 묻지도 않는다. | 사장님 지시 |
+| 13 | **커밋 메시지는 사장님이 주신 문구 그대로.** 끝나면 푸시까지 한다. | 사장님 지시 |
+| 14 | 존댓말을 쓴다. | 사장님 지시 |
+
+### 확인하는 법
+
+```bash
+export PATH="$PATH:/home/user/flutter/bin"
+flutter analyze lib                      # 기준선: 8 issues · 0 errors
+rm -rf test/tmp                          # 이게 남아 있으면 테스트가 걸린다
+flutter test test/<그_화면>_test.dart     # 그 화면 것만
+```
+
+기준선 8건은 전부 구 화면(`receipt_provider.dart`·`history_screen.dart`·
+`receipt_edit_screen.dart`)의 것이고 고치지 않는다. **0 errors 가 아니면 멈춘다.**
+
+### 다음에 할 일
+
+1. **기능을 붙이기 전에 아래 "🟠 나중에 결정할 것" 절을 사장님께 먼저 여쭌다.** (미정 11건)
+2. 남은 가이드 하위 화면 — **예산 검토**(`GuideBudgetDsScreen`)는 아직 옛 모습이다.
+   **저장된 사입 리스트**·**사입 메모장**은 화면이 아예 없다(누르면 안내만 뜬다).
+3. 문의 기능은 화면·규칙 모두 배포됐다. 사장님이 관리자(`flownote.kr@gmail.com`)로
+   로그인해 "전체 문의" 가 보이는지 확인해 주시기로 했다.
+
+---
+
 ## 읽는 법
 
 | 표시 | 뜻 |
@@ -48,7 +138,8 @@
 
 | | 물어볼 것 | 지금 상태 |
 |---|---|---|
-| ⑧ | **상품 구성(웨딩 부케·기념 화환·센터피스·작은 꽃집)** 을 사장님이 직접 만들고 지울 수 있어야 할까요? | 네 가지가 코드에 박혀 있다 |
+| ⑧ | **상품 구성(꽃다발·꽃바구니·화병꽂이·플라워박스)** 을 사장님이 직접 만들고 지울 수 있어야 할까요? | 네 가지가 코드에 박혀 있다 |
+| ⑪ | **`직접입력` 칩**을 눌렀을 때 이름을 어떻게 받을까요? (칩 자리에 바로 입력 / 바텀시트 / 새 화면) 적은 이름을 다음에도 쓰게 저장할까요? | 누르면 칠해지기만 하고 이름 칸이 안 나온다. 사장님 지시로 입력 기능은 미뤘다 (`GuideCostDsScreen.customPresetIndex`) |
 | ⑨ | **로스율 기본값 8%** 와 **판매 배수 기본값 ×2.5** 를 사장님이 바꿔서 저장할 수 있어야 할까요? | 예시값으로 박혀 있다 |
 | ⑩ | 계산한 레시피를 **저장**할까요? 저장한다면 기기에만 둘까요, 계정에 묶을까요? | 저장 기능이 없다. 화면을 나가면 사라진다 |
 
