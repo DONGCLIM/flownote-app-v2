@@ -11,6 +11,7 @@ import '../../design/fn_charts_ds.dart';
 import '../../design/fn_avatar.dart';
 import '../../providers/receipt_provider.dart';
 import '../../services/flower_season_service.dart';
+import '../../services/cost_calc.dart';
 import '../../services/subscription_service.dart';
 import '../../theme/fn_ds.dart';
 import '../../widgets/fn_inquiry_parts.dart';
@@ -1657,7 +1658,7 @@ class _SeasonNoteCard extends StatelessWidget {
   }
 }
 
-/// 원가 계산기 — 사장님 시안 1:1.
+/// 원가 계산기 — 사장님 시안 1:1 + 실제 계산 (#178).
 ///
 /// ## 배치 (시안 순서)
 ///
@@ -1665,36 +1666,37 @@ class _SeasonNoteCard extends StatelessWidget {
 ///   [←] 원가 계산기
 ///   최근 영수증의 매입 단가에
 ///   로스율과 직접비를 더해 판매가와 마진율을 계산해요.
-///   (꽃다발)(꽃바구니)(화병꽂이)(플라워박스)(직접입력) _CostPresetChips
-///   ┌ 상품 구성            3개 품목 · 111,000원 ┐ _CostItemsCard
-///   │  품목명 [장미(레드)]                        │
-///   │  수량 [10단]  단가 [8,000원]                │
-///   │  직전 영수증 단가 기준          80,000원    │
-///   │  … 3개 …                                    │
-///   └  + 항목 추가                                ┘
-///   ┌ 작업비·부대비용 [3,000원]  로스율 [8%]     ┐ _CostExtraCard
-///   └ 판매 배수  (×2)(×2.5)(×3)                  ┘
+///   (꽃다발)(꽃바구니)(화병꽂이)(플라워박스)(직접입력)  _CostPresetChips
+///   [직접입력을 고르면 이름 칸이 여기 펼쳐진다]
+///   ┌ 꽃          N개 품목 · 금액 ┐ _CostLinesCard(꽃)
+///   │  품목명 / 수량 / 단가 … + 항목 추가
+///   ┌ 부자재      N개 품목 · 금액 ┐ _CostLinesCard(부자재)
+///   ┌ 작업비·부대비용 [원]  로스율 [%]  판매 배수 ┐ _CostExtraCard
 ///   ┌ 원가 구성 — 꽃/부자재/로스/작업비/총 원가  ┐ _CostBreakdownCard
-///   ┌ 권장 판매가 307,200원 / 마진율 / 대당 이익 ┐ _CostPriceCard
-///   ┌ 가격대 제안 — 기본·추천·프리미엄           ┐ _CostTiersCard
-///   동일 구성으로 최근 30일간 …
+///   ┌ 권장 판매가 / 마진율 / 대당 이익           ┐ _CostPriceCard
+///   ┌ 가격대 제안 — 배수마다 한 줄               ┐ _CostTiersCard
 /// ```
 ///
-/// 🔴 여기 숫자는 전부 **예시값**이다. 사장님 지시: "데이터는 예시값,
-///    실제 기능은 만들지 마." 붙일 자리는 `docs/TODO_기능연결.md`.
+/// ## 어디까지 되나 (사장님 확정, #178)
 ///
-/// 🔴 입력칸은 **보여주기만** 한다. 글자를 고쳐도 아래 숫자는 안 바뀐다.
-///    상품 구성 칩과 판매 배수만 눌러서 바뀐다(칠해지는 것까지).
-///    아예 안 눌리면 고장으로 보이고, 숫자까지 따라 바뀌면 거짓말이 된다.
+/// * 칸에 적으면 **아래 숫자가 바로 다시 계산된다.**
+/// * 품목명을 적으면 **내 영수증에 있던 품목**이 자동완성으로 뜨고,
+///   고르면 **가장 최근 단가**가 채워진다. 그 뒤로는 고쳐 쓸 수 있다.
+/// * 🚫 **저장은 하지 않는다.** 화면을 나가면 사라진다. 사장님 지시.
+/// * 🚫 칩 네 개는 아직 **표시만** 한다. 칩마다 기본 품목을 채우는 것은
+///   `docs/TODO_기능연결.md` 의 ⑧ 로 남겼다.
+///
+/// 셈은 전부 [CostCalc] 가 한다. 이 파일은 칸을 그리고 값을 넘길 뿐이다.
 class GuideCostDsScreen extends StatefulWidget {
-  const GuideCostDsScreen({super.key});
+  const GuideCostDsScreen({super.key, this.priceBook});
 
-  // ── 예시값 ────────────────────────────────────────────────
-  /// 상품 묶음 칩. (사장님 지정, #176)
+  /// 영수증에서 뽑은 품목별 최근 단가.
   ///
-  /// 🔴 마지막 `직접입력` 은 아직 **고르기만** 된다. 누르면 칠해지지만
-  ///    이름을 적는 칸은 안 나온다. 사장님 지시로 입력 기능은 뒤로 미뤘다.
-  ///    할 일은 `docs/TODO_기능연결.md` 의 원-4 에 적어 두었다.
+  /// 🔴 비워 두면 화면이 스스로 `ReceiptProvider` 에서 만든다. 테스트에서
+  ///    Provider 없이 띄울 수 있게 하려고 받을 수 있게 열어 두었다.
+  final PriceBook? priceBook;
+
+  /// 상품 묶음 칩. (사장님 지정, #176)
   static const List<String> presets = [
     '꽃다발',
     '꽃바구니',
@@ -1703,42 +1705,8 @@ class GuideCostDsScreen extends StatefulWidget {
     '직접입력',
   ];
 
-  /// 직접입력 칩의 자리. 이 번호를 눌렀을 때만 이름 칸이 필요하다.
+  /// 직접입력 칩의 자리. 이 번호를 고르면 이름 칸이 펼쳐진다.
   static const int customPresetIndex = 4;
-
-  /// (품목명, 수량, 단가, 금액)
-  static const List<(String, String, String, String)> items = [
-    ('장미(레드)', '10단', '8,000원', '80,000원'),
-    ('거베라', '5단', '6,000원', '30,000원'),
-    ('포장지', '2장', '500원', '1,000원'),
-  ];
-
-  static const String itemsSummary = '3개 품목 · 111,000원';
-  static const String directCost = '3,000원';
-  static const String lossRate = '8%';
-
-  static const List<String> multipliers = ['×2', '×2.5', '×3'];
-
-  /// (이름, 금액)
-  static const List<(String, String)> breakdown = [
-    ('꽃', '110,000원'),
-    ('부자재', '1,000원'),
-    ('로스', '8,880원'),
-    ('작업비', '3,000원'),
-  ];
-
-  static const String totalCost = '122,880원';
-  static const String suggestPrice = '307,200원';
-  static const String priceNote = '총 원가 × 2.5배 · 100원 단위 반올림';
-  static const String marginRate = '60%';
-  static const String marginAmount = '184,320원';
-
-  /// (이름, 마진, 금액, 추천인가)
-  static const List<(String, String, String, bool)> tiers = [
-    ('기본 ×2', '마진 50%', '245,800원', false),
-    ('추천 ×2.5', '마진 60%', '307,200원', true),
-    ('프리미엄 ×3.2', '마진 69%', '393,200원', false),
-  ];
 
   @override
   State<GuideCostDsScreen> createState() => _GuideCostDsScreenState();
@@ -1748,11 +1716,75 @@ class _GuideCostDsScreenState extends State<GuideCostDsScreen> {
   /// 고른 상품 구성. 처음에는 가장 흔한 '꽃다발'이 켜져 있다.
   int _preset = 0;
 
-  /// 고른 판매 배수. 시안은 ×2.5(가운데).
+  /// 고른 판매 배수. 처음에는 ×2.5.
   int _mult = 1;
+
+  final List<_LineCtrl> _flowers = [];
+  final List<_LineCtrl> _supplies = [];
+
+  final _customName = TextEditingController();
+  final _labor = TextEditingController(text: '3,000');
+  final _loss = TextEditingController(text: '8');
+
+  @override
+  void initState() {
+    super.initState();
+    // 처음에 빈 줄을 하나씩 깔아 둔다. 빈 카드만 보이면 무엇을 해야 할지
+    // 알기 어렵다.
+    _flowers.add(_newLine());
+    _supplies.add(_newLine());
+    _labor.addListener(_redraw);
+    _loss.addListener(_redraw);
+  }
+
+  @override
+  void dispose() {
+    for (final l in [..._flowers, ..._supplies]) {
+      l.dispose();
+    }
+    _customName.dispose();
+    _labor
+      ..removeListener(_redraw)
+      ..dispose();
+    _loss
+      ..removeListener(_redraw)
+      ..dispose();
+    super.dispose();
+  }
+
+  /// 어느 칸이든 바뀌면 화면을 다시 그린다 → 아래 숫자가 따라 바뀐다.
+  void _redraw() {
+    if (mounted) setState(() {});
+  }
+
+  _LineCtrl _newLine() => _LineCtrl(onChanged: _redraw);
+
+  PriceBook _book() {
+    final given = widget.priceBook;
+    if (given != null) return given;
+    try {
+      // Provider 가 없는 자리(테스트 등)에서는 빈 장부로 둔다.
+      return PriceBook.fromReceipts(
+          context.watch<ReceiptProvider>().allReceipts);
+    } catch (_) {
+      return PriceBook.empty;
+    }
+  }
+
+  List<CostLine> _lines(List<_LineCtrl> src) =>
+      src.map((e) => e.toLine()).toList();
 
   @override
   Widget build(BuildContext context) {
+    final book = _book();
+    final result = CostCalc.run(
+      flowers: _lines(_flowers),
+      supplies: _lines(_supplies),
+      lossRate: _num(_loss.text),
+      labor: _num(_labor.text),
+      multiplier: CostCalc.multipliers[_mult],
+    );
+
     return FnShell(
       navTitle: '원가 계산기',
       bg: FnDs.bg,
@@ -1773,29 +1805,105 @@ class _GuideCostDsScreenState extends State<GuideCostDsScreen> {
               selected: _preset,
               onTap: (i) => setState(() => _preset = i),
             ),
+            if (_preset == GuideCostDsScreen.customPresetIndex) ...[
+              const SizedBox(height: FnDs.gapS),
+              _CostNamedField(
+                label: '상품 이름',
+                controller: _customName,
+                hint: '예) 졸업식 꽃다발',
+              ),
+            ],
             const SizedBox(height: FnDs.gapM),
-            const _CostItemsCard(),
+            _CostLinesCard(
+              title: '꽃',
+              lines: _flowers,
+              book: book,
+              emptyHint: '꽃을 한 가지 이상 입력해 주세요.',
+              onAdd: () => setState(() => _flowers.add(_newLine())),
+              onRemove: (i) => setState(() => _flowers.removeAt(i).dispose()),
+              onChanged: _redraw,
+            ),
+            const SizedBox(height: FnDs.gapS),
+            _CostLinesCard(
+              title: '부자재',
+              lines: _supplies,
+              book: book,
+              emptyHint: '부자재(포장지·리본 등)도 입력해 주세요.',
+              onAdd: () => setState(() => _supplies.add(_newLine())),
+              onRemove: (i) => setState(() => _supplies.removeAt(i).dispose()),
+              onChanged: _redraw,
+            ),
             const SizedBox(height: FnDs.gapS),
             _CostExtraCard(
+              labor: _labor,
+              loss: _loss,
               mult: _mult,
               onMult: (i) => setState(() => _mult = i),
             ),
             const SizedBox(height: FnDs.gapS),
-            const _CostBreakdownCard(),
+            _CostBreakdownCard(result: result),
             const SizedBox(height: FnDs.gapS),
-            const _CostPriceCard(),
-            const SizedBox(height: FnDs.gapS),
-            const _CostTiersCard(),
-            const SizedBox(height: FnDs.gapS),
-            const Text(
-              '동일 구성으로 최근 30일간 12건 판매했고,\n'
-              '평균 판매가는 318,500원이었어요.',
-              style: FnDs.tsSub,
+            _CostPriceCard(
+              result: result,
+              multiplier: CostCalc.multipliers[_mult],
             ),
+            const SizedBox(height: FnDs.gapS),
+            _CostTiersCard(result: result, selected: _mult),
           ],
         ),
       ),
     );
+  }
+}
+
+/// 적은 글자에서 숫자만 추려 낸다. `3,000원` → 3000
+double _num(String s) {
+  final digits = s.replaceAll(RegExp(r'[^0-9.]'), '');
+  if (digits.isEmpty) return 0;
+  return double.tryParse(digits) ?? 0;
+}
+
+/// 한 줄이 들고 있는 입력칸 묶음.
+class _LineCtrl {
+  _LineCtrl({required this.onChanged}) {
+    name.addListener(onChanged);
+    qty.addListener(onChanged);
+    price.addListener(onChanged);
+  }
+
+  final VoidCallback onChanged;
+  final TextEditingController name = TextEditingController();
+  final TextEditingController qty = TextEditingController();
+  final TextEditingController price = TextEditingController();
+  final FocusNode nameFocus = FocusNode();
+
+  /// 영수증에 적혀 있던 단위. 자동완성으로 고르면 채워진다.
+  String unit = '';
+
+  /// 영수증에서 단가를 끌어왔는가.
+  bool fromReceipt = false;
+
+  CostLine toLine() => CostLine(
+        name: name.text.trim(),
+        qty: _num(qty.text),
+        unitPrice: _num(price.text),
+        unit: unit,
+        fromReceipt: fromReceipt,
+      );
+
+  double get amount => toLine().amount;
+
+  void dispose() {
+    name
+      ..removeListener(onChanged)
+      ..dispose();
+    qty
+      ..removeListener(onChanged)
+      ..dispose();
+    price
+      ..removeListener(onChanged)
+      ..dispose();
+    nameFocus.dispose();
   }
 }
 
@@ -1864,16 +1972,25 @@ class _CostPill extends StatelessWidget {
   }
 }
 
-/// 보여주기만 하는 입력칸.
-///
-/// 🔴 진짜 `TextField` 를 쓰지 않았다. 고칠 수 있게 해 두면 사장님이
-///    값을 바꿨는데 아래 숫자가 안 따라오는 걸 보게 된다. 그게 더 나쁘다.
-///    기능을 붙일 때 이 위젯만 `TextField` 로 갈아 끼우면 된다.
-class _CostField extends StatelessWidget {
-  const _CostField({required this.label, required this.value});
+/// 라벨 + 입력칸.
+class _CostNamedField extends StatelessWidget {
+  const _CostNamedField({
+    required this.label,
+    required this.controller,
+    this.hint = '',
+    this.suffix = '',
+    this.numeric = false,
+    this.focusNode,
+  });
 
   final String label;
-  final String value;
+  final TextEditingController controller;
+  final String hint;
+
+  /// 칸 오른쪽에 붙는 글자 (`원`, `%`).
+  final String suffix;
+  final bool numeric;
+  final FocusNode? focusNode;
 
   @override
   Widget build(BuildContext context) {
@@ -1884,21 +2001,47 @@ class _CostField extends StatelessWidget {
         const SizedBox(height: 6),
         Container(
           height: FnDs.inputH,
-          width: double.infinity,
-          alignment: Alignment.centerLeft,
           padding: const EdgeInsets.symmetric(horizontal: FnDs.inputPadH),
           decoration: BoxDecoration(
             color: FnDs.card,
             borderRadius: BorderRadius.circular(FnDs.inputRadius),
             border: Border.all(color: FnDs.line, width: FnDs.inputBorderW),
           ),
-          child: Text(
-            value,
-            style: const TextStyle(
-              fontFamily: FnDs.font,
-              fontSize: FnDs.inputFont,
-              color: FnDs.title,
-            ),
+          child: Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: controller,
+                  focusNode: focusNode,
+                  keyboardType: numeric
+                      ? const TextInputType.numberWithOptions(decimal: true)
+                      : TextInputType.text,
+                  style: const TextStyle(
+                    fontFamily: FnDs.font,
+                    fontSize: FnDs.inputFont,
+                    color: FnDs.title,
+                  ),
+                  decoration: InputDecoration(
+                    isDense: true,
+                    border: InputBorder.none,
+                    contentPadding: EdgeInsets.zero,
+                    hintText: hint,
+                    hintStyle: const TextStyle(
+                      fontFamily: FnDs.font,
+                      fontSize: FnDs.inputFont,
+                      color: FnDs.inputHint,
+                    ),
+                  ),
+                ),
+              ),
+              if (suffix.isNotEmpty)
+                Text(suffix,
+                    style: const TextStyle(
+                      fontFamily: FnDs.font,
+                      fontSize: FnDs.inputFont,
+                      color: FnDs.sub,
+                    )),
+            ],
           ),
         ),
       ],
@@ -1906,13 +2049,36 @@ class _CostField extends StatelessWidget {
   }
 }
 
-/// 상품 구성 — 품목 세 개.
-class _CostItemsCard extends StatelessWidget {
-  const _CostItemsCard();
+/// 꽃 / 부자재 한 카드. 줄을 더하고 지울 수 있다.
+class _CostLinesCard extends StatelessWidget {
+  const _CostLinesCard({
+    required this.title,
+    required this.lines,
+    required this.book,
+    required this.emptyHint,
+    required this.onAdd,
+    required this.onRemove,
+    required this.onChanged,
+  });
+
+  final String title;
+  final List<_LineCtrl> lines;
+  final PriceBook book;
+
+  /// 아직 아무것도 못 적었을 때 보여줄 안내.
+  final String emptyHint;
+
+  final VoidCallback onAdd;
+  final ValueChanged<int> onRemove;
+  final VoidCallback onChanged;
+
+  /// 값이 들어 있는 줄만 센다. 빈 줄은 품목이 아니다.
+  int get _filled => lines.where((e) => e.amount > 0).length;
+
+  double get _sum => lines.fold<double>(0, (acc, e) => acc + e.amount);
 
   @override
   Widget build(BuildContext context) {
-    const rows = GuideCostDsScreen.items;
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(FnDs.cardPad),
@@ -1922,10 +2088,10 @@ class _CostItemsCard extends StatelessWidget {
         children: [
           Row(
             children: [
-              const Expanded(child: Text('상품 구성', style: FnDs.tsSection)),
-              const Text(
-                GuideCostDsScreen.itemsSummary,
-                style: TextStyle(
+              Expanded(child: Text(title, style: FnDs.tsSection)),
+              Text(
+                '$_filled개 품목 · ${CostCalc.won(_sum)}',
+                style: const TextStyle(
                   fontFamily: FnDs.font,
                   fontSize: FnDs.fontS,
                   fontWeight: FontWeight.w700,
@@ -1934,45 +2100,30 @@ class _CostItemsCard extends StatelessWidget {
               ),
             ],
           ),
+          if (_filled == 0) ...[
+            const SizedBox(height: FnDs.gapXs),
+            Text(emptyHint, style: FnDs.tsSub),
+          ],
           const SizedBox(height: FnDs.gapM),
-          for (var i = 0; i < rows.length; i++) ...[
+          for (var i = 0; i < lines.length; i++) ...[
             if (i > 0) ...[
               const SizedBox(height: FnDs.gapM),
               const Divider(height: 1, thickness: 1, color: FnDs.hair),
               const SizedBox(height: FnDs.gapM),
             ],
-            _CostField(label: '품목명', value: rows[i].$1),
-            const SizedBox(height: FnDs.gapS),
-            Row(
-              children: [
-                Expanded(child: _CostField(label: '수량', value: rows[i].$2)),
-                const SizedBox(width: FnDs.gapS),
-                Expanded(child: _CostField(label: '단가', value: rows[i].$3)),
-              ],
-            ),
-            const SizedBox(height: 6),
-            Row(
-              children: [
-                const Expanded(
-                  child: Text('직전 영수증 단가 기준', style: FnDs.tsSub),
-                ),
-                Text(
-                  rows[i].$4,
-                  style: const TextStyle(
-                    fontFamily: FnDs.font,
-                    fontSize: FnDs.fontS,
-                    fontWeight: FontWeight.w700,
-                    color: FnDs.title,
-                  ),
-                ),
-              ],
+            _CostLineRow(
+              line: lines[i],
+              book: book,
+              // 🔴 줄이 하나뿐이면 지우지 못하게 한다. 전부 사라지면
+              //    무엇을 해야 할지 알 수 없는 빈 카드가 된다.
+              onRemove: lines.length > 1 ? () => onRemove(i) : null,
+              onChanged: onChanged,
             ),
           ],
           const SizedBox(height: FnDs.gapM),
-          // 🔴 아직 품목을 더할 수 없다. 누르면 안내만 띄운다.
           GestureDetector(
             behavior: HitTestBehavior.opaque,
-            onTap: () => showFnToast(context, '곧 준비해서 알려드릴게요.'),
+            onTap: onAdd,
             child: const SizedBox(
               height: 32,
               child: Row(
@@ -1999,10 +2150,208 @@ class _CostItemsCard extends StatelessWidget {
   }
 }
 
+/// 품목 한 줄 — 품목명(자동완성) / 수량 / 단가.
+class _CostLineRow extends StatefulWidget {
+  const _CostLineRow({
+    required this.line,
+    required this.book,
+    required this.onRemove,
+    required this.onChanged,
+  });
+
+  final _LineCtrl line;
+  final PriceBook book;
+
+  /// null 이면 지우기 버튼을 감춘다.
+  final VoidCallback? onRemove;
+  final VoidCallback onChanged;
+
+  @override
+  State<_CostLineRow> createState() => _CostLineRowState();
+}
+
+class _CostLineRowState extends State<_CostLineRow> {
+  /// 자동완성 목록을 펼칠지. 칸을 벗어나면 닫는다.
+  bool _open = false;
+
+  @override
+  void initState() {
+    super.initState();
+    widget.line.name.addListener(_onType);
+    widget.line.nameFocus.addListener(_onFocus);
+  }
+
+  @override
+  void dispose() {
+    widget.line.name.removeListener(_onType);
+    widget.line.nameFocus.removeListener(_onFocus);
+    super.dispose();
+  }
+
+  void _onType() {
+    // 손으로 고쳐 적으면 더 이상 "영수증에서 가져온 값"이 아니다.
+    if (widget.line.fromReceipt &&
+        widget.book.lookup(widget.line.name.text) == null) {
+      widget.line.fromReceipt = false;
+    }
+    if (mounted) setState(() => _open = widget.line.nameFocus.hasFocus);
+  }
+
+  void _onFocus() {
+    if (mounted) setState(() => _open = widget.line.nameFocus.hasFocus);
+  }
+
+  /// 자동완성에서 하나 골랐을 때 — 최근 단가와 단위를 채운다.
+  void _pick(PriceBookEntry e) {
+    final l = widget.line;
+    l.name.text = e.name;
+    // 🔴 단가는 **덮어쓴다.** 고르는 행동 자체가 "이 값으로 해 줘" 라는 뜻이다.
+    //    그 뒤에 사장님이 고치면 그대로 둔다.
+    l.price.text = CostCalc.comma(e.unitPrice);
+    l.unit = e.unit;
+    l.fromReceipt = true;
+    l.nameFocus.unfocus();
+    setState(() => _open = false);
+    widget.onChanged();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final l = widget.line;
+    final hits = _open ? widget.book.suggest(l.name.text) : const <PriceBookEntry>[];
+    final unitLabel = l.unit.isEmpty ? '' : '1${l.unit} 기준';
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            Expanded(
+              child: _CostNamedField(
+                label: '품목명',
+                controller: l.name,
+                focusNode: l.nameFocus,
+                hint: '예) 장미(레드)',
+              ),
+            ),
+            if (widget.onRemove != null) ...[
+              const SizedBox(width: FnDs.gapXs),
+              GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: widget.onRemove,
+                child: const SizedBox(
+                  height: FnDs.inputH,
+                  width: 32,
+                  child: Icon(Icons.remove_circle_outline_rounded,
+                      size: 20, color: FnDs.sub),
+                ),
+              ),
+            ],
+          ],
+        ),
+        // 자동완성. 적은 글자가 들어간 **내 영수증 품목**만 나온다.
+        if (hits.isNotEmpty) ...[
+          const SizedBox(height: 6),
+          Container(
+            decoration: BoxDecoration(
+              color: FnDs.card,
+              borderRadius: BorderRadius.circular(FnDs.inputRadius),
+              border: Border.all(color: FnDs.line),
+            ),
+            child: Column(
+              children: [
+                for (final e in hits)
+                  GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: () => _pick(e),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: FnDs.inputPadH, vertical: 10),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              e.name,
+                              style: const TextStyle(
+                                fontFamily: FnDs.font,
+                                fontSize: FnDs.fontS,
+                                fontWeight: FontWeight.w600,
+                                color: FnDs.title,
+                              ),
+                            ),
+                          ),
+                          Text(e.label, style: FnDs.tsSub),
+                        ],
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ],
+        const SizedBox(height: FnDs.gapS),
+        Row(
+          children: [
+            Expanded(
+              child: _CostNamedField(
+                label: '수량',
+                controller: l.qty,
+                hint: '0',
+                numeric: true,
+                suffix: l.unit,
+              ),
+            ),
+            const SizedBox(width: FnDs.gapS),
+            Expanded(
+              child: _CostNamedField(
+                label: '단가',
+                controller: l.price,
+                hint: '0',
+                numeric: true,
+                suffix: '원',
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 6),
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                l.fromReceipt
+                    ? '직전 영수증 단가 기준${unitLabel.isEmpty ? '' : ' · $unitLabel'}'
+                    : (unitLabel.isEmpty ? '단가를 직접 입력했어요.' : unitLabel),
+                style: FnDs.tsSub,
+              ),
+            ),
+            Text(
+              CostCalc.won(l.amount),
+              style: const TextStyle(
+                fontFamily: FnDs.font,
+                fontSize: FnDs.fontS,
+                fontWeight: FontWeight.w700,
+                color: FnDs.title,
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
 /// 작업비·로스율·판매 배수.
 class _CostExtraCard extends StatelessWidget {
-  const _CostExtraCard({required this.mult, required this.onMult});
+  const _CostExtraCard({
+    required this.labor,
+    required this.loss,
+    required this.mult,
+    required this.onMult,
+  });
 
+  final TextEditingController labor;
+  final TextEditingController loss;
   final int mult;
   final ValueChanged<int> onMult;
 
@@ -2015,41 +2364,45 @@ class _CostExtraCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Row(
+          Row(
             children: [
               Expanded(
-                child: _CostField(
+                child: _CostNamedField(
                   label: '작업비 · 부대비용',
-                  value: GuideCostDsScreen.directCost,
+                  controller: labor,
+                  hint: '0',
+                  numeric: true,
+                  suffix: '원',
                 ),
               ),
-              SizedBox(width: FnDs.gapS),
+              const SizedBox(width: FnDs.gapS),
               Expanded(
-                child: _CostField(
+                child: _CostNamedField(
                   label: '로스율',
-                  value: GuideCostDsScreen.lossRate,
+                  controller: loss,
+                  hint: '0',
+                  numeric: true,
+                  suffix: '%',
                 ),
               ),
             ],
           ),
+          const SizedBox(height: FnDs.gapXs),
+          const Text('로스율은 꽃에만 매겨요.', style: FnDs.tsSub),
           const SizedBox(height: FnDs.gapM),
           const Text('판매 배수', style: FnDs.tsSub),
           const SizedBox(height: 6),
           SizedBox(
             height: 32,
-            child: Row(
-              children: [
-                for (var i = 0;
-                    i < GuideCostDsScreen.multipliers.length;
-                    i++) ...[
-                  if (i > 0) const SizedBox(width: FnDs.gapXs),
-                  _CostPill(
-                    label: GuideCostDsScreen.multipliers[i],
-                    selected: i == mult,
-                    onTap: () => onMult(i),
-                  ),
-                ],
-              ],
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              itemCount: CostCalc.multipliers.length,
+              separatorBuilder: (_, __) => const SizedBox(width: FnDs.gapXs),
+              itemBuilder: (_, i) => _CostPill(
+                label: CostCalc.multiplierLabel(CostCalc.multipliers[i]),
+                selected: i == mult,
+                onTap: () => onMult(i),
+              ),
             ),
           ),
         ],
@@ -2060,7 +2413,9 @@ class _CostExtraCard extends StatelessWidget {
 
 /// 원가 구성 — 네 줄 + 총 원가.
 class _CostBreakdownCard extends StatelessWidget {
-  const _CostBreakdownCard();
+  const _CostBreakdownCard({required this.result});
+
+  final CostResult result;
 
   @override
   Widget build(BuildContext context) {
@@ -2073,15 +2428,19 @@ class _CostBreakdownCard extends StatelessWidget {
         children: [
           const Text('원가 구성', style: FnDs.tsSection),
           const SizedBox(height: FnDs.gapM),
-          for (final r in GuideCostDsScreen.breakdown) ...[
-            _CostRow(label: r.$1, value: r.$2),
-            const SizedBox(height: FnDs.gapS),
-          ],
+          _CostRow(label: '꽃', value: CostCalc.won(result.flower)),
+          const SizedBox(height: FnDs.gapS),
+          _CostRow(label: '부자재', value: CostCalc.won(result.supplies)),
+          const SizedBox(height: FnDs.gapS),
+          _CostRow(label: '로스', value: CostCalc.won(result.loss)),
+          const SizedBox(height: FnDs.gapS),
+          _CostRow(label: '작업비', value: CostCalc.won(result.labor)),
+          const SizedBox(height: FnDs.gapS),
           const Divider(height: 1, thickness: 1, color: FnDs.hair),
           const SizedBox(height: FnDs.gapS),
-          const _CostRow(
+          _CostRow(
             label: '총 원가',
-            value: GuideCostDsScreen.totalCost,
+            value: CostCalc.won(result.totalCost),
             strong: true,
           ),
         ],
@@ -2119,7 +2478,7 @@ class _CostRow extends StatelessWidget {
         ),
         Text(
           value,
-          style: TextStyle(
+          style: const TextStyle(
             fontFamily: FnDs.font,
             fontSize: FnDs.fontM,
             fontWeight: FontWeight.w700,
@@ -2133,7 +2492,10 @@ class _CostRow extends StatelessWidget {
 
 /// 권장 판매가 — 가운데 큰 숫자.
 class _CostPriceCard extends StatelessWidget {
-  const _CostPriceCard();
+  const _CostPriceCard({required this.result, required this.multiplier});
+
+  final CostResult result;
+  final double multiplier;
 
   @override
   Widget build(BuildContext context) {
@@ -2149,9 +2511,9 @@ class _CostPriceCard extends StatelessWidget {
         children: [
           const Text('권장 판매가', style: FnDs.tsSub),
           const SizedBox(height: FnDs.gap2xs),
-          const Text(
-            GuideCostDsScreen.suggestPrice,
-            style: TextStyle(
+          Text(
+            CostCalc.won(result.price),
+            style: const TextStyle(
               fontFamily: FnDs.font,
               fontSize: FnDs.font2xl,
               fontWeight: FontWeight.w800,
@@ -2160,15 +2522,19 @@ class _CostPriceCard extends StatelessWidget {
             ),
           ),
           const SizedBox(height: FnDs.gap2xs),
-          const Text(GuideCostDsScreen.priceNote, style: FnDs.tsSub),
+          Text(
+            '총 원가 ${CostCalc.multiplierLabel(multiplier).replaceFirst('×', '× ')}배 '
+            '· 1,000원 단위 올림',
+            style: FnDs.tsSub,
+          ),
           const SizedBox(height: FnDs.gapM),
           const Divider(height: 1, thickness: 1, color: FnDs.hair),
           const SizedBox(height: FnDs.gapS),
-          const _CostRow(label: '마진율', value: GuideCostDsScreen.marginRate),
+          _CostRow(label: '마진율', value: CostCalc.pct(result.marginRate)),
           const SizedBox(height: FnDs.gapXs),
-          const _CostRow(
+          _CostRow(
             label: '대당 이익',
-            value: GuideCostDsScreen.marginAmount,
+            value: CostCalc.won(result.marginAmount),
           ),
         ],
       ),
@@ -2176,13 +2542,21 @@ class _CostPriceCard extends StatelessWidget {
   }
 }
 
-/// 가격대 제안 — 기본 / 추천 / 프리미엄.
+/// 가격대 제안 — 고를 수 있는 배수마다 한 줄.
+///
+/// 🔴 배수 목록을 따로 적어 두지 않고 [CostCalc.multipliers] 를 그대로 쓴다.
+///    두 군데 적어 두면 배수를 바꿀 때 한쪽만 고치게 된다.
 class _CostTiersCard extends StatelessWidget {
-  const _CostTiersCard();
+  const _CostTiersCard({required this.result, required this.selected});
+
+  final CostResult result;
+
+  /// 지금 고른 배수. 이 줄만 코랄로 칠한다.
+  final int selected;
 
   @override
   Widget build(BuildContext context) {
-    const rows = GuideCostDsScreen.tiers;
+    final total = result.totalCost;
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(FnDs.cardPad),
@@ -2192,41 +2566,47 @@ class _CostTiersCard extends StatelessWidget {
         children: [
           const Text('가격대 제안', style: FnDs.tsSection),
           const SizedBox(height: FnDs.gapM),
-          for (var i = 0; i < rows.length; i++) ...[
+          for (var i = 0; i < CostCalc.multipliers.length; i++) ...[
             if (i > 0) const SizedBox(height: FnDs.gapS),
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        rows[i].$1,
-                        style: const TextStyle(
-                          fontFamily: FnDs.font,
-                          fontSize: FnDs.fontM,
-                          fontWeight: FontWeight.w700,
-                          color: FnDs.title,
+            Builder(builder: (_) {
+              final m = CostCalc.multipliers[i];
+              final price = CostCalc.roundUpPrice(total * m);
+              final rate = price <= 0 ? 0.0 : (price - total) / price;
+              final on = i == selected;
+              return Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          CostCalc.multiplierLabel(m),
+                          style: const TextStyle(
+                            fontFamily: FnDs.font,
+                            fontSize: FnDs.fontM,
+                            fontWeight: FontWeight.w700,
+                            color: FnDs.title,
+                          ),
                         ),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(rows[i].$2, style: FnDs.tsSub),
-                    ],
+                        const SizedBox(height: 2),
+                        Text('마진 ${CostCalc.pct(rate)}', style: FnDs.tsSub),
+                      ],
+                    ),
                   ),
-                ),
-                Text(
-                  rows[i].$3,
-                  style: TextStyle(
-                    fontFamily: FnDs.font,
-                    fontSize: FnDs.fontM,
-                    fontWeight: FontWeight.w700,
-                    // 추천 가격만 코랄로 눈에 띄게 한다.
-                    color: rows[i].$4 ? FnDs.coral : FnDs.title,
+                  Text(
+                    CostCalc.won(price),
+                    style: TextStyle(
+                      fontFamily: FnDs.font,
+                      fontSize: FnDs.fontM,
+                      fontWeight: FontWeight.w700,
+                      // 지금 고른 배수만 눈에 띄게 한다.
+                      color: on ? FnDs.coral : FnDs.title,
+                    ),
                   ),
-                ),
-              ],
-            ),
+                ],
+              );
+            }),
           ],
         ],
       ),
