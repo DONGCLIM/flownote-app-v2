@@ -1,10 +1,15 @@
+import 'dart:async';
+import 'dart:convert';
+
+import 'package:crypto/crypto.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:hive_flutter/hive_flutter.dart';
+
 import '../models/receipt_model.dart';
 import '../services/auth_service.dart';
 import '../services/receipt_image_store.dart';
 import '../services/user_repository.dart';
-import 'dart:math';
 
 class ReceiptProvider extends ChangeNotifier {
   late Box<ReceiptModel> _box;
@@ -34,6 +39,10 @@ class ReceiptProvider extends ChangeNotifier {
   List<ReceiptModel> get allReceipts {
     final cached = _cache;
     if (cached != null) return cached;
+    // 🔴 상자를 갈아타는 찰나에 화면이 다시 그려질 수 있다. 그때 닫힌
+    //    상자를 읽으면 앱이 죽는다. 아직 안 열렸으면 빈 목록을 준다.
+    //    (전환이 끝나면 notifyListeners() 로 다시 그려진다)
+    if (!_ready) return const <ReceiptModel>[];
     final list = _box.values.toList();
     list.sort((a, b) => b.date.compareTo(a.date));
     return _cache = List<ReceiptModel>.unmodifiable(list);
@@ -68,150 +77,106 @@ class ReceiptProvider extends ChangeNotifier {
     }
   }
 
+  // ── 계정별 상자 ────────────────────────────────────────────
+  //
+  // 🔴 예전에는 `receipts` 상자 **하나**만 썼다. 그래서 한 폰에서 계정을
+  //    바꿔 로그인하면 **앞사람 영수증이 그대로 보였다.** 게다가 로그인
+  //    직후 `pushAllToCloud()` 가 그 영수증을 지금 계정 것으로 클라우드에
+  //    올려버려서, 섞인 상태가 서버까지 퍼졌다.
+  //
+  //    → 이제 **계정마다 상자를 따로** 쓴다. 로그아웃하면 그 상자를 닫고,
+  //      다음 사람이 로그인하면 그 사람 상자를 연다. 서로 볼 수 없다.
+
+  /// 옛 공용 상자. 섞여 있어서 더는 쓰지 않는다.
+  static const String legacyBoxName = 'receipts';
+
+  /// 로그인 전에 쓰는 상자. 로그인하면 자기 상자로 갈아탄다.
+  static const String guestBoxName = 'receipts_guest';
+
+  /// 이 계정이 쓸 상자 이름.
+  ///
+  /// 🔴 uid 를 그대로 붙이지 않고 **해시**를 쓴다. 두 가지 이유다.
+  ///    ① Hive 는 상자 이름의 **대소문자를 구분하지 않는다.** Firebase uid
+  ///       는 구분한다(`aB…` 와 `Ab…` 는 다른 사람). 그대로 쓰면 두 사람이
+  ///       같은 상자를 보게 된다.
+  ///    ② 카카오 uid 에는 `:` 가 들어간다(`kakao:123`). 파일 이름에 쓸 수
+  ///       없는 글자다.
+  static String boxNameFor(String? uid) {
+    if (uid == null || uid.isEmpty) return guestBoxName;
+    final h = sha256.convert(utf8.encode(uid)).toString();
+    return 'receipts_${h.substring(0, 32)}';
+  }
+
+  /// 지금 열려 있는 상자의 주인. 로그인 전이면 null.
+  String? _openedFor;
+
+  /// 상자가 열렸는가. 열리기 전에 [allReceipts] 를 부를 수 있어서 둔다.
+  bool _ready = false;
+
+  StreamSubscription<User?>? _authSub;
+
   Future<void> init() async {
-    _box = await Hive.openBox<ReceiptModel>('receipts');
-    _invalidate();
-    // Load sample data if empty
-    if (_box.isEmpty) {
-      await _loadSampleData();
-    }
+    await _openFor(AuthService.instance.uid);
+
+    // 옛 공용 상자를 지운다. 누구 것인지 알 수 없게 섞여 있어서, 남겨두면
+    // 다음에 또 새어 나간다. 사장님 지시로 깨끗이 지우기로 했다.
+    // 자기 영수증은 클라우드 백업에서 다시 내려받는다.
+    await _dropLegacyBox();
+
+    // 로그인·로그아웃을 따라 상자를 갈아탄다.
+    // 구독하는 순간 현재 상태가 한 번 흘러오므로 첫 상자도 여기서 맞춰진다.
+    _authSub?.cancel();
+    _authSub = AuthService.instance.authStateChanges.listen((u) {
+      switchAccount(u?.uid);
+    });
+
     notifyListeners();
   }
 
-  Future<void> _loadSampleData() async {
-    final rng = Random(42);
+  /// 계정이 바뀌었으니 상자를 갈아탄다.
+  ///
+  /// 🔴 로그아웃(`uid == null`)도 반드시 거쳐야 한다. 안 갈아타면 로그아웃
+  ///    상태에서 앞사람 영수증이 그대로 보인다.
+  Future<void> switchAccount(String? uid) async {
+    if (_ready && _openedFor == uid) return;   // 이미 그 사람 상자다
+    await _openFor(uid);
+    notifyListeners();
+  }
 
-    final vendors = [
-      {'name': '한국화훼 도매(주)', 'bizNo': '102-81-34567'},
-      {'name': '서울꽃시장 도매', 'bizNo': '201-34-56789'},
-      {'name': '강남 플라워 도매', 'bizNo': '305-12-98765'},
-      {'name': '부산항 수입화훼', 'bizNo': '614-22-11234'},
-      {'name': '경기도 화훼농장', 'bizNo': '131-45-88901'},
-    ];
-
-    // 업체별 품목 + 기준 단가
-    final flowersByVendor = {
-      '한국화훼 도매(주)': [
-        ['장미(레드)', 1700.0], ['장미(핑크)', 1550.0], ['장미(화이트)', 1450.0],
-        ['장미(오렌지)', 1650.0], ['프리미엄 장미(대)', 2100.0],
-        ['작약(분홍)', 2300.0], ['작약(화이트)', 2100.0],
-        ['스프레이장미', 1050.0], ['미니 장미', 850.0],
-      ],
-      '서울꽃시장 도매': [
-        ['국화(백)', 750.0], ['국화(황)', 650.0], ['국화(분홍)', 700.0],
-        ['거베라(레드)', 900.0], ['거베라(오렌지)', 850.0],
-        ['카네이션(빨강)', 660.0], ['카네이션(핑크)', 610.0],
-        ['수국(블루)', 2400.0], ['수국(핑크)', 2300.0],
-        ['리시안셔스', 1200.0], ['알리움', 1000.0],
-      ],
-      '강남 플라워 도매': [
-        ['라넌큘러스(분홍)', 1800.0], ['라넌큘러스(화이트)', 1700.0],
-        ['아네모네', 1350.0], ['프리지아(황)', 980.0], ['프리지아(화이트)', 930.0],
-        ['델피늄(블루)', 1100.0], ['스냅드래곤', 880.0],
-        ['알스트로메리아', 800.0], ['튤립(레드)', 1200.0],
-        ['튤립(핑크)', 1150.0], ['튤립(화이트)', 1100.0],
-      ],
-      '부산항 수입화훼': [
-        ['수입 튤립(네덜란드)', 2100.0], ['수입 장미(에콰도르)', 2700.0],
-        ['극락조화', 3400.0], ['안스리움(레드)', 3100.0], ['안스리움(핑크)', 3000.0],
-        ['스카비오사', 1500.0], ['유칼립투스', 1850.0],
-        ['수입 수국(그린)', 2700.0], ['목화솜가지', 1300.0],
-      ],
-      '경기도 화훼농장': [
-        ['계절 혼합 야생화', 550.0], ['해바라기', 800.0],
-        ['코스모스', 450.0], ['금잔화', 400.0],
-        ['팬지', 320.0], ['라벤더', 1050.0],
-        ['로즈마리 가지', 650.0], ['녹색 잎사귀(대엽)', 380.0],
-        ['유카리 가지', 850.0],
-      ],
-    };
-
-    // 월별 구매일 목록
-    final purchaseDaysByMonth = <int, List<int>>{
-      1: [3, 5, 7, 9, 11, 14, 16, 18, 20, 22, 25, 27, 29, 31],
-      2: [2, 4, 6, 9, 11, 13, 16, 18, 20, 23, 25, 27],
-      3: [2, 4, 6, 9, 11, 13, 16, 18, 20, 23, 25, 27, 29, 31],
-      4: [1, 3, 5, 8, 10, 12, 15, 17, 19, 22, 24, 26, 28, 30],
-    };
-
-    // 월별 계절 단가 보정 계수
-    // 봄(3~4월): 수요 증가로 단가 상승 / 겨울(1~2월): 비수기
-    final seasonMultiplier = <int, double>{
-      1: 0.95,   // 1월: 비수기, 단가 약간 낮음
-      2: 1.00,   // 2월: 평월
-      3: 1.12,   // 3월: 봄 성수기, 단가 상승
-      4: 1.08,   // 4월: 봄 지속, 단가 높음
-    };
-
-    // 연도별 전반적인 단가 상승 (2026년은 2025년 대비 약 3~5% 상승)
-    final yearMultiplier = <int, double>{
-      2025: 1.00,
-      2026: 1.04,
-    };
-
-    int sampleIdx = 0;
-
-    // 2025년 1~4월 + 2026년 1~3월 생성
-    final schedule = [
-      {'year': 2025, 'months': [1, 2, 3, 4]},
-      {'year': 2026, 'months': [1, 2, 3]},
-    ];
-
-    for (final s in schedule) {
-      final year = s['year'] as int;
-      final months = s['months'] as List<int>;
-      final yMult = yearMultiplier[year]!;
-
-      for (final month in months) {
-        final days = purchaseDaysByMonth[month]!;
-        final sMult = seasonMultiplier[month]!;
-
-        for (final vendor in vendors) {
-          final flowers = flowersByVendor[vendor['name']]!;
-          final pickDays = List<int>.from(days)..shuffle(rng);
-          final purchaseCount = rng.nextInt(2) + 5; // 5~6회/월
-          final selectedDays = pickDays.take(purchaseCount).toList()..sort();
-
-          for (final day in selectedDays) {
-            final purchaseDate = DateTime(year, month, day);
-            final itemCount = rng.nextInt(4) + 2; // 2~5가지 꽃
-            final shuffled = List.from(flowers)..shuffle(rng);
-            final selectedItems = shuffled.take(itemCount).toList();
-
-            final items = selectedItems.map((f) {
-              final qty = rng.nextInt(26) + 5; // 5~30단
-              final basePrice = (f[1] as double);
-              // 기준단가 × 연도 보정 × 계절 보정 + 소폭 랜덤 변동
-              final adjustedBase = basePrice * yMult * sMult;
-              final variation = (rng.nextInt(9) - 4) * 50.0; // ±200원
-              final price = (adjustedBase + variation).clamp(300.0, 9999.0);
-              return FlowerItem(
-                name: f[0] as String,
-                quantity: qty,
-                unitPrice: price,
-                unit: '단',
-              );
-            }).toList();
-
-            final total = items.fold(0.0, (s, i) => s + i.totalPrice);
-
-            final receipt = ReceiptModel(
-              id: 'sample_$sampleIdx',
-              date: purchaseDate,
-              storeName: vendor['name']!,
-              items: items,
-              totalAmount: total,
-              rawOcrText: '샘플 영수증 - ${vendor['name']} (${year}년 ${month}월 ${day}일)',
-              createdAt: DateTime(year, month, day, 8 + rng.nextInt(10)),
-            );
-            await _box.put(receipt.id, receipt);
-            _invalidate();
-            sampleIdx++;
-          }
-        }
-      }
+  Future<void> _openFor(String? uid) async {
+    final name = boxNameFor(uid);
+    if (_ready) {
+      // 🔴 먼저 닫는다. 닫지 않으면 이전 상자가 메모리에 남아 다음 계정이
+      //    쓰는 동안에도 살아 있다.
+      try {
+        await _box.close();
+      } catch (_) {/* 이미 닫혔으면 넘어간다 */}
+      _ready = false;
     }
-    if (kDebugMode) debugPrint('✓ 샘플 영수증 $sampleIdx건 생성 완료 (2025.1~4 + 2026.1~3)');
+    _box = await Hive.openBox<ReceiptModel>(name);
+    _openedFor = uid;
+    _ready = true;
+    _invalidate();
+    if (kDebugMode) {
+      debugPrint('[Receipt] 상자 전환 → $name (${_box.length}건)');
+    }
+  }
+
+  /// 옛 공용 상자를 디스크에서 없앤다. 한 번만 하면 된다.
+  Future<void> _dropLegacyBox() async {
+    try {
+      if (!await Hive.boxExists(legacyBoxName)) return;
+      await Hive.deleteBoxFromDisk(legacyBoxName);
+      if (kDebugMode) debugPrint('[Receipt] 옛 공용 상자를 지웠습니다.');
+    } catch (e) {
+      if (kDebugMode) debugPrint('[Receipt] 옛 상자 삭제 실패: $e');
+    }
+  }
+
+  @override
+  void dispose() {
+    _authSub?.cancel();
+    super.dispose();
   }
 
   List<ReceiptModel> getReceiptsForDay(DateTime day) {
@@ -360,14 +325,20 @@ class ReceiptProvider extends ChangeNotifier {
   /// 로그인 직후 전체 영수증을 클라우드로 밀어올린다.
   Future<int> pushAllToCloud() async {
     final uid = _uid;
-    if (uid == null) return 0;
+    if (uid == null || !_ready) return 0;
+    // 🔴 지금 열린 상자가 이 계정 것일 때만 올린다. 계정이 막 바뀐
+    //    순간에 올리면 앞사람 영수증이 이 계정으로 올라간다.
+    //    (예전에 클라우드가 섞인 바로 그 경로다)
+    if (_openedFor != uid) return 0;
     return UserRepository.instance.backupReceipts(uid, _box.values.toList());
   }
 
   /// 기기 변경 후 복원 — 로컬에 없는 영수증만 가져온다.
   Future<int> restoreFromCloud() async {
     final uid = _uid;
-    if (uid == null) return 0;
+    if (uid == null || !_ready) return 0;
+    // 내려받은 영수증이 엉뚱한 상자에 들어가지 않게 한다.
+    if (_openedFor != uid) return 0;
     final remote = await UserRepository.instance.restoreReceipts(uid);
     var added = 0;
     for (final r in remote) {
