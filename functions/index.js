@@ -414,6 +414,10 @@ function signerAuth() {
 ///    들어가진다. `kakao:` 를 붙여 출처를 uid 안에 못박는다.
 const kakaoUid = (id) => `kakao:${id}`;
 
+/// 관리자 메일. 🔴 `firestore.rules` · `storage.rules` 의 `isAdmin()` 과
+///    **세 곳이 모두 같은 주소**여야 한다. 한 곳만 고치면 어긋난다.
+const ADMIN_EMAIL = 'flownote.kr@gmail.com';
+
 exports.kakaoCustomToken = onRequest(
   {
     region: 'asia-northeast3',
@@ -463,29 +467,92 @@ exports.kakaoCustomToken = onRequest(
       const acc = me.kakao_account || {};
       const prof = acc.profile || {};
       // 이메일은 `동의 + 인증완료` 둘 다여야 신뢰할 수 있다.
-      const email =
+      // 🔴 `let` 인 이유: 바로 아래에서 관리자 메일을 걸러내며 다시 넣는다.
+      let email =
         acc.email && acc.is_email_verified === true && acc.is_email_valid === true
           ? acc.email
           : null;
       const nickname = prof.nickname || null;
       const photo = prof.profile_image_url || prof.thumbnail_image_url || null;
 
+      // 🔴 관리자 메일은 카카오로 절대 붙이지 않는다.
+      //    규칙(firestore.rules / storage.rules)의 `isAdmin()` 은
+      //    `token.email == ADMIN_EMAIL && token.email_verified` 로 판정한다.
+      //    카카오 계정에도 메일이 붙게 된 이상, 누가 카카오에 이 주소를
+      //    달아 오면 관리자가 되어 **남의 문의를 전부 읽게** 된다.
+      //    지금은 같은 주소의 구글 계정이 선점해서 충돌로 막히지만,
+      //    그 계정이 사라지면 주소가 풀린다. 여기서 명시적으로 막는다.
+      //    관리자는 구글 로그인만 쓴다(사장님 확인).
+      if (email && email.toLowerCase() === ADMIN_EMAIL) {
+        logger.warn('카카오가 관리자 메일을 들고 왔다 — 메일을 붙이지 않음', {
+          kakaoId: String(kakaoId),
+        });
+        email = null;
+      }
+
       const uid = kakaoUid(kakaoId);
 
       // ── 3) Firebase 사용자 생성/갱신 ────────────────────────────
-      // 🔴 이메일을 Auth 레코드에 넣지 않는다.
-      //    같은 이메일을 쓰는 구글 계정이 이미 있으면 createUser 가
-      //    `email-already-exists` 로 실패해서 **카카오 로그인 자체가 막힌다.**
-      //    이메일은 아래 클레임으로만 넘기고, 계정 통합은 앱에서 판단한다.
+      // 🔴 이메일을 Auth 레코드에 **넣는다.** 넣어야 Firebase 콘솔
+      //    Authentication 목록의 `식별자` 칸에 메일 주소가 보인다.
+      //    안 넣으면 uid(`kakao:123…`)만 떠서 누가 누군지 알 수 없다.
+      //
+      // 🔴 전에는 일부러 안 넣었다. 같은 메일을 쓰는 구글 계정이 이미
+      //    있으면 `email-already-exists` 가 나서 **카카오 로그인 자체가
+      //    막히기** 때문이었다. 이제는 그 경우에만 메일을 빼고 다시
+      //    시도한다. 충돌은 드물고, 충돌해도 로그인은 된다.
       const patch = {};
       if (nickname) patch.displayName = nickname;
       if (photo) patch.photoURL = photo;
 
+      /// 계정을 만들거나 고친다. [withEmail] 이면 메일까지 붙인다.
+      async function upsertUser(withEmail) {
+        const body = { ...patch };
+        if (withEmail && email) {
+          body.email = email;
+          // 위에서 `is_email_verified && is_email_valid` 를 이미 확인했다.
+          // 카카오가 본인 확인을 마친 주소만 여기까지 온다.
+          body.emailVerified = true;
+        }
+        // 🔴 아무 동의도 안 한 사용자는 넣을 값이 하나도 없다. 그때
+        //    `updateUser(uid, {})` 는 인자 오류를 낸다. 존재 확인만 한다.
+        if (Object.keys(body).length === 0) {
+          try {
+            await admin.auth().getUser(uid);
+          } catch (e) {
+            if (e && e.code === 'auth/user-not-found') {
+              await admin.auth().createUser({ uid });
+            } else {
+              throw e;
+            }
+          }
+          return;
+        }
+        try {
+          await admin.auth().updateUser(uid, body);
+        } catch (e) {
+          if (e && e.code === 'auth/user-not-found') {
+            await admin.auth().createUser({ uid, ...body });
+          } else {
+            throw e;
+          }
+        }
+      }
+
+      // 메일이 Auth 레코드에 실제로 붙었는지. 응답에 같이 돌려준다.
+      let emailAttached = false;
       try {
-        await admin.auth().updateUser(uid, patch);
+        await upsertUser(true);
+        emailAttached = !!email;
       } catch (e) {
-        if (e && e.code === 'auth/user-not-found') {
-          await admin.auth().createUser({ uid, ...patch });
+        if (e && e.code === 'auth/email-already-exists') {
+          // 같은 메일을 쓰는 다른 계정(구글 등)이 이미 있다.
+          // 로그인을 막지 않는다. 메일만 빼고 그대로 들여보낸다.
+          logger.warn('카카오 메일이 다른 계정과 겹쳐 식별자에 못 붙임', {
+            uid,
+            email,
+          });
+          await upsertUser(false);
         } else {
           throw e;
         }
@@ -517,12 +584,19 @@ exports.kakaoCustomToken = onRequest(
         ...(email ? { kakaoEmail: email } : {}),
       });
 
-      logger.info('카카오 로그인 성공', { uid, hasEmail: !!email });
+      logger.info('카카오 로그인 성공', {
+        uid,
+        hasEmail: !!email,
+        // false 면 메일이 다른 계정과 겹쳐 식별자에 못 붙은 것이다.
+        emailAttached,
+      });
       return res.json({
         ok: true,
         token,
         uid,
         email,
+        // 이 메일이 Firebase 계정의 식별자로도 붙었는지.
+        emailAttached,
         displayName: nickname,
         photoURL: photo,
       });

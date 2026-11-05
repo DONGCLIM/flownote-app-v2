@@ -150,7 +150,9 @@ class AuthProvider extends ChangeNotifier {
         .timeout(const Duration(seconds: 8), onTimeout: () => null)
         .catchError((_) => null);
 
-    // 카카오 이메일은 Firebase 계정에 안 들어가므로 별도 경로로 받는다.
+    // 카카오 이메일은 서버가 Firebase 계정에도 붙이지만, 같은 메일을 쓰는
+    // 구글 계정이 이미 있으면 충돌을 피해 **빼고** 만든다. 그때도 우리 쪽
+    // 문서에는 남겨야 하므로 이 경로를 함께 본다.
     // 동의를 안 받았으면 null 이고, 그래도 로그인은 정상이다.
     final kakaoMail = provider == 'kakao'
         ? (AuthService.instance.lastKakaoEmail ?? '')
