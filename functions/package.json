@@ -1,7 +1,7 @@
 {
   "name": "flownote-functions",
   "description": "FlowNote 서버 작업 — 양재 화훼공판장 경매 시세 일일 요약",
-  "engines": { "node": "20" },
+  "engines": { "node": "22" },
   "main": "index.js",
   "scripts": {
     "serve": "firebase emulators:start --only functions",
