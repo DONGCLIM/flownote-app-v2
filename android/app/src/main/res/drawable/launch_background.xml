@@ -1,7 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
     <item>
-        <color android:color="#FFF8F5" />
+        <!-- lib/main.dart 의 Color(0xFFFFFCFA) 와 반드시 같아야 한다.
+             다르면 부팅 화면 → 앱 첫 화면 전환 때 배경이 번쩍인다. -->
+        <color android:color="#FFFCFA" />
     </item>
     <item>
         <bitmap

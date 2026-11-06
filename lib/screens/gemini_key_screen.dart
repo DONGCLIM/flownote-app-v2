@@ -33,20 +33,19 @@ class _GeminiKeyScreenState extends State<GeminiKeyScreen> {
   bool _hasCustomPrompt = false;
 
   // Google API에서 사용 가능한 모델 목록
+  // 실제 API 의 models 목록으로 검증한 값들 (2026-08 기준)
   static const List<String> _modelOptions = [
+    'gemini-3.5-flash-lite',
+    'gemini-3.5-flash',
+    'gemini-3.6-flash',
+    'gemini-3.1-flash-lite',
+    'gemini-3.1-pro-preview',
+    'gemini-3-flash-preview',
     'gemini-2.5-flash-lite',
     'gemini-2.5-flash',
     'gemini-2.5-pro',
-    'gemini-2.0-flash',
-    'gemini-2.0-flash-exp',
-    'gemini-3-flash',
-    'gemini-3-pro',
-    'gemini-3.1-pro',
-    'gemma-3-1b-it',
-    'gemma-3-2b-it',
-    'gemma-3-4b-it',
-    'gemma-3-12b-it',
-    'gemma-3-27b-it',
+    'gemini-flash-latest',
+    'gemini-flash-lite-latest',
   ];
 
   @override
@@ -87,8 +86,7 @@ class _GeminiKeyScreenState extends State<GeminiKeyScreen> {
       return;
     }
     if (!key.startsWith('AIza') && !key.startsWith('AQ.')) {
-      _showSnack('올바른 Gemini API 키 형식이 아닙니다.',
-          isError: true);
+      _showSnack('올바른 Gemini API 키 형식이 아닙니다.', isError: true);
       return;
     }
     setState(() => _isSaving = true);
@@ -114,9 +112,8 @@ class _GeminiKeyScreenState extends State<GeminiKeyScreen> {
 
   // ── 연결 테스트 ──
   Future<void> _testKey() async {
-    final key = _keyCtrl.text.trim().isNotEmpty
-        ? _keyCtrl.text.trim()
-        : _currentKey;
+    final key =
+        _keyCtrl.text.trim().isNotEmpty ? _keyCtrl.text.trim() : _currentKey;
     if (key == null || key.isEmpty) {
       _showSnack('먼저 API 키를 입력해주세요.', isError: true);
       return;
@@ -150,11 +147,13 @@ class _GeminiKeyScreenState extends State<GeminiKeyScreen> {
       );
       final body = '{"contents":[{"parts":[{"text":"hi"}]}],'
           '"generationConfig":{"maxOutputTokens":10}}';
-      final resp = await http.post(
-        uri,
-        headers: {'Content-Type': 'application/json'},
-        body: body,
-      ).timeout(const Duration(seconds: 15));
+      final resp = await http
+          .post(
+            uri,
+            headers: {'Content-Type': 'application/json'},
+            body: body,
+          )
+          .timeout(const Duration(seconds: 15));
       return resp.statusCode == 200;
     } catch (_) {
       return false;
@@ -233,8 +232,7 @@ class _GeminiKeyScreenState extends State<GeminiKeyScreen> {
                 child: const Text('취소')),
             ElevatedButton(
               onPressed: () => Navigator.pop(ctx, true),
-              style:
-                  ElevatedButton.styleFrom(backgroundColor: AppColors.error),
+              style: ElevatedButton.styleFrom(backgroundColor: AppColors.error),
               child: const Text('삭제'),
             ),
           ],
@@ -573,8 +571,8 @@ class _GeminiKeyScreenState extends State<GeminiKeyScreen> {
               ),
               const SizedBox(width: 6),
               const Text('직접 모델명 입력',
-                  style: TextStyle(
-                      fontSize: 13, color: AppColors.textSecondary)),
+                  style:
+                      TextStyle(fontSize: 13, color: AppColors.textSecondary)),
             ],
           ),
 
@@ -675,8 +673,8 @@ class _GeminiKeyScreenState extends State<GeminiKeyScreen> {
               ),
               if (_hasCustomPrompt)
                 Container(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 8, vertical: 4),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                   decoration: BoxDecoration(
                     color: AppColors.primary.withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(8),
@@ -689,9 +687,7 @@ class _GeminiKeyScreenState extends State<GeminiKeyScreen> {
                 ),
             ],
           ),
-
           const SizedBox(height: 12),
-
           SizedBox(
             width: double.infinity,
             child: ElevatedButton.icon(
@@ -704,8 +700,6 @@ class _GeminiKeyScreenState extends State<GeminiKeyScreen> {
       ),
     );
   }
-
-
 }
 
 // ─────────────────────────────────────────────────────
@@ -749,8 +743,7 @@ class _PromptEditorScreenState extends State<_PromptEditorScreen> {
     final result = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        shape:
-            RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: const Text('변경사항 취소'),
         content: const Text('저장하지 않은 변경사항이 있습니다. 나가시겠습니까?'),
         actions: [
@@ -770,8 +763,7 @@ class _PromptEditorScreenState extends State<_PromptEditorScreen> {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        shape:
-            RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: const Text('기본값으로 초기화'),
         content: const Text('프롬프트를 앱 기본값으로 초기화하시겠습니까?\n현재 작성 내용은 모두 사라집니다.'),
         actions: [
@@ -780,8 +772,7 @@ class _PromptEditorScreenState extends State<_PromptEditorScreen> {
               child: const Text('취소')),
           ElevatedButton(
             onPressed: () => Navigator.pop(ctx, true),
-            style:
-                ElevatedButton.styleFrom(backgroundColor: AppColors.warning),
+            style: ElevatedButton.styleFrom(backgroundColor: AppColors.warning),
             child: const Text('초기화'),
           ),
         ],
@@ -835,23 +826,20 @@ class _PromptEditorScreenState extends State<_PromptEditorScreen> {
             // 안내 배너
             Container(
               width: double.infinity,
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
               color: AppColors.primary.withValues(alpha: 0.06),
               child: const Text(
                 '💡 이 프롬프트로 Gemini API를 호출합니다. 수정 후 저장하면 바로 적용됩니다.\n"기본값" 버튼으로 언제든 원래대로 되돌릴 수 있습니다.',
                 style: TextStyle(
-                    fontSize: 12,
-                    color: AppColors.textSecondary,
-                    height: 1.5),
+                    fontSize: 12, color: AppColors.textSecondary, height: 1.5),
               ),
             ),
             // 변경 표시
             if (_hasChanges)
               Container(
                 width: double.infinity,
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 16, vertical: 6),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
                 color: AppColors.warning.withValues(alpha: 0.12),
                 child: const Text(
                   '⚠️ 저장되지 않은 변경사항이 있습니다.',
