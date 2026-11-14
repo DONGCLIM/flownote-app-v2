@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_core/firebase_core.dart';
 
 import '../models/user_model.dart';
+import '../models/purchase_list_model.dart';
 import '../models/receipt_model.dart';
 
 /// Firestore `users/{uid}` 문서를 다루는 저장소.
@@ -9,6 +10,7 @@ import '../models/receipt_model.dart';
 /// 구조:
 ///   users/{uid}                     ← UserModel (개인정보 + 사업자정보 + 동의이력)
 ///   users/{uid}/receipts/{id}       ← 영수증 백업 (기기 변경 시 복원용)
+///   users/{uid}/purchase_lists/{id} ← 사입 리스트 백업 (#179)
 ///
 /// Firebase가 초기화되지 않은 환경(웹 미설정 등)에서는 `isAvailable == false`가 되고
 /// 모든 메서드가 조용히 no-op 하거나 null을 돌려준다. → 앱이 죽지 않는다.
@@ -21,6 +23,7 @@ class UserRepository {
 
   static const String _usersCol = 'users';
   static const String _receiptsCol = 'receipts';
+  static const String _plistsCol = 'purchase_lists';
 
   void init() {
     if (_initialized) return;
@@ -246,6 +249,114 @@ class UserRepository {
     }
   }
 
+  // ------------------------------------------------------- 사입 리스트 (#179)
+  //
+  // 🔴 영수증과 달리 **성공 여부를 돌려준다.** 꽃시장은 인터넷이 자주
+  //    끊기는데, 실패를 삼켜 버리면 올라간 줄 알고 넘어간다. 부르는 쪽
+  //    (`PurchaseListService`)이 실패한 것을 기억했다가 다시 올린다.
+
+  /// 사입 리스트 한 건을 올린다. 성공하면 true.
+  Future<bool> backupPurchaseList(String uid, PurchaseList p) async {
+    final doc = _userDoc(uid);
+    if (doc == null) return false;
+    try {
+      await doc.collection(_plistsCol).doc(p.id).set({
+        'id': p.id,
+        'date': p.date.toIso8601String(),
+        'purpose': p.purpose,
+        'budgetCap': p.budgetCap,
+        'memo': p.memo,
+        'statusCode': p.statusCode,
+        'createdAt': p.createdAt.toIso8601String(),
+        'updatedAt': p.updatedAt.toIso8601String(),
+        'items': p.items
+            .map((e) => {
+                  'name': e.name,
+                  'qty': e.qty,
+                  'unitPrice': e.unitPrice,
+                  'unit': e.unit,
+                  'checked': e.checked,
+                  'missed': e.missed,
+                  'actualPrice': e.actualPrice,
+                  'basisDate': e.basisDate?.toIso8601String(),
+                })
+            .toList(),
+        // 스케치는 좌표만 올린다. 그림 파일이 아니라 용량이 작다.
+        'strokes': p.strokes
+            .map((e) => {
+                  'colorValue': e.colorValue,
+                  'width': e.width,
+                  'points': e.points,
+                })
+            .toList(),
+        'syncedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<void> deletePurchaseList(String uid, String id) async {
+    final doc = _userDoc(uid);
+    if (doc == null) return;
+    try {
+      await doc.collection(_plistsCol).doc(id).delete();
+    } catch (_) {}
+  }
+
+  /// 기기 변경 복원용. 못 읽으면 빈 목록이다.
+  Future<List<PurchaseList>> restorePurchaseLists(String uid) async {
+    final doc = _userDoc(uid);
+    if (doc == null) return [];
+    try {
+      final snap = await doc.collection(_plistsCol).get();
+      return snap.docs.map((d) {
+        final m = d.data();
+        final rawItems = (m['items'] as List?) ?? const [];
+        final rawStrokes = (m['strokes'] as List?) ?? const [];
+        final now = DateTime.now();
+        return PurchaseList(
+          id: m['id'] as String? ?? d.id,
+          date: DateTime.tryParse(m['date'] as String? ?? '') ?? now,
+          purpose: m['purpose'] as String? ?? '',
+          budgetCap: (m['budgetCap'] as num?)?.toDouble() ?? 0,
+          memo: m['memo'] as String? ?? '',
+          statusCode: (m['statusCode'] as num?)?.toInt() ?? 0,
+          createdAt:
+              DateTime.tryParse(m['createdAt'] as String? ?? '') ?? now,
+          updatedAt:
+              DateTime.tryParse(m['updatedAt'] as String? ?? '') ?? now,
+          items: rawItems.map((raw) {
+            final it = Map<String, dynamic>.from(raw as Map);
+            final basis = it['basisDate'] as String?;
+            return PurchaseItem(
+              name: it['name'] as String? ?? '',
+              qty: (it['qty'] as num?)?.toDouble() ?? 0,
+              unitPrice: (it['unitPrice'] as num?)?.toDouble() ?? 0,
+              unit: it['unit'] as String? ?? '',
+              checked: it['checked'] as bool? ?? false,
+              missed: it['missed'] as bool? ?? false,
+              actualPrice: (it['actualPrice'] as num?)?.toDouble(),
+              basisDate: basis == null ? null : DateTime.tryParse(basis),
+            );
+          }).toList(),
+          strokes: rawStrokes.map((raw) {
+            final st = Map<String, dynamic>.from(raw as Map);
+            final pts = (st['points'] as List?) ?? const [];
+            return SketchStroke(
+              colorValue: (st['colorValue'] as num?)?.toInt() ?? 0xFF171717,
+              width: (st['width'] as num?)?.toDouble() ?? 3,
+              points: pts.map((e) => (e as num).toDouble()).toList(),
+            );
+          }).toList(),
+        );
+      }).toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
   // ---------------------------------------------------------------- 회원 탈퇴
 
   /// 회원 탈퇴 시 클라우드에 저장된 모든 개인정보를 삭제한다.
@@ -255,6 +366,7 @@ class UserRepository {
     if (doc == null) return;
     try {
       await _deleteCollection(doc.collection(_receiptsCol));
+      await _deleteCollection(doc.collection(_plistsCol));
       await _deleteCollection(doc.collection('consent_log'));
       await doc.delete();
     } catch (_) {}

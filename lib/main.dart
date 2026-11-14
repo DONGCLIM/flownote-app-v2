@@ -7,6 +7,7 @@ import 'package:firebase_core/firebase_core.dart';
 
 import 'firebase_options.dart';
 import 'models/receipt_model.dart';
+import 'models/purchase_list_model.dart';
 import 'providers/auth_provider.dart';
 import 'providers/receipt_provider.dart';
 import 'services/auth_service.dart';
@@ -61,6 +62,10 @@ void main() async {
   await Hive.initFlutter();
   Hive.registerAdapter(ReceiptModelAdapter());
   Hive.registerAdapter(FlowerItemAdapter());
+  // 사입 리스트 (#179) — typeId 2·3·4
+  Hive.registerAdapter(PurchaseListAdapter());
+  Hive.registerAdapter(PurchaseItemAdapter());
+  Hive.registerAdapter(SketchStrokeAdapter());
 
   // Initialize Firebase (실패해도 앱은 계속 실행)
   //
