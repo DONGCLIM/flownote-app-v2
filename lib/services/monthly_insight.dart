@@ -2,22 +2,35 @@ import 'package:flutter/foundation.dart';
 
 import '../models/receipt_model.dart';
 
-/// 월별 인사이트의 **셈만** 맡는다. 화면을 모른다. (#180)
+/// 월별 인사이트의 **셈만** 맡는다. 화면을 모른다. (#180 · #181)
 ///
 /// 🔴 계산을 여기 한 곳에 모은 이유: 같은 비율을 화면에서 또 구하면
 ///    배지의 `+12.0%` 와 설명 문장의 `12.0%` 가 어긋난다. 한 번 구해
 ///    여러 곳이 같이 쓴다.
 ///
-/// ## 기준 (사장님 확정 #180)
+/// ## 기준 달 (사장님 확정 #181)
 ///
 /// ```
-///   기준 달   = 지난달 (이미 마감된 달)
-///   비교 기간 = 기준 달 직전 3개월
-///   비교 평균 = 비교 기간 3개월 합계 ÷ 3
-///   🔴 비교 3개월 중 영수증이 **한 장도 없는 달**이 있으면 리포트를 만들지
-///      않는다. 두 달치를 3 으로 나누면 평균이 낮게 나와서, 멀쩡히 산 달을
-///      "많이 썼다" 고 잘못 말하게 된다.
+///   지난달에 영수증이 있으면            → 지난달 (마감된 달)
+///   지난달이 비어 있으면                → 이번 달 (아직 진행 중)
+///   지난달도 이번 달도 비어 있으면      → 리포트 없음(null)
 /// ```
+///
+/// ## 비교 기간
+///
+/// ```
+///   기준 달 이전 **최대 3개월 중 영수증이 있는 달**만 쓴다.
+///   비교 평균 = 그 달들의 합계 ÷ 영수증이 있는 달 수
+///   🔴 예전에는 "3개월 중 빈 달이 있으면 리포트를 안 만든다" 였다.
+///      영수증을 막 모으기 시작한 사장님께 아무것도 못 보여 드려서
+///      규칙을 바꿨다(#181). 빈 달은 나눗셈에서 아예 뺀다.
+///   기준 달이 **진행 중인 이번 달**이면 비교하지 않는다. 달이 끝나지
+///      않았는데 지난달과 견주면 늘 "덜 썼다" 가 되어 거짓말이 된다.
+/// ```
+///
+/// ## 비교할 게 없으면 — 첫 달 리포트
+///
+/// 품목 비중과 많이 산 품목만 보여 준다. 오른 것이 없으니 절감 여지도 없다.
 ///
 /// ## 표시할 때만 다듬는다
 ///
@@ -29,6 +42,30 @@ enum InsightKind {
 
   /// 그 달 매입이 많았다.
   spending,
+
+  /// 품목군 비중. (첫 달 리포트)
+  mix,
+
+  /// 많이 산 품목 TOP3. (첫 달 리포트)
+  top,
+}
+
+/// 품목군 네 가지. 영수증에는 이 분류가 없어서 **품목 이름으로 짐작**한다.
+///
+/// 🔴 짐작이라 틀릴 수 있다. 사장님께 확인받을 일로 `docs/TODO_기능연결.md`
+///    에 적어 두었다.
+enum ItemGroup {
+  cutFlower,
+  supply,
+  plant,
+  etc;
+
+  String get label => switch (this) {
+        ItemGroup.cutFlower => '절화',
+        ItemGroup.supply => '부자재',
+        ItemGroup.plant => '화분·식물',
+        ItemGroup.etc => '기타',
+      };
 }
 
 @immutable
@@ -36,30 +73,50 @@ class InsightCard {
   const InsightCard({
     required this.kind,
     required this.title,
-    required this.ratio,
     required this.body,
+    this.ratio = 0,
+    this.headline,
     this.fromTo,
     this.saving = 0,
+    this.lines = const [],
   });
 
   final InsightKind kind;
   final String title;
 
-  /// 오른 비율. 0.12 = 12%. **원래 값**이다.
+  /// 오른 비율. 0.12 = 12%. **원래 값**이다. 비중·품목 카드에는 없다.
   final double ratio;
 
   final String body;
 
-  /// `7,140원 → 8,000원`. 지출 카드에는 없다.
+  /// 왼쪽 큰 글자를 직접 정할 때. 비워 두면 `+12.0%`.
+  final String? headline;
+
+  /// 오른쪽 작은 글자. `7,140원 → 8,000원` · `지난 3개월 평균 252만원`.
   final String? fromTo;
 
-  /// 절감 여지. **원래 값**이다. 지출 카드는 0.
+  /// 절감 여지. **원래 값**이다. 없으면 0.
   final double saving;
 
-  String get badge => kind == InsightKind.unitPrice ? '단가' : '지출';
+  /// 여러 줄로 보여 줄 때. (많이 산 품목)
+  final List<String> lines;
+
+  String get badge => switch (kind) {
+        InsightKind.unitPrice => '단가',
+        InsightKind.spending => '지출',
+        InsightKind.mix => '비중',
+        InsightKind.top => '품목',
+      };
 
   /// `+12.0%`
   String get deltaText => '+${InsightFmt.pct(ratio)}';
+
+  /// 왼쪽 큰 글자.
+  String get big => headline ?? deltaText;
+
+  /// 오른 것을 알리는 카드인가. (글자를 붉게 쓴다)
+  bool get isRise =>
+      kind == InsightKind.unitPrice || kind == InsightKind.spending;
 }
 
 @immutable
@@ -69,9 +126,12 @@ class MonthlyInsightReport {
     required this.receiptCount,
     required this.monthTotal,
     required this.cards,
+    this.compareMonths = 0,
+    this.inProgress = false,
+    this.asOf,
   });
 
-  /// 기준 달(지난달)의 1일.
+  /// 기준 달의 1일.
   final DateTime month;
 
   /// 기준 달 영수증 매수.
@@ -82,9 +142,47 @@ class MonthlyInsightReport {
 
   final List<InsightCard> cards;
 
+  /// 비교에 쓴 달 수. 0 이면 비교하지 않았다(첫 달 리포트).
+  final int compareMonths;
+
+  /// 기준 달이 아직 진행 중인 이번 달인가.
+  final bool inProgress;
+
+  /// 진행 중일 때의 '오늘'. `11월 1~24일 기준` 에 쓴다.
+  final DateTime? asOf;
+
+  /// 비교할 이전 달이 없다. 첫 달 리포트로 보여 준다.
+  bool get isFirstMonth => compareMonths == 0;
+
+  /// 코랄 카드 제목.
+  String get headTitle => isFirstMonth
+      ? '${month.month}월 리포트'
+      : '${month.year}년 ${month.month}월 점검 결과';
+
+  /// `11월 1~24일 기준`. 진행 중인 달일 때만.
+  String? get periodNote {
+    final d = asOf;
+    if (!inProgress || d == null) return null;
+    return '${month.month}월 1~${d.day}일 기준';
+  }
+
+  /// `지난달` · `지난 3개월 평균`
+  String get compareLabel =>
+      compareMonths == 1 ? '지난달' : '지난 $compareMonths개월 평균';
+
+  /// 머리글 설명.
+  String get compareNote => compareMonths == 1
+      ? '지난달과 비교했어요'
+      : '지난 $compareMonths개월 평균과 비교했어요';
+
+  /// 첫 달 리포트의 아래쪽 안내.
+  static const String firstMonthNote = '다음 달 영수증이 쌓이면 지난달과 비교해 드려요';
+
+  /// 영수증이 하나도 없을 때의 안내.
+  static const String noReceiptNote = '영수증을 찍으면 이번 달 리포트를 만들어 드려요';
+
   /// 절감 여지 합계. 원래 값.
-  double get totalSaving =>
-      cards.fold<double>(0, (acc, e) => acc + e.saving);
+  double get totalSaving => cards.fold<double>(0, (acc, e) => acc + e.saving);
 
   int countOf(InsightKind k) => cards.where((e) => e.kind == k).length;
 
@@ -97,7 +195,7 @@ class InsightFmt {
 
   /// 소수 첫째 자리까지. `0.120448` → `12.0%`
   static String pct(double ratio) {
-    final v = (ratio * 1000).round() / 10;   // 백분율의 소수 첫째 자리
+    final v = (ratio * 1000).round() / 10; // 백분율의 소수 첫째 자리
     return '${v.toStringAsFixed(1)}%';
   }
 
@@ -128,6 +226,12 @@ class InsightFmt {
 
   /// 절감 여지·합계 — 1,000원 단위 내림.
   static String wonFloor(double v) => won(floorThousand(v));
+
+  /// `2,520,000` → `252만원`. 만원이 안 되면 원 단위로 적는다.
+  static String manwon(double v) {
+    if (v.abs() < 10000) return won(v);
+    return '${comma(v / 10000)}만원';
+  }
 }
 
 /// 품목 한 가지를 모아 센 값.
@@ -154,14 +258,29 @@ class MonthlyInsight {
   /// 단가 카드 최대 개수.
   static const int maxPriceCards = 3;
 
-  /// 비교 기간에 이 횟수 이상 산 품목만 본다.
-  static const int minTimes = 2;
+  /// 많이 산 품목은 몇 개까지.
+  static const int topItems = 3;
 
-  /// 기준 달 = 지난달.
-  static DateTime baseMonth({DateTime? now}) {
+  /// 비교 기간을 최대 몇 달까지 보나.
+  static const int compareWindow = 3;
+
+  /// 기준 달 — 지난달에 영수증이 있으면 지난달, 없으면 이번 달.
+  ///
+  /// 둘 다 비어 있으면 null. 그때는 리포트를 만들지 않는다.
+  ///
+  /// 🔴 지난달을 먼저 보는 이유: 이번 달은 아직 끝나지 않아서, 다 사지도
+  ///    않은 달을 지난달과 견주면 늘 "덜 썼다" 가 된다.
+  static DateTime? baseMonth(
+    List<ReceiptModel> receipts, {
+    DateTime? now,
+  }) {
     final n = now ?? DateTime.now();
+    final cur = DateTime(n.year, n.month);
     // DateTime(2026, 0) 은 Dart 가 2025년 12월로 알아서 바꿔 준다.
-    return DateTime(n.year, n.month - 1);
+    final prev = DateTime(n.year, n.month - 1);
+    if (receipts.any((r) => _inMonth(r.date, prev))) return prev;
+    if (receipts.any((r) => _inMonth(r.date, cur))) return cur;
+    return null;
   }
 
   static bool _inMonth(DateTime d, DateTime m) =>
@@ -171,8 +290,7 @@ class MonthlyInsight {
   ///
   /// 🔴 `장미 1단(8,000원)` 과 `장미 1송이(800원)` 를 섞으면 평균이
   ///    엉뚱해져서, 단을 산 달이 늘 "급등" 으로 잡힌다.
-  static String _key(FlowerItem it) =>
-      '${it.name.trim()}|${it.unit.trim()}';
+  static String _key(FlowerItem it) => '${it.name.trim()}|${it.unit.trim()}';
 
   /// 오인식으로 보이는 단가인가. 비교 평균의 3배 이상이거나 1/3 이하.
   static bool _outlier(double price, double base) {
@@ -203,6 +321,35 @@ class MonthlyInsight {
     return out;
   }
 
+  /// 품목 이름으로 품목군을 짐작한다.
+  ///
+  /// 🔴 영수증에는 품목군이 없다. 이름만 보고 나눈 값이라 틀릴 수 있다.
+  ///    사장님께 확인받을 일로 `docs/TODO_기능연결.md` 에 적어 두었다.
+  static ItemGroup groupOf(String rawName) {
+    final n = rawName.replaceAll(' ', '');
+    const supply = [
+      '포장', '지함', '리본', '랩', '부직포', '망사', '끈', '테이프', '철사',
+      '와이어', '핀', '오아시스', '플로랄폼', '플로럴폼', '폼', '바구니',
+      '박스', '상자', '비닐', '봉투', '카드', '픽', '자재', '왁스', '셀로판',
+    ];
+    const plant = [
+      '화분', '분재', '다육', '선인장', '관엽', '식물', '묘목', '포트',
+      '난', '산세', '스투키', '테이블야자', '고무나무', '나무',
+    ];
+    const etc = ['배송', '운임', '택배', '수수료', '퀵', '기타', '할인'];
+    for (final k in etc) {
+      if (n.contains(k)) return ItemGroup.etc;
+    }
+    for (final k in plant) {
+      if (n.contains(k)) return ItemGroup.plant;
+    }
+    for (final k in supply) {
+      if (n.contains(k)) return ItemGroup.supply;
+    }
+    // 꽃 이름은 끝이 없다. 걸리지 않으면 절화로 본다.
+    return ItemGroup.cutFlower;
+  }
+
   /// 리포트를 만든다. 만들 수 없으면 null.
   ///
   /// [receipts] 는 사장님이 확인해 **저장한** 영수증이다. 저장 전 임시
@@ -211,28 +358,62 @@ class MonthlyInsight {
     List<ReceiptModel> receipts, {
     DateTime? now,
   }) {
-    final base = baseMonth(now: now);
-    final cmpMonths = [
-      for (var i = 1; i <= 3; i++) DateTime(base.year, base.month - i),
-    ];
+    final n = now ?? DateTime.now();
+    final base = baseMonth(receipts, now: n);
+    if (base == null) return null;
 
-    final baseRs =
-        receipts.where((r) => _inMonth(r.date, base)).toList();
-    if (baseRs.isEmpty) return null;
+    final inProgress = base.year == n.year && base.month == n.month;
+    final baseRs = receipts.where((r) => _inMonth(r.date, base)).toList();
+    final monthTotal = baseRs.fold<double>(0, (acc, r) => acc + r.totalAmount);
 
-    // 🔴 비교 3개월 중 빈 달이 있으면 만들지 않는다.
-    for (final m in cmpMonths) {
-      if (!receipts.any((r) => _inMonth(r.date, m))) return null;
+    // ── 비교할 달을 고른다 ───────────────────────────────────────
+    // 🔴 빈 달은 아예 뺀다. 두 달치를 3 으로 나누면 평균이 낮게 나와서
+    //    멀쩡히 산 달을 "많이 썼다" 고 잘못 말하게 된다.
+    final cmpMonths = <DateTime>[];
+    if (!inProgress) {
+      for (var i = 1; i <= compareWindow; i++) {
+        final m = DateTime(base.year, base.month - i);
+        if (receipts.any((r) => _inMonth(r.date, m))) cmpMonths.add(m);
+      }
     }
+
+    // 비교할 이전 달이 없거나, 아직 진행 중인 달이면 첫 달 리포트.
+    if (cmpMonths.isEmpty) {
+      return _firstMonthReport(
+        month: base,
+        baseRs: baseRs,
+        monthTotal: monthTotal,
+        inProgress: inProgress,
+        now: n,
+      );
+    }
+
+    return _compareReport(
+      month: base,
+      baseRs: baseRs,
+      monthTotal: monthTotal,
+      cmpMonths: cmpMonths,
+      receipts: receipts,
+    );
+  }
+
+  // ── 비교 리포트 ───────────────────────────────────────────────────
+  static MonthlyInsightReport _compareReport({
+    required DateTime month,
+    required List<ReceiptModel> baseRs,
+    required double monthTotal,
+    required List<DateTime> cmpMonths,
+    required List<ReceiptModel> receipts,
+  }) {
+    final months = cmpMonths.length;
+    final label = months == 1 ? '지난달' : '지난 $months개월 평균';
     final cmpRs = receipts
         .where((r) => cmpMonths.any((m) => _inMonth(r.date, m)))
         .toList();
 
     // ── 1) 비교 평균을 먼저 거칠게 구한다 ────────────────────────
     final rough = _collect(cmpRs);
-    final roughAvg = {
-      for (final e in rough.entries) e.key: e.value.avg,
-    };
+    final roughAvg = {for (final e in rough.entries) e.key: e.value.avg};
 
     // ── 2) 그 평균으로 오인식을 걸러 다시 센다 ───────────────────
     bool skip(String k, FlowerItem it) =>
@@ -240,6 +421,10 @@ class MonthlyInsight {
 
     final cmpAgg = _collect(cmpRs, skip: skip);
     final baseAgg = _collect(baseRs, skip: skip);
+
+    // 비교 기간이 두 달 이상이면 "두 번 이상 산 것" 만 본다. 한 달뿐일
+    // 때까지 두 번을 요구하면 막 시작한 사장님께는 늘 빈 화면이 된다.
+    final minTimes = months >= 2 ? 2 : 1;
 
     final cards = <InsightCard>[];
 
@@ -269,7 +454,7 @@ class MonthlyInsight {
         fromTo: '${InsightFmt.won(cmpPrice)} → ${InsightFmt.won(nowPrice)}',
         saving: saving,
         // 🔴 설명에도 **같은 비율**을 쓴다. 따로 구하면 배지와 어긋난다.
-        body: '직전 3개월 평균보다 ${InsightFmt.pct(ratio)} 높은 가격으로 '
+        body: '$label보다 ${InsightFmt.pct(ratio)} 높은 가격으로 '
             '$qtyText을 매입했어요. 시즌 영향일 수 있어요.',
       ));
     }
@@ -278,11 +463,8 @@ class MonthlyInsight {
     cards.addAll(rises.take(maxPriceCards));
 
     // ── 지출 카드 ────────────────────────────────────────────────
-    final monthTotal =
-        baseRs.fold<double>(0, (acc, r) => acc + r.totalAmount);
-    final cmpTotal =
-        cmpRs.fold<double>(0, (acc, r) => acc + r.totalAmount);
-    final cmpAvgTotal = cmpTotal / 3;
+    final cmpTotal = cmpRs.fold<double>(0, (acc, r) => acc + r.totalAmount);
+    final cmpAvgTotal = cmpTotal / months;
 
     if (cmpAvgTotal > 0) {
       final ratio = (monthTotal - cmpAvgTotal) / cmpAvgTotal;
@@ -291,21 +473,86 @@ class MonthlyInsight {
           kind: InsightKind.spending,
           title: '이번 달 지출 증가',
           ratio: ratio,
-          fromTo: '${InsightFmt.won(cmpAvgTotal)} → '
-              '${InsightFmt.won(monthTotal)}',
+          fromTo: '$label ${InsightFmt.manwon(cmpAvgTotal)}',
           // 지출 카드에는 절감 여지를 매기지 않는다. (사장님 지시)
           saving: 0,
-          body: '직전 3개월 평균보다 ${InsightFmt.pct(ratio)} 많이 '
-              '매입했어요. 시즌 영향일 수 있어요.',
+          body: '$label보다 ${InsightFmt.pct(ratio)} 많이 매입했어요. '
+              '시즌 영향일 수 있어요.',
         ));
       }
     }
 
     return MonthlyInsightReport(
-      month: base,
+      month: month,
       receiptCount: baseRs.length,
       monthTotal: monthTotal,
       cards: cards,
+      compareMonths: months,
+    );
+  }
+
+  // ── 첫 달 리포트 ──────────────────────────────────────────────────
+  /// 비교할 이전 달이 없을 때. 오른 것이 없으니 **절감 여지도 없다.**
+  static MonthlyInsightReport _firstMonthReport({
+    required DateTime month,
+    required List<ReceiptModel> baseRs,
+    required double monthTotal,
+    required bool inProgress,
+    required DateTime now,
+  }) {
+    final agg = _collect(baseRs);
+    final cards = <InsightCard>[];
+
+    // ── 품목 비중 ────────────────────────────────────────────────
+    final byGroup = <ItemGroup, double>{};
+    var itemsTotal = 0.0;
+    for (final e in agg.entries) {
+      final g = groupOf(e.key.split('|').first);
+      byGroup[g] = (byGroup[g] ?? 0) + e.value.amount;
+      itemsTotal += e.value.amount;
+    }
+
+    if (itemsTotal > 0) {
+      double share(ItemGroup g) => (byGroup[g] ?? 0) / itemsTotal;
+      final rest = [ItemGroup.plant, ItemGroup.etc]
+          .map((g) => '${g.label} ${InsightFmt.pct(share(g))}')
+          .join(' · ');
+      cards.add(InsightCard(
+        kind: InsightKind.mix,
+        title: '이번 달 매입 구성',
+        headline: '절화 ${InsightFmt.pct(share(ItemGroup.cutFlower))}',
+        fromTo: '부자재 ${InsightFmt.pct(share(ItemGroup.supply))}',
+        body: '$rest 였어요. 품목 이름으로 나눈 값이라 실제와 다를 수 있어요.',
+      ));
+    }
+
+    // ── 많이 산 품목 ─────────────────────────────────────────────
+    final sorted = agg.entries.toList()
+      ..sort((a, b) => b.value.amount.compareTo(a.value.amount));
+    if (sorted.isNotEmpty) {
+      final lines = <String>[];
+      for (final e in sorted.take(topItems)) {
+        final name = e.key.split('|').first;
+        final unit = e.key.split('|').last;
+        final qty = '${InsightFmt.comma(e.value.qty)}${unit.isEmpty ? '' : unit}';
+        lines.add('$name $qty · 평균 ${InsightFmt.won(e.value.avg)}');
+      }
+      cards.add(InsightCard(
+        kind: InsightKind.top,
+        title: '많이 산 품목',
+        lines: lines,
+        body: '매입액이 큰 순서예요.',
+      ));
+    }
+
+    return MonthlyInsightReport(
+      month: month,
+      receiptCount: baseRs.length,
+      monthTotal: monthTotal,
+      cards: cards,
+      compareMonths: 0,
+      inProgress: inProgress,
+      asOf: inProgress ? now : null,
     );
   }
 }

@@ -673,10 +673,16 @@ class _HomeDsScreenState extends State<HomeDsScreen> {
   // ── 5 : CTA ───────────────────────────────────────────────────────
   /// 시안의 코랄 버튼. 예전 `_insightCard` 의 '더보기' 와 같은 곳으로 간다.
   Widget _ctaButton(FnDemoData d) {
-    // 🔴 리포트의 기준 달은 **지난달**(이미 마감된 달)이다. 버튼 글자도
-    //    같은 달이어야 한다. 화면에 보이는 달과 리포트 달이 다르면
-    //    사장님이 이번 달 숫자인 줄 알고 보신다. (#180)
-    final base = MonthlyInsight.baseMonth();
+    // 🔴 버튼 글자의 달은 리포트가 실제로 분석할 달과 같아야 한다.
+    //    지난달에 영수증이 있으면 지난달, 없으면 이번 달이다(#181).
+    //    한 장도 없으면 이번 달로 적어 둔다 — 눌러 들어가면 영수증을
+    //    찍어 달라는 안내가 나온다.
+    final now = DateTime.now();
+    final base = MonthlyInsight.baseMonth(
+          context.watch<ReceiptProvider>().allReceipts,
+          now: now,
+        ) ??
+        DateTime(now.year, now.month);
     final month = '${base.month}월 ';
     return _Tappable(
       onTap: () => _isPro
