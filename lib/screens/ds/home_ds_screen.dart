@@ -387,13 +387,15 @@ class _HomeDsScreenState extends State<HomeDsScreen> {
   // ── 3-2 : 품목 비중 (흰 카드) ─────────────────────────────────────
   /// 이번 달 절화 / 부자재 / 화분·식물 / 기타 비율.
   ///
-  /// 🔴 품목별 지출 분석 화면은 아직 없다. 다음 작업에서 만들 때까지
-  ///    월별 인사이트로 **임시 연결**해 둔다. (사장님 지시 #183)
+  /// 누르면 품목별 지출 분석으로 간다. (#184)
+  ///
+  /// 🔴 #183 에서는 그 화면이 없어 월별 인사이트로 임시 연결해 뒀었다.
+  ///    이제 제 화면이 생겼으니 그리로 보낸다.
   Widget _mixCard(FnDemoData d) {
     final parts = _mix(d);
 
     return _Tappable(
-      onTap: () => _push(const InsightsDsScreen()),
+      onTap: () => _push(const ItemSpendDsScreen()),
       radius: FnHome.radius,
       child: _whiteCard(
         child: Column(

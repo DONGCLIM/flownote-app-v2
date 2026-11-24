@@ -14,6 +14,7 @@ import '../../design/fn_charts_ds.dart';
 import '../../design/fn_avatar.dart';
 import '../../providers/receipt_provider.dart';
 import '../../models/purchase_list_model.dart';
+import '../../models/receipt_model.dart';
 import '../../services/cost_calc.dart';
 import '../../services/monthly_insight.dart';
 import '../../services/purchase_list_service.dart';
@@ -3316,3 +3317,520 @@ const _t14 = TextStyle(
     fontFamily: 'Pretendard', fontSize: 14, color: FnColors.labelNormal);
 const _t15 = TextStyle(
     fontFamily: 'Pretendard', fontSize: 15, color: FnColors.labelNormal);
+
+// ═══════════════════════════════════════════════════════════════════════
+// item-spend — 품목별 지출 분석 (#184)
+// ═══════════════════════════════════════════════════════════════════════
+/// 품목별 지출 분석 — 한 달 매입을 품목군과 절화 품목으로 쪼개 본다.
+///
+/// ## 배치 (시안 순서)
+///
+/// ```
+///   [←] 품목별 지출 분석
+///   ┌ ‹ 2026년 7월 ›                              ┐ _ItemGroupCard
+///   │        ◯ 총 지출 305만원                    │
+///   │ 절화(꽃)  면세 · 68.0%        2,074,000원    │
+///   │ 부자재    과세 · 20.0%          610,000원    │
+///   └ …                                           ┘
+///   ┌ 절화(꽃) 품목별 매입                         ┐ _CutFlowerCard
+///   │ 7월 2,074,000원 · 지난달 대비 +17.0%          │
+///   │ 장미(레드)              720,000원            │
+///   │ 90단 · +29.0%   ▇▇▇▇▇▇▇▇▇▇                  │
+///   └ …                                           ┘
+///   ┌ ■ 데이터 분석                                ┐ _ItemNoteCard
+///   └ 정해진 문장 틀 + 계산값                       ┘
+///   면세·과세 표시는 품목 분류 기준 참고용이에요…
+/// ```
+///
+/// 🔴 셈은 이 파일에서 하지 않는다. [ItemSpend] 가 한다. 화면에서 또
+///    나누면 도넛의 68.0% 와 문장 속 68.0% 가 어긋난다.
+///
+/// 🔴 데이터 분석 문장은 **AI 가 쓰지 않는다.** 정해진 네 가지 틀에
+///    계산값만 끼워 넣는다. 사장님 지시(#184).
+class ItemSpendDsScreen extends StatefulWidget {
+  const ItemSpendDsScreen({super.key, this.receipts, this.now});
+
+  /// 미리 넣어 줄 영수증. 비워 두면 내 영수증을 쓴다.
+  ///
+  /// 🔴 테스트에서 Provider 없이 띄우려고 열어 두었다. (월별 인사이트와 같은 방식)
+  final List<ReceiptModel>? receipts;
+
+  /// '오늘'을 바꿔 끼울 수 있게 둔다. 테스트에서 달을 고정한다.
+  final DateTime? now;
+
+  @override
+  State<ItemSpendDsScreen> createState() => _ItemSpendDsScreenState();
+}
+
+class _ItemSpendDsScreenState extends State<ItemSpendDsScreen> {
+  /// 보고 있는 달. null 이면 이번 달.
+  DateTime? _month;
+
+  /// 도넛에서 누른 칸.
+  int? _slice;
+
+  List<ReceiptModel> _receipts() {
+    final given = widget.receipts;
+    if (given != null) return given;
+    try {
+      return context.watch<ReceiptProvider>().allReceipts;
+    } catch (_) {
+      // Provider 가 없는 자리(테스트 등)에서는 빈 목록으로 본다.
+      return const [];
+    }
+  }
+
+  void _step(int delta) {
+    final n = widget.now ?? DateTime.now();
+    final cur = _month ?? DateTime(n.year, n.month);
+    final next = DateTime(cur.year, cur.month + delta);
+    // 아직 오지 않은 달은 볼 게 없다.
+    if (next.isAfter(DateTime(n.year, n.month))) return;
+    setState(() {
+      _month = next;
+      _slice = null;
+    });
+  }
+
+  /// 루트로 나간 뒤 스캔 탭을 연다. (#113 과 같은 방식)
+  void _goScan() {
+    FnTabIntent.request('scan');
+    Navigator.of(context).popUntil((r) => r.isFirst);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final n = widget.now ?? DateTime.now();
+    final rep = ItemSpend.build(
+      _receipts(),
+      month: _month,
+      now: widget.now,
+    );
+    final atNow = rep.month.year == n.year && rep.month.month == n.month;
+
+    return FnShell(
+      navTitle: '품목별 지출 분석',
+      bg: FnDs.bg,
+      onBack: () => Navigator.of(context).pop(),
+      child: ColoredBox(
+        color: FnDs.bg,
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(
+              FnDs.pagePad, 14, FnDs.pagePad, FnDs.gapXl),
+          children: [
+            _ItemGroupCard(
+              report: rep,
+              activeSlice: _slice,
+              canNext: !atNow,
+              onPrev: () => _step(-1),
+              onNext: () => _step(1),
+              onSlice: (i) => setState(() => _slice = _slice == i ? null : i),
+            ),
+            if (rep.isEmpty) ...[
+              const SizedBox(height: FnDs.gapM),
+              FnPrimaryButton(label: '영수증 스캔하기', onTap: _goScan),
+            ] else ...[
+              if (rep.rows.isNotEmpty) ...[
+                const SizedBox(height: FnDs.gapM),
+                _CutFlowerCard(report: rep),
+              ],
+              if (rep.notes.isNotEmpty) ...[
+                const SizedBox(height: FnDs.gapM),
+                _ItemNoteCard(notes: rep.notes),
+              ],
+            ],
+            const SizedBox(height: FnDs.gapM),
+            const Text(
+              ItemSpendReport.taxNote,
+              textAlign: TextAlign.center,
+              style: FnDs.tsSub,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// 품목군 네 가지 색. 도넛과 그 아래 줄이 **같은 순서**로 쓴다.
+///
+/// 🔴 품목군 순서(절화·부자재·화분·식물·기타)에 맞춰 고정한다. 금액 순으로
+///    색을 돌리면 달이 바뀔 때마다 절화 색이 달라져서 못 알아본다.
+const Map<ItemGroup, Color> _groupColor = {
+  ItemGroup.cutFlower: FnDs.coral,
+  ItemGroup.supply: Color(0xFFFFB9A3),
+  ItemGroup.plant: Color(0xFFF2C75C),
+  ItemGroup.etc: Color(0xFFC2A271),
+};
+
+/// 카드 1 — 달 고르기 + 품목군 도넛 + 네 줄.
+class _ItemGroupCard extends StatelessWidget {
+  const _ItemGroupCard({
+    required this.report,
+    required this.canNext,
+    required this.onPrev,
+    required this.onNext,
+    required this.onSlice,
+    this.activeSlice,
+  });
+
+  final ItemSpendReport report;
+  final bool canNext;
+  final VoidCallback onPrev;
+  final VoidCallback onNext;
+  final ValueChanged<int> onSlice;
+  final int? activeSlice;
+
+  @override
+  Widget build(BuildContext context) {
+    final note = report.periodNote;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(FnDs.cardPad),
+      decoration: FnDs.cardDeco(),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              _MonthArrow(
+                icon: Icons.chevron_left_rounded,
+                onTap: onPrev,
+                semantic: '이전 달',
+              ),
+              const SizedBox(width: FnDs.gap2xs),
+              Text(
+                report.monthLabel,
+                style: const TextStyle(
+                  fontFamily: FnDs.font,
+                  fontSize: FnDs.fontS,
+                  fontWeight: FontWeight.w700,
+                  color: FnDs.title,
+                ),
+              ),
+              const SizedBox(width: FnDs.gap2xs),
+              _MonthArrow(
+                icon: Icons.chevron_right_rounded,
+                onTap: canNext ? onNext : null,
+                semantic: '다음 달',
+              ),
+            ],
+          ),
+          if (note != null) ...[
+            const SizedBox(height: 2),
+            Text(note, style: FnDs.tsSub),
+          ],
+          if (report.isEmpty) ...[
+            const SizedBox(height: FnDs.gapL),
+            const Center(
+              child: Text(
+                ItemSpendReport.emptyNote,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontFamily: FnDs.font,
+                  fontSize: FnDs.fontS,
+                  height: 1.5,
+                  color: FnDs.sub,
+                ),
+              ),
+            ),
+            const SizedBox(height: FnDs.gapL),
+          ] else ...[
+            const SizedBox(height: FnDs.gapM),
+            Center(
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  FnDonut(
+                    data: [
+                      for (final s in report.slices)
+                        FnChartDatum(
+                          label: s.label,
+                          value: s.amount,
+                          color: _groupColor[s.group],
+                        ),
+                    ],
+                    size: 168,
+                    thickness: 30,
+                    activeIndex: activeSlice,
+                    onSlice: onSlice,
+                  ),
+                  Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Text('총 지출', style: FnDs.tsSub),
+                      const SizedBox(height: 2),
+                      Text(
+                        InsightFmt.manwon(report.total),
+                        style: const TextStyle(
+                          fontFamily: FnDs.font,
+                          fontSize: FnDs.font2xl,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: -0.5,
+                          color: FnDs.title,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: FnDs.gapM),
+            for (var i = 0; i < report.slices.length; i++) ...[
+              if (i > 0) const SizedBox(height: FnDs.gapS),
+              _GroupRow(
+                slice: report.slices[i],
+                active: activeSlice == i,
+                onTap: () => onSlice(i),
+              ),
+            ],
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+/// 달을 넘기는 작은 화살표. [onTap] 이 null 이면 흐리게 두고 안 눌린다.
+class _MonthArrow extends StatelessWidget {
+  const _MonthArrow({
+    required this.icon,
+    required this.semantic,
+    this.onTap,
+  });
+
+  final IconData icon;
+  final String semantic;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final on = onTap != null;
+    return Semantics(
+      button: true,
+      label: semantic,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: onTap,
+        child: SizedBox(
+          width: 28,
+          height: 28,
+          child: Icon(
+            icon,
+            size: 20,
+            color: on ? FnDs.body : FnDs.hair,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 품목군 한 줄. `절화(꽃) / 면세 · 68.0%` ... `2,074,000원`
+class _GroupRow extends StatelessWidget {
+  const _GroupRow({
+    required this.slice,
+    required this.active,
+    required this.onTap,
+  });
+
+  final GroupSlice slice;
+  final bool active;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+        decoration: BoxDecoration(
+          color: active ? FnDs.coralFaint : Colors.transparent,
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 10,
+              height: 10,
+              decoration: BoxDecoration(
+                color: _groupColor[slice.group],
+                shape: BoxShape.circle,
+              ),
+            ),
+            const SizedBox(width: FnDs.gapXs),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    slice.label,
+                    style: const TextStyle(
+                      fontFamily: FnDs.font,
+                      fontSize: FnDs.fontS,
+                      fontWeight: FontWeight.w700,
+                      color: FnDs.title,
+                    ),
+                  ),
+                  const SizedBox(height: 1),
+                  Text(slice.sub, style: FnDs.tsSub),
+                ],
+              ),
+            ),
+            const SizedBox(width: FnDs.gapXs),
+            Text(
+              InsightFmt.won(slice.amount),
+              style: const TextStyle(
+                fontFamily: FnDs.font,
+                fontSize: FnDs.fontS,
+                fontWeight: FontWeight.w700,
+                color: FnDs.title,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// 카드 2 — 절화 품목별 매입.
+class _CutFlowerCard extends StatelessWidget {
+  const _CutFlowerCard({required this.report});
+
+  final ItemSpendReport report;
+
+  @override
+  Widget build(BuildContext context) {
+    final top = report.topAmount;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(FnDs.cardPad),
+      decoration: FnDs.cardDeco(),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('절화(꽃) 품목별 매입', style: FnDs.tsSection),
+          const SizedBox(height: FnDs.gapXs),
+          Text(report.cutFlowerHead, style: FnDs.tsSub),
+          const SizedBox(height: FnDs.gapM),
+          for (var i = 0; i < report.rows.length; i++) ...[
+            if (i > 0) const SizedBox(height: FnDs.gapS),
+            _ItemRow(row: report.rows[i], topAmount: top),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+/// 절화 한 줄 — 이름·금액·수량/증감·막대.
+class _ItemRow extends StatelessWidget {
+  const _ItemRow({required this.row, required this.topAmount});
+
+  final ItemSpendRow row;
+
+  /// 1위 금액. 막대 길이의 기준이다.
+  final double topAmount;
+
+  @override
+  Widget build(BuildContext context) {
+    // 1위가 꽉 찬 막대가 되고 나머지는 그 비율만큼.
+    final frac = topAmount <= 0 ? 0.0 : (row.amount / topAmount).clamp(0.0, 1.0);
+    final sub = row.sub;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                row.name,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontFamily: FnDs.font,
+                  fontSize: FnDs.fontS,
+                  fontWeight: FontWeight.w700,
+                  color: FnDs.title,
+                ),
+              ),
+            ),
+            const SizedBox(width: FnDs.gapXs),
+            Text(
+              InsightFmt.won(row.amount),
+              style: const TextStyle(
+                fontFamily: FnDs.font,
+                fontSize: FnDs.fontS,
+                fontWeight: FontWeight.w700,
+                color: FnDs.title,
+              ),
+            ),
+          ],
+        ),
+        if (sub.isNotEmpty) ...[
+          const SizedBox(height: 2),
+          Text(sub, style: FnDs.tsSub),
+        ],
+        const SizedBox(height: 6),
+        // 막대. 연한 띠 위에 코랄 띠를 비율만큼 올린다.
+        ClipRRect(
+          borderRadius: BorderRadius.circular(999),
+          child: Stack(
+            children: [
+              Container(height: 6, color: FnDs.coralFaint),
+              FractionallySizedBox(
+                widthFactor: frac == 0 ? 0.01 : frac,
+                child: Container(height: 6, color: FnDs.coral),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// 카드 3 — 데이터 분석. 정해진 문장 틀에 계산값만 넣는다.
+class _ItemNoteCard extends StatelessWidget {
+  const _ItemNoteCard({required this.notes});
+
+  final List<String> notes;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(FnDs.cardPad),
+      decoration: FnDs.cardDeco(),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 16,
+                height: 16,
+                decoration: BoxDecoration(
+                  color: FnDs.coral,
+                  borderRadius: BorderRadius.circular(4),
+                ),
+              ),
+              const SizedBox(width: FnDs.gapXs),
+              const Text('데이터 분석', style: FnDs.tsSection),
+            ],
+          ),
+          const SizedBox(height: FnDs.gapS),
+          for (var i = 0; i < notes.length; i++) ...[
+            if (i > 0) const SizedBox(height: FnDs.gapXs),
+            Text(notes[i], style: FnDs.tsBody),
+          ],
+        ],
+      ),
+    );
+  }
+}

@@ -437,15 +437,15 @@ void _k135() {
       expect(find.byType(TrendDsScreen), findsOneWidget);
     });
 
-    testWidgets('🔴 품목 비중 카드를 누르면 월별 인사이트가 열린다 (#183 임시 연결)',
+    testWidgets('🔴 품목 비중 카드를 누르면 품목별 지출 분석이 열린다 (#184)',
         (tester) async {
       // `SubscriptionService.unlockEverything == true` 라 모든 기능이 열려
       // 있다. (사장님 지시: "프로 어쩌고 이런거는 다 빼기로 했잖아")
       expect(SubscriptionService.instance.isPro, isTrue,
           reason: '구독 정책이 바뀌었다면 이 테스트의 기대값도 같이 바꿔야 한다');
       await _pumpHome(tester, items: _sample());
-      // 🔴 품목별 지출 분석 화면은 아직 없다. 다음 작업에서 만들 때까지
-      //    월별 인사이트로 임시 연결해 뒀다.
+      // 🔴 #183 에서는 그 화면이 없어 월별 인사이트로 임시 연결했었다.
+      //    #184 에서 제 화면을 만들었으니 이제 그리로 가야 한다.
       await tester.tap(find.text('상세 분석 보기 >'));
       // 🔴 라우트 전환에는 pump 가 **두 번** 필요하다.
       //    첫 pump 가 새 라우트를 트리에 끼워 넣고, 두 번째가 전환을 끝낸다.
@@ -453,7 +453,8 @@ void _k135() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 500));
       expect(tester.takeException(), isNull);
-      expect(find.byType(InsightsDsScreen), findsOneWidget);
+      expect(find.byType(ItemSpendDsScreen), findsOneWidget);
+      expect(find.byType(InsightsDsScreen), findsNothing);
     });
 
     testWidgets('🔴 지출 추이 카드를 누르면 시즌 매입 비교가 열린다 (#183)',

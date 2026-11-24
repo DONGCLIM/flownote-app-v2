@@ -199,6 +199,10 @@ class InsightFmt {
     return '${v.toStringAsFixed(1)}%';
   }
 
+  /// 부호를 붙인다. `+17.0%` · `-3.0%` (#184 품목별 지출 분석)
+  static String signedPct(double ratio) =>
+      '${ratio >= 0 ? '+' : ''}${pct(ratio)}';
+
   /// 1,000원 단위 **내림**. 절감 여지와 합계에 쓴다.
   ///
   /// 🔴 올림이 아니라 내림이다. 아낄 수 있는 돈을 실제보다 크게 말하면
@@ -553,6 +557,459 @@ class MonthlyInsight {
       compareMonths: 0,
       inProgress: inProgress,
       asOf: inProgress ? now : null,
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// 품목별 지출 분석 (#184)
+// ═══════════════════════════════════════════════════════════════════════
+
+/// 품목군 한 조각. 도넛 한 칸과 그 아래 한 줄이 같은 값을 쓴다.
+@immutable
+class GroupSlice {
+  const GroupSlice({
+    required this.group,
+    required this.amount,
+    required this.share,
+  });
+
+  final ItemGroup group;
+  final double amount;
+
+  /// 0.68 = 68%. **원래 값**이다.
+  final double share;
+
+  /// 화면에 적는 이름. 절화만 `절화(꽃)` 로 적는다.
+  String get label =>
+      group == ItemGroup.cutFlower ? '절화(꽃)' : group.label;
+
+  /// 면세·과세 표시.
+  ///
+  /// 🔴 이건 **품목 분류에서 짐작한 값**이다. 실제 과세 여부는 받은
+  ///    계산서·세금계산서가 정한다. 화면 맨 아래에 그렇게 적어 둔다.
+  String get taxLabel => switch (group) {
+        ItemGroup.cutFlower => '면세',
+        ItemGroup.supply => '과세',
+        ItemGroup.plant => '면세/과세',
+        ItemGroup.etc => '과세',
+      };
+
+  /// `면세 · 68.0%`
+  String get sub => '$taxLabel · ${InsightFmt.pct(share)}';
+}
+
+/// 절화 품목 한 줄.
+@immutable
+class ItemSpendRow {
+  const ItemSpendRow({
+    required this.name,
+    required this.amount,
+    this.qty = 0,
+    this.unit = '',
+    this.delta,
+    this.isNew = false,
+    this.isOther = false,
+  });
+
+  /// 보여줄 이름. 처음 만난 영수증의 표기를 그대로 쓴다.
+  final String name;
+  final double amount;
+
+  /// 0 이면 수량을 적지 않는다.
+  final double qty;
+
+  /// 비어 있으면 수량을 적지 않는다. (단위가 섞여 있었다는 뜻)
+  final String unit;
+
+  /// 전월 대비. null 이면 **적지 않는다.**
+  ///
+  /// 🔴 지난달 금액이 5만원 미만이면 비율이 널뛴다. 3만원이 9만원이 되면
+  ///    `+200%` 가 되는데, 그건 "값이 올랐다" 가 아니라 "그 달에 조금
+  ///    샀다" 는 뜻이다. 그래서 아예 숨긴다.
+  final double? delta;
+
+  /// 지난 기간에 아예 없던 품목.
+  final bool isNew;
+
+  /// `기타 절화` 묶음인가. 늘고 준 품목 문장에서 뺀다.
+  final bool isOther;
+
+  bool get hasQty => qty > 0 && unit.isNotEmpty;
+
+  /// `90단`
+  String get qtyText => hasQty ? '${InsightFmt.comma(qty)}$unit' : '';
+
+  /// `+29.0%` · `신규` · 빈 글자.
+  String get deltaText {
+    final d = delta;
+    if (d != null) return InsightFmt.signedPct(d);
+    return isNew ? '신규' : '';
+  }
+
+  /// `90단 · +29.0%`
+  String get sub =>
+      [qtyText, deltaText].where((e) => e.isNotEmpty).join(' · ');
+}
+
+/// 품목별 지출 분석 한 달치.
+@immutable
+class ItemSpendReport {
+  const ItemSpendReport({
+    required this.month,
+    required this.total,
+    required this.slices,
+    required this.rows,
+    required this.notes,
+    required this.cutFlowerTotal,
+    this.cutFlowerDelta,
+    this.hasCompare = false,
+    this.inProgress = false,
+    this.asOf,
+  });
+
+  /// 보고 있는 달의 1일.
+  final DateTime month;
+
+  /// 그 달 품목 금액 합계. **영수증 합계가 아니라 품목 줄의 합**이다.
+  ///
+  /// 🔴 품목군 네 조각을 더한 값과 반드시 같아야 해서 이렇게 센다.
+  ///    영수증 총액을 쓰면 품목이 비어 있는 영수증 때문에 도넛과 어긋난다.
+  final double total;
+
+  final List<GroupSlice> slices;
+
+  /// 절화 품목 줄. 금액 순 네 개 + `기타 절화`.
+  final List<ItemSpendRow> rows;
+
+  /// 데이터 분석 문장.
+  final List<String> notes;
+
+  final double cutFlowerTotal;
+
+  /// 절화 전체의 전월 대비. null 이면 적지 않는다.
+  final double? cutFlowerDelta;
+
+  /// 비교할 기간에 영수증이 있었나.
+  final bool hasCompare;
+
+  /// 보고 있는 달이 아직 진행 중인 이번 달인가.
+  final bool inProgress;
+
+  /// 진행 중일 때의 '오늘'.
+  final DateTime? asOf;
+
+  bool get isEmpty => total <= 0;
+
+  /// `2026년 7월`
+  String get monthLabel => '${month.year}년 ${month.month}월';
+
+  /// `11월 1~24일 기준`. 진행 중인 달에만.
+  String? get periodNote {
+    final d = asOf;
+    if (!inProgress || d == null) return null;
+    return '${month.month}월 1~${d.day}일 기준';
+  }
+
+  /// `지난달 같은 기간` · `지난달`
+  String get compareLabel => inProgress ? '지난달 같은 기간' : '지난달';
+
+  /// 카드 2 머리줄. `7월 2,074,000원 · 지난달 대비 +17.0%`
+  String get cutFlowerHead {
+    final head = '${month.month}월 ${InsightFmt.won(cutFlowerTotal)}';
+    final d = cutFlowerDelta;
+    if (d == null) return head;
+    return '$head · $compareLabel 대비 ${InsightFmt.signedPct(d)}';
+  }
+
+  /// 막대 길이의 기준. 1위 금액.
+  double get topAmount => rows.isEmpty ? 0 : rows.first.amount;
+
+  static const String emptyNote = '영수증을 찍으면 품목별로 정리해 드려요';
+
+  static const String taxNote =
+      '면세·과세 표시는 품목 분류 기준 참고용이에요. '
+      '실제 신고는 받은 계산서·세금계산서를 확인하세요.';
+}
+
+/// 이름으로 묶은 품목 하나.
+class _NameAgg {
+  String display = '';
+  double amount = 0;
+  double qty = 0;
+  final Set<String> units = <String>{};
+
+  /// 단위가 한 가지일 때만 수량을 쓴다. 섞여 있으면 빈 글자.
+  String get unit => units.length == 1 ? units.first : '';
+}
+
+/// 품목별 지출 분석의 **셈만** 맡는다. 화면을 모른다. (#184)
+///
+/// 분류·가중평균·다듬기는 [MonthlyInsight] · [InsightFmt] 것을 그대로 쓴다.
+/// 같은 값을 두 군데서 구하면 한쪽만 고치고 잊는다.
+///
+/// ## 비교 기간
+///
+/// ```
+///   보고 있는 달이 진행 중인 이번 달 → 지난달의 **같은 기간**(1일~오늘)
+///   그 이전 달                      → 지난달 **한 달 전체**
+///   비교할 기간에 영수증이 없으면    → 비교 문구와 % 를 아예 숨긴다
+/// ```
+///
+/// 🔴 진행 중인 달을 지난달 한 달과 견주면 늘 "덜 썼다" 가 된다.
+///    달이 끝나지 않았으니 당연한 건데, 그걸 변화라고 말하면 거짓말이다.
+class ItemSpend {
+  ItemSpend._();
+
+  /// 이 금액 미만인 지난달 품목은 비율을 내지 않는다.
+  static const double minCompareAmount = 50000;
+
+  /// 절화 품목을 몇 개까지 따로 보여 주나. 나머지는 `기타 절화`.
+  static const int topRows = 4;
+
+  /// 묶음 줄 이름.
+  static const String otherLabel = '기타 절화';
+
+  /// 품목 이름을 묶는 열쇠.
+  ///
+  /// **띄어쓰기·괄호·대소문자만** 무시한다. 그 이상 손대면 `장미` 와
+  /// `장미(레드)` 가 한 줄이 되어 버린다. 둘은 값이 다른 품목이다.
+  static String nameKey(String raw) {
+    const drop = '()[]{}（）［］ \t';
+    final b = StringBuffer();
+    for (final ch in raw.toLowerCase().split('')) {
+      if (drop.contains(ch)) continue;
+      b.write(ch);
+    }
+    return b.toString();
+  }
+
+  static bool _inMonth(DateTime d, DateTime m) =>
+      d.year == m.year && d.month == m.month;
+
+  /// 품목군별 금액.
+  static Map<ItemGroup, double> _byGroup(List<ReceiptModel> rs) {
+    final out = <ItemGroup, double>{};
+    for (final r in rs) {
+      for (final it in r.items) {
+        if (it.name.trim().isEmpty) continue;
+        final amount = it.unitPrice * it.quantity;
+        if (amount <= 0) continue;
+        out.update(MonthlyInsight.groupOf(it.name), (v) => v + amount,
+            ifAbsent: () => amount);
+      }
+    }
+    return out;
+  }
+
+  /// 절화만 이름으로 묶는다.
+  static Map<String, _NameAgg> _cutFlowers(List<ReceiptModel> rs) {
+    final out = <String, _NameAgg>{};
+    for (final r in rs) {
+      for (final it in r.items) {
+        final raw = it.name.trim();
+        if (raw.isEmpty) continue;
+        if (MonthlyInsight.groupOf(raw) != ItemGroup.cutFlower) continue;
+        final amount = it.unitPrice * it.quantity;
+        if (amount <= 0) continue;
+        final a = out.putIfAbsent(nameKey(raw), _NameAgg.new);
+        if (a.display.isEmpty) a.display = raw;
+        a.amount += amount;
+        a.qty += it.quantity;
+        if (it.unit.trim().isNotEmpty) a.units.add(it.unit.trim());
+      }
+    }
+    return out;
+  }
+
+  /// 전월 대비. 지난달이 5만원 미만이면 null (적지 않는다).
+  static double? _delta(double now, double? before) {
+    if (before == null || before < minCompareAmount) return null;
+    return (now - before) / before;
+  }
+
+  /// 한 달치 분석을 만든다.
+  ///
+  /// [month] 를 비워 두면 이번 달. [now] 는 테스트에서 '오늘'을 고정한다.
+  static ItemSpendReport build(
+    List<ReceiptModel> receipts, {
+    DateTime? month,
+    DateTime? now,
+  }) {
+    final n = now ?? DateTime.now();
+    final m = month == null
+        ? DateTime(n.year, n.month)
+        : DateTime(month.year, month.month);
+    final inProgress = m.year == n.year && m.month == n.month;
+
+    // 진행 중인 달은 오늘까지만 센다. 비교할 지난달도 같은 날짜까지만.
+    final cutDay = inProgress ? n.day : 31;
+    final prev = DateTime(m.year, m.month - 1);
+
+    List<ReceiptModel> pick(DateTime target) => receipts
+        .where((r) => _inMonth(r.date, target) && r.date.day <= cutDay)
+        .toList();
+
+    final baseRs = pick(m);
+    final prevRs = pick(prev);
+    final hasCompare = prevRs.isNotEmpty;
+
+    // ── 카드 1 : 품목군 도넛 ─────────────────────────────────────
+    final byGroup = _byGroup(baseRs);
+    final total = byGroup.values.fold<double>(0, (s, v) => s + v);
+
+    const order = [
+      ItemGroup.cutFlower,
+      ItemGroup.supply,
+      ItemGroup.plant,
+      ItemGroup.etc,
+    ];
+    final slices = <GroupSlice>[
+      for (final g in order)
+        if ((byGroup[g] ?? 0) > 0)
+          GroupSlice(
+            group: g,
+            amount: byGroup[g]!,
+            share: total <= 0 ? 0 : byGroup[g]! / total,
+          ),
+    ];
+
+    final cutTotal = byGroup[ItemGroup.cutFlower] ?? 0;
+
+    if (total <= 0) {
+      return ItemSpendReport(
+        month: m,
+        total: 0,
+        slices: const [],
+        rows: const [],
+        notes: const [],
+        cutFlowerTotal: 0,
+        hasCompare: hasCompare,
+        inProgress: inProgress,
+        asOf: inProgress ? n : null,
+      );
+    }
+
+    // ── 카드 2 : 절화 품목별 매입 ────────────────────────────────
+    final nowItems = _cutFlowers(baseRs);
+    final prevItems = hasCompare ? _cutFlowers(prevRs) : <String, _NameAgg>{};
+
+    final prevGroup = hasCompare ? _byGroup(prevRs) : <ItemGroup, double>{};
+    final prevCut = prevGroup[ItemGroup.cutFlower] ?? 0;
+    final prevTotal = prevGroup.values.fold<double>(0, (s, v) => s + v);
+
+    final sorted = nowItems.entries.toList()
+      ..sort((a, b) => b.value.amount.compareTo(a.value.amount));
+
+    /// 품목 한 줄 만들기. [key] 가 null 이면 묶음 줄.
+    ItemSpendRow rowOf(String key, _NameAgg a) {
+      final before = prevItems[key]?.amount;
+      return ItemSpendRow(
+        name: a.display,
+        amount: a.amount,
+        qty: a.qty,
+        unit: a.unit,
+        delta: hasCompare ? _delta(a.amount, before) : null,
+        isNew: hasCompare && (before == null || before == 0),
+      );
+    }
+
+    final rows = <ItemSpendRow>[
+      for (final e in sorted.take(topRows)) rowOf(e.key, e.value),
+    ];
+
+    // 나머지를 `기타 절화` 로 묶는다.
+    final rest = sorted.skip(topRows).toList();
+    if (rest.isNotEmpty) {
+      final bundle = _NameAgg()..display = otherLabel;
+      var restBefore = 0.0;
+      for (final e in rest) {
+        bundle.amount += e.value.amount;
+        bundle.qty += e.value.qty;
+        bundle.units.addAll(e.value.units);
+        restBefore += prevItems[e.key]?.amount ?? 0;
+      }
+      rows.add(ItemSpendRow(
+        name: otherLabel,
+        amount: bundle.amount,
+        qty: bundle.qty,
+        unit: bundle.unit,
+        delta: hasCompare ? _delta(bundle.amount, restBefore) : null,
+        isNew: hasCompare && restBefore == 0,
+        isOther: true,
+      ));
+    }
+
+    // ── 카드 3 : 데이터 분석 ─────────────────────────────────────
+    final notes = <String>[];
+    if (sorted.isNotEmpty && cutTotal > 0) {
+      final top = sorted.first.value;
+      notes.add('${top.display}에 가장 많이 썼어요. '
+          '절화 지출의 ${InsightFmt.pct(top.amount / cutTotal)}인 '
+          '${InsightFmt.won(top.amount)}이에요.');
+    }
+
+    if (!hasCompare) {
+      notes.add(MonthlyInsightReport.firstMonthNote);
+      return ItemSpendReport(
+        month: m,
+        total: total,
+        slices: slices,
+        rows: rows,
+        notes: notes,
+        cutFlowerTotal: cutTotal,
+        hasCompare: false,
+        inProgress: inProgress,
+        asOf: inProgress ? n : null,
+      );
+    }
+
+    // 🔴 늘고 준 품목은 **실제 품목**만 본다. `기타 절화` 묶음은 여러
+    //    품목을 합친 것이라, 거기에 +36% 가 붙어도 무엇이 오른 건지
+    //    알 수 없다. 그런 문장은 아무 도움이 안 된다.
+    final moved = <(String, double)>[];
+    for (final e in sorted) {
+      final d = _delta(e.value.amount, prevItems[e.key]?.amount);
+      if (d == null) continue;
+      moved.add((e.value.display, d));
+    }
+    moved.sort((a, b) => b.$2.compareTo(a.$2));
+
+    if (moved.isNotEmpty && moved.first.$2 > 0) {
+      final up = moved.first;
+      notes.add('${up.$1} 매입은 전월 대비 '
+          '${InsightFmt.pct(up.$2)} 늘었어요.');
+    }
+    if (moved.isNotEmpty && moved.last.$2 < 0) {
+      final down = moved.last;
+      notes.add('${down.$1} 매입은 전월 대비 '
+          '${InsightFmt.pct(down.$2.abs())} 줄었어요.');
+    }
+
+    double? cutDelta;
+    if (prevCut >= minCompareAmount) cutDelta = (cutTotal - prevCut) / prevCut;
+
+    if (prevTotal > 0) {
+      final nowShare = cutTotal / total;
+      final beforeShare = prevCut / prevTotal;
+      final diff = (nowShare - beforeShare) * 100;
+      final word = diff >= 0 ? '늘었어요' : '줄었어요';
+      final gap = (diff.abs() * 10).round() / 10;
+      notes.add('전체 지출에서 절화 비중은 ${InsightFmt.pct(nowShare)}로, '
+          '전월 대비 ${gap.toStringAsFixed(1)}%p $word.');
+    }
+
+    return ItemSpendReport(
+      month: m,
+      total: total,
+      slices: slices,
+      rows: rows,
+      notes: notes,
+      cutFlowerTotal: cutTotal,
+      cutFlowerDelta: cutDelta,
+      hasCompare: true,
+      inProgress: inProgress,
+      asOf: inProgress ? n : null,
     );
   }
 }
