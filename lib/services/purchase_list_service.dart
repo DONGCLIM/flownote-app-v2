@@ -284,3 +284,85 @@ class PurchaseListService extends ChangeNotifier {
     return out;
   }
 }
+
+/// 메모 한 줄 — 글과 체크 상태. (#185)
+@immutable
+class MemoLine {
+  const MemoLine({required this.text, this.checked = false});
+
+  final String text;
+  final bool checked;
+
+  MemoLine copyWith({String? text, bool? checked}) =>
+      MemoLine(text: text ?? this.text, checked: checked ?? this.checked);
+
+  @override
+  bool operator ==(Object other) =>
+      other is MemoLine && other.text == text && other.checked == checked;
+
+  @override
+  int get hashCode => Object.hash(text, checked);
+}
+
+/// 체크할 수 있는 메모를 [PurchaseList.memo] **한 칸에** 담는 방법. (#185)
+///
+/// 🔴 사장님 지시: "새 저장 구조는 만들지 마." 그래서 체크 상태를 담을
+///    필드를 새로 만들지 않고, 글 앞에 표시를 붙여 **한 줄에 같이** 적는다.
+///
+/// ```
+///   [ ] 금요일 웨딩 부케 3개 — 화이트 위주     ← 아직 안 샀다
+///   [x] 장미(레드) 단가 오르면 소국으로 대체   ← 샀다
+/// ```
+///
+/// 🔴 표시가 없는 줄도 그냥 읽는다. 1단계에서 적어 둔 메모(표시가 없다)가
+///    이미 있을 수 있는데, 그걸 못 읽으면 사장님 글이 사라진다.
+class MemoText {
+  MemoText._();
+
+  static const String doneMark = '[x] ';
+  static const String openMark = '[ ] ';
+
+  /// 글자를 줄 목록으로 푼다.
+  static List<MemoLine> parse(String raw) {
+    if (raw.isEmpty) return const <MemoLine>[];
+    return [
+      for (final line in raw.split('\n'))
+        if (line.startsWith(doneMark))
+          MemoLine(text: line.substring(doneMark.length), checked: true)
+        else if (line.startsWith(openMark))
+          MemoLine(text: line.substring(openMark.length))
+        else
+          // 표시가 없는 옛 메모. 아직 안 산 줄로 본다.
+          MemoLine(text: line),
+    ];
+  }
+
+  /// 줄 목록을 저장할 글자로 되돌린다.
+  ///
+  /// 🔴 맨 끝의 빈 줄은 버린다. 엔터만 치고 나가면 빈 줄이 쌓여서,
+  ///    다시 열 때마다 메모가 아래로 밀려 내려간다.
+  static String encode(List<MemoLine> lines) {
+    final kept = List<MemoLine>.from(lines);
+    while (kept.isNotEmpty && kept.last.text.trim().isEmpty) {
+      kept.removeLast();
+    }
+    return kept
+        .map((e) => '${e.checked ? doneMark : openMark}${e.text}')
+        .join('\n');
+  }
+
+  /// 글이 있는 줄 수. 빈 줄은 세지 않는다.
+  static int total(List<MemoLine> lines) =>
+      lines.where((e) => e.text.trim().isNotEmpty).length;
+
+  /// 산 줄 수.
+  static int done(List<MemoLine> lines) =>
+      lines.where((e) => e.checked && e.text.trim().isNotEmpty).length;
+
+  /// 탭에 적는 `3/5`. 글이 하나도 없으면 빈 글자.
+  static String counter(List<MemoLine> lines) {
+    final t = total(lines);
+    if (t == 0) return '';
+    return '${done(lines)}/$t';
+  }
+}

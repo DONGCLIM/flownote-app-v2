@@ -17,8 +17,8 @@
 |---|---|
 | 브랜치 | `genspark_ai_developer` |
 | 올리는 곳 | `origin` = `https://github.com/DONGCLIM/flownote-app-v2.git` (PR #1 → `main`) |
-| 최신 커밋 | **`5860297` 홈 카드 분리 + 영수증 연결 + 바로가기 표시** (확인은 `git log --oneline -1`) |
-| 웹에 올라간 것 | `5860297` 그대로 (2026-11-24 배포) |
+| 최신 커밋 | **`88a47c0` 품목별 지출 분석** (확인은 `git log --oneline -1`) |
+| 웹에 올라간 것 | `88a47c0` 그대로 (2026-11-24 배포) |
 | 남은 수정 | 없음. 작업 트리가 깨끗하다 |
 | 웹 주소 | https://flownote-404ef.web.app |
 | Firebase 프로젝트 | `flownote-404ef` (Blaze) |
@@ -38,7 +38,8 @@
 | `9c1a7cf` | TODO 작업 규칙·현재 상태 갱신 |
 | `8eebfee` | 바탕화면 설치 안내 |
 | `5860297` | 홈 카드 분리 + 영수증 연결 + 바로가기 표시 |
-| **(이번)** | **품목별 지출 분석 ← 지금 여기** |
+| `88a47c0` | 품목별 지출 분석 |
+| **(이번)** | **사입 메모장 탭·체크·저장 ← 지금 여기** |
 
 </details>
 
@@ -72,6 +73,7 @@ npx firebase deploy --only firestore:rules,storage --project flownote-404ef
 | 예산 검토 (#186 1단계) | `lib/screens/ds/insight_ds_screens.dart` | `GuideBudgetDsScreen` |
 | **월별 인사이트 (🔴 기능 연결됨 #180·#181)** | `lib/screens/ds/insight_ds_screens.dart` | `InsightsDsScreen` |
 | **품목별 지출 분석 (🔴 기능 연결됨 #184)** | `lib/screens/ds/insight_ds_screens.dart` | `ItemSpendDsScreen` |
+| **사입 메모장 (🔴 기능 연결됨 #185)** | `lib/screens/ds/purchase_memo_ds_screen.dart` | `PurchaseMemoDsScreen` |
 | 공지·알림 목록 | `lib/screens/ds/notice_list_ds_screen.dart` | `NoticeListDsScreen` |
 
 딸린 조각: `lib/theme/fn_ds.dart`(디자인 기준), `lib/widgets/fn_inquiry_parts.dart`(공용 조각 9개),
@@ -119,18 +121,33 @@ flutter test test/<그_화면>_test.dart     # 그 화면 것만
 | `test/monthly_insight_test.dart` | 61 | 월별 인사이트 38 + **품목별 지출 분석 23** — 검산·셈 규칙·화면·소스 계약 |
 | `test/home_render_test.dart` | 29 | 홈 — 카드 분리·영수증 연결·0건 안내 |
 | `test/home_icons_render_test.dart` | 31 | 홈 아이콘·카드 색·탭바 |
-| `test/guide_render_test.dart` | 45 | 사입 가이드·시즌 비교·예산 검토 |
+| `test/guide_render_test.dart` | 67 | 사입 가이드·시즌 비교·예산 검토 + **사입 메모장 22** |
 | `test/cost_calc_render_test.dart` | 28 | 원가 계산기 |
 
 ### 다음에 할 일
 
-> 🔴 **사입 리스트(#186): 1단계 완료(`5c8dedf`), 2단계부터 이어서.** 2단계 사입 메모장 체크리스트·메모 저장 / 3단계 자주 산 품목·길게 눌러 수정·못 샀어요 / 4단계 스케치 저장·인터넷 끊김 대응(화면 꺼짐 방지는 앱 만들 때) / 5단계 저장된 사입 리스트 화면.
+> 🔴 **사입 리스트 진행 상태**
+>
+> | 단계 | 한 일 | 상태 |
+> |---|---|---|
+> | 1 | 데이터 구조(`PurchaseList`) + 예산 검토 화면 | ✅ 완료 (`5c8dedf`) |
+> | 2 | **사입 메모장 — 메모장 탭·체크·스케치 저장 완료** | ✅ 완료 (#185) |
+> | 3 | 자주 산 품목·길게 눌러 실제 가격 수정·"못 샀어요" | ⬜ 남음 |
+> | 4 | 인터넷 끊김 대응 (화면 꺼짐 방지는 앱 만들 때) | ⬜ 남음 |
+> | 5 | 저장된 사입 리스트 화면 | ⬜ 남음 |
+>
+> 2단계에서 한 것: 메모 | 스케치 **탭**, 줄마다 체크칸(○ ↔ 코랄 ✓ + 가운데줄),
+> 엔터로 줄 추가·빈 줄에서 지우기로 줄 삭제, 색 8개·굵기 3개 스케치(좌표 저장),
+> 메모 탭의 `3/5` 개수와 스케치 탭의 코랄 점. 저장은 1단계 방식 그대로
+> (`touch()` 폰 즉시 + 서버 4초 모아서 / 나갈 때 `flush()`).
+> **새 저장 구조를 만들지 않았다** — 체크 상태는 `MemoText` 가 글 앞에 `[x] ` 를
+> 붙여 `PurchaseList.memo` 한 칸에 담는다.
 
 1. **기능을 붙이기 전에 아래 "🟠 나중에 결정할 것" 절을 사장님께 먼저 여쭌다.**
 2. **🔴 품목군 분류(절화 / 부자재 / 화분·식물 / 기타)를 사장님께 여쭌다.**
    월별 인사이트의 첫 달 리포트가 지금은 **품목 이름으로 짐작**하고 있다
    (`MonthlyInsight.groupOf()`). 이걸 정해야 거래처·부자재 카드도 만들 수 있다.
-3. **저장된 사입 리스트**·**사입 메모장**은 화면이 아예 없다(누르면 안내만 뜬다).
+3. **저장된 사입 리스트**는 아직 화면이 없다(누르면 안내만 뜬다). 사입 메모장은 #185 에서 만들었다.
 4. 🟡 **구글/iCloud 자동 백업 제외** — 아직 안 했다. 앱을 지워도 구글이 옛 영수증을
    되살릴 수 있는 길이 남아 있다(`AndroidManifest.xml` 에 `allowBackup` 미설정).
    APK 를 만들 때 함께 고쳐야 한다.
@@ -374,14 +391,14 @@ flutter test test/<그_화면>_test.dart     # 그 화면 것만
 
 - 🔴 **저장된 사입 리스트** — 누르면 "곧 준비해서 알려드릴게요." 안내만 뜬다.
   (`GuideDsScreen._open` 의 `saved`)
-- 🔴 **사입 메모장** — 위와 같다. (`memo`) 부케 스케치를 어떻게 그리고 저장할지
-  **정해야 한다** (손그림? 사진 첨부?).
+- ✅ **사입 메모장** — #185 에서 만들었다. (`memo` → `PurchaseMemoDsScreen`)
+  스케치는 **손그림을 좌표로** 저장하는 쪽으로 정해졌다.
 
 ### 저장
 
-- 🔴 사입 리스트·메모를 **어디에 저장할지** 정해야 한다.
-  기기 안에만 둘지(`SharedPreferences`), 계정에 묶어 Firestore 에 둘지.
-  기기 안에만 두면 폰을 바꿀 때 사라진다.
+- ✅ 정해졌다(#179 · #185). 폰 Hive 상자 `plists_<uid 해시>` 가 진실의 원천이고,
+  Firestore `users/{uid}/purchase_lists/{id}` 가 기기를 바꿔도 남게 하는 백업이다.
+  서버에는 글자마다 올리지 않고 4초 모아서, 화면을 나갈 때 즉시 올린다.
 
 ---
 

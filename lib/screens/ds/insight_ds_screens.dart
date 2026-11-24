@@ -1034,7 +1034,7 @@ class GuideDsScreen extends StatelessWidget {
       highlight: true,
       page: 'budget',
     ),
-    // 아래 두 가지는 아직 화면이 없다. 눌러도 넘어가지 않고 안내만 띄운다.
+    // 저장된 사입 리스트는 아직 화면이 없다. 눌러도 안내만 띄운다. (5단계)
     _GuideRow(
       icon: Icons.fact_check_outlined,
       title: '저장된 사입 리스트',
@@ -1092,6 +1092,9 @@ class GuideDsScreen extends StatelessWidget {
       'season' => const GuideSeasonDsScreen(),
       'cost' => const GuideCostDsScreen(),
       'budget' => const GuideBudgetDsScreen(),
+      // 🔴 #185 에서 사입 메모장을 만들었다. 어느 리스트에 적을지는
+      //    화면이 스스로 고른다(가장 최근 준비/사입 중 → 없으면 새로).
+      'memo' => const PurchaseMemoDsScreen(),
       _ => null,
     };
     if (screen == null) {

@@ -13,6 +13,7 @@ import '../../services/subscription_service.dart';
 import 'fn_data.dart';
 import '../../services/monthly_insight.dart';
 import 'insight_ds_screens.dart';
+import 'purchase_memo_ds_screen.dart';
 
 /// 홈 화면 — #135 시안(PNG) 기준으로 톤앤톤/컬러를 다시 맞춘 버전.
 ///
@@ -624,8 +625,11 @@ class _HomeDsScreenState extends State<HomeDsScreen> {
         _push(const GuideCostDsScreen());
       case 'season':
         _push(const GuideSeasonDsScreen());
+      case 'memo':
+        // 🔴 #185 에서 만들었다. 어느 리스트에 적을지는 화면이 고른다.
+        _push(const PurchaseMemoDsScreen());
       default:
-        // 사입 리스트·메모장은 아직 화면이 없다. (사입 리스트 2~5단계)
+        // 저장된 사입 리스트는 아직 화면이 없다. (사입 리스트 5단계)
         _push(const GuideDsScreen());
     }
   }
