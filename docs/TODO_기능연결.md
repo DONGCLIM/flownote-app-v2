@@ -17,9 +17,26 @@
 |---|---|
 | 브랜치 | `genspark_ai_developer` |
 | 올리는 곳 | `origin` = `https://github.com/DONGCLIM/flownote-app-v2.git` (PR #1 → `main`) |
-| 최신 커밋 | 이 문서를 고친 커밋. 확인은 `git log --oneline -1` |
+| 최신 커밋 | **`d6a1c75` 월별 인사이트 단계별 리포트** (확인은 `git log --oneline -1`) |
+| 웹에 올라간 것 | `d6a1c75` 그대로 (2026-11-24 배포) |
+| 남은 수정 | 없음. 작업 트리가 깨끗하다 |
 | 웹 주소 | https://flownote-404ef.web.app |
 | Firebase 프로젝트 | `flownote-404ef` (Blaze) |
+
+<details><summary>최근 커밋 흐름</summary>
+
+| 커밋 | 한 일 |
+|---|---|
+| `05c110b` | 원가 계산기 기능 연결 |
+| `68aeee9` | 카카오 로그인 이메일을 Firebase 식별자에 붙임 (배포됨) |
+| `e770e18` | 영수증을 계정별로 분리하고 가짜 데이터 생성기 제거 |
+| `87fa816` | 함수 런타임을 Node 22 로 올림 (배포됨) |
+| `5c8dedf` | 사입 리스트 1단계 — 데이터 구조 + 예산 검토 화면 |
+| `55fb300` | TODO: 사입 리스트 1단계 완료, 2단계부터 이어서 |
+| `5240b4c` | 월별 인사이트 1차 |
+| **`d6a1c75`** | **월별 인사이트 단계별 리포트 ← 지금 여기** |
+
+</details>
 
 ### 배포하는 법
 
@@ -48,10 +65,15 @@ npx firebase deploy --only firestore:rules,storage --project flownote-404ef
 | 스마트 사입 가이드 | `lib/screens/ds/insight_ds_screens.dart` | `GuideDsScreen` |
 | 시즌 매입 비교 | `lib/screens/ds/insight_ds_screens.dart` | `GuideSeasonDsScreen` |
 | 원가 계산기 (🔴 기능 연결됨 #178) | `lib/screens/ds/insight_ds_screens.dart` | `GuideCostDsScreen` |
+| 예산 검토 (#186 1단계) | `lib/screens/ds/insight_ds_screens.dart` | `GuideBudgetDsScreen` |
+| **월별 인사이트 (🔴 기능 연결됨 #180·#181)** | `lib/screens/ds/insight_ds_screens.dart` | `InsightsDsScreen` |
 | 공지·알림 목록 | `lib/screens/ds/notice_list_ds_screen.dart` | `NoticeListDsScreen` |
 
 딸린 조각: `lib/theme/fn_ds.dart`(디자인 기준), `lib/widgets/fn_inquiry_parts.dart`(공용 조각 9개),
-`lib/services/inquiry_service.dart`, `lib/services/inquiry_picker.dart`.
+`lib/widgets/fn_purchase_parts.dart`(`FnPill`·`FnNamedField`·`FnItemLineRow` — 원가 계산기·예산 검토·월별 인사이트가 같이 쓴다),
+`lib/services/inquiry_service.dart`, `lib/services/inquiry_picker.dart`,
+`lib/services/cost_calc.dart`(원가 셈), `lib/services/monthly_insight.dart`(월별 인사이트 셈),
+`lib/services/purchase_list_service.dart`(사입 리스트 저장).
 
 ### 작업 규칙 (사장님이 정하신 것)
 
@@ -76,22 +98,38 @@ npx firebase deploy --only firestore:rules,storage --project flownote-404ef
 
 ```bash
 export PATH="$PATH:/home/user/flutter/bin"
-flutter analyze lib                      # 기준선: 8 issues · 0 errors
+flutter analyze lib                      # 기준선: 5 issues · 0 errors
 rm -rf test/tmp                          # 이게 남아 있으면 테스트가 걸린다
 flutter test test/<그_화면>_test.dart     # 그 화면 것만
 ```
 
-기준선 8건은 전부 구 화면(`receipt_provider.dart`·`history_screen.dart`·
-`receipt_edit_screen.dart`)의 것이고 고치지 않는다. **0 errors 가 아니면 멈춘다.**
+기준선 5건은 전부 구 화면의 것이고 고치지 않는다
+(`receipt_provider.dart` 1 · `history_screen.dart` 1 · `receipt_edit_screen.dart` 3).
+**0 errors 가 아니면 멈춘다.**
+
+지금 돌아가는 테스트 파일:
+
+| 파일 | 개수 | 무엇을 보나 |
+|---|---|---|
+| `test/monthly_insight_test.dart` | 38 | 월별 인사이트 — 검산·기준 달·셈 규칙·첫 달 리포트·화면·소스 계약 |
+| `test/guide_render_test.dart` | 45 | 사입 가이드·시즌 비교·예산 검토 |
+| `test/cost_calc_render_test.dart` | 28 | 원가 계산기 |
 
 ### 다음에 할 일
 
-> 🔴 **사입 리스트(#179): 1단계 완료(`5c8dedf`), 2단계부터 이어서.** 2단계 사입 메모장 체크리스트·메모 저장 / 3단계 자주 산 품목·길게 눌러 수정·못 샀어요 / 4단계 스케치 저장·인터넷 끊김 대응(화면 꺼짐 방지는 앱 만들 때) / 5단계 저장된 사입 리스트 화면.
+> 🔴 **사입 리스트(#186): 1단계 완료(`5c8dedf`), 2단계부터 이어서.** 2단계 사입 메모장 체크리스트·메모 저장 / 3단계 자주 산 품목·길게 눌러 수정·못 샀어요 / 4단계 스케치 저장·인터넷 끊김 대응(화면 꺼짐 방지는 앱 만들 때) / 5단계 저장된 사입 리스트 화면.
 
-1. **기능을 붙이기 전에 아래 "🟠 나중에 결정할 것" 절을 사장님께 먼저 여쭌다.** (미정 8건)
-2. 남은 가이드 하위 화면 — **예산 검토**(`GuideBudgetDsScreen`)는 아직 옛 모습이다.
-   **저장된 사입 리스트**·**사입 메모장**은 화면이 아예 없다(누르면 안내만 뜬다).
-3. 문의 기능은 화면·규칙 모두 배포됐다. 사장님이 관리자(`flownote.kr@gmail.com`)로
+1. **기능을 붙이기 전에 아래 "🟠 나중에 결정할 것" 절을 사장님께 먼저 여쭌다.**
+2. **🔴 품목군 분류(절화 / 부자재 / 화분·식물 / 기타)를 사장님께 여쭌다.**
+   월별 인사이트의 첫 달 리포트가 지금은 **품목 이름으로 짐작**하고 있다
+   (`MonthlyInsight.groupOf()`). 이걸 정해야 거래처·부자재 카드도 만들 수 있다.
+3. **저장된 사입 리스트**·**사입 메모장**은 화면이 아예 없다(누르면 안내만 뜬다).
+4. 🟡 **구글/iCloud 자동 백업 제외** — 아직 안 했다. 앱을 지워도 구글이 옛 영수증을
+   되살릴 수 있는 길이 남아 있다(`AndroidManifest.xml` 에 `allowBackup` 미설정).
+   APK 를 만들 때 함께 고쳐야 한다.
+5. 🟡 **카카오 중복 메일** — 설정은 켰지만 서버 경로에서는 여전히 거부된다.
+   새로 가입하는 분은 괜찮고, 구글과 메일이 겹치는 분만 메일이 안 붙는다.
+6. 문의 기능은 화면·규칙 모두 배포됐다. 사장님이 관리자(`flownote.kr@gmail.com`)로
    로그인해 "전체 문의" 가 보이는지 확인해 주시기로 했다.
 
 ---
