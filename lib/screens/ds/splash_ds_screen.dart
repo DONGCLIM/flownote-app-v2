@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../design/fn_brand.dart';
 import '../../design/fn_feedback.dart';
@@ -11,6 +12,8 @@ import 'signup_email_ds_screen.dart';
 import '../../services/firebase_status.dart';
 import '../../services/kakao_config.dart';
 import '../../services/pwa_install.dart';
+import '../../theme/fn_ds.dart';
+import '../../widgets/fn_inquiry_parts.dart';
 import 'add_to_home_sheet.dart';
 import 'auth_unavailable_banner.dart';
 import 'legal_doc_ds_screen.dart';
@@ -48,10 +51,23 @@ class SplashDsScreen extends StatefulWidget {
 /// ```
 enum _Sns { kakao, naver, google, apple }
 
+/// 바탕화면 첫 실행 안내를 이미 보여 줬는가. (#182)
+const String _kInstalledNoteShown = 'pwa_installed_note_shown';
+
 class _SplashDsScreenState extends State<SplashDsScreen> {
   final _email = TextEditingController();
   final _password = TextEditingController();
   bool _busy = false;
+
+  /// 바탕화면 설치 상태. (#182)
+  ///
+  /// 🔴 build 안에서 `pwaState()` 를 부르지 않는다. 설치 프롬프트를 띄우는
+  ///    동안에도 화면이 여러 번 다시 그려지는데, 그때마다 값이 바뀌면
+  ///    버튼이 깜빡이거나 사라진다.
+  late PwaInstallState _pwa = pwaState();
+
+  /// 바탕화면에서 **처음 열었을 때** 한 번만 보여 줄 안내.
+  bool _showInstalledNote = false;
 
   @override
   void initState() {
@@ -74,6 +90,25 @@ class _SplashDsScreenState extends State<SplashDsScreen> {
           type: FnToastType.error, duration: const Duration(seconds: 6));
       auth.clearError();
     });
+
+    // 🔴 바탕화면 아이콘으로 **처음** 열었을 때 한 번만 알려 준다. (#182)
+    //    설치만 하고 로그인을 안 하면 다음에 또 로그인 화면이 뜨는데,
+    //    사장님은 "설치가 안 된 건가?" 하고 다시 설치하려 하신다.
+    _checkFirstRun();
+  }
+
+  /// 설치 후 첫 실행인지 확인한다. 한 번 보여 주면 다시 안 보여 준다.
+  Future<void> _checkFirstRun() async {
+    if (_pwa.howTo != PwaHowTo.alreadyInstalled) return;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (prefs.getBool(_kInstalledNoteShown) ?? false) return;
+      await prefs.setBool(_kInstalledNoteShown, true);
+      if (!mounted) return;
+      setState(() => _showInstalledNote = true);
+    } catch (_) {
+      // 저장이 안 되면 안내를 건너뛴다. 매번 띄우는 것보다 낫다.
+    }
   }
 
   @override
@@ -288,6 +323,31 @@ class _SplashDsScreenState extends State<SplashDsScreen> {
                 const SizedBox(height: 8),
                 const Center(child: FnWordmark(height: 28, flat: true)),
 
+                // 🔴 바탕화면에서 처음 열었을 때 한 번만. (#182)
+                if (_showInstalledNote) ...[
+                  const SizedBox(height: 20),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 14, vertical: 12),
+                    decoration: BoxDecoration(
+                      color: FnDs.coralFaint,
+                      borderRadius: BorderRadius.circular(FnDs.cardRadius),
+                    ),
+                    child: const Text(
+                      '설치 완료! 로그인하면 다음부터 바로 시작돼요',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontFamily: FnDs.font,
+                        fontSize: FnDs.fontS,
+                        fontWeight: FontWeight.w700,
+                        height: 1.4,
+                        color: FnDs.coral,
+                      ),
+                    ),
+                  ),
+                ],
+
                 // 로그인 서버가 붙지 않았으면 사유를 그대로 보여준다.
                 // (정상이면 아무것도 그리지 않는다)
                 const SizedBox(height: 28),
@@ -334,9 +394,35 @@ class _SplashDsScreenState extends State<SplashDsScreen> {
                   ),
                 ),
 
+                // ── 바탕화면에 설치하기 ─────────────────────────
+                //
+                // 🔴 로그인 **위**에 둔다(사장님 지시 #182). 로그인 먼저
+                //    하면 브라우저에 로그인되고, 그 뒤에 설치한 아이콘은
+                //    다시 로그인해야 한다. 설치부터 하면 한 번만 하면 된다.
+                //    이미 바탕화면에서 실행 중이면 그리지 않는다.
+                if (_pwa.shouldGuide) ...[
+                  const SizedBox(height: 24),
+                  FnOutlineButton(
+                    label: '바탕화면에 설치하기',
+                    onTap: () => AddToHomeSheet.open(context),
+                  ),
+                  const SizedBox(height: 8),
+                  const Center(
+                    child: Text(
+                      '설치하고 로그인하면 다음부터 바로 열려요',
+                      style: TextStyle(
+                        fontFamily: 'Pretendard',
+                        fontSize: 12,
+                        height: 1.4,
+                        color: _IntroLogin.sub,
+                      ),
+                    ),
+                  ),
+                ],
+
                 // ── 로그인 버튼 ──────────────────────────────────
                 // 시안 찾기->버튼 31.3dp
-                const SizedBox(height: 31),
+                SizedBox(height: _pwa.shouldGuide ? 20 : 31),
                 if (_busy)
                   const Center(
                     child: Padding(
@@ -435,15 +521,6 @@ class _SplashDsScreenState extends State<SplashDsScreen> {
                   ),
                 ),
 
-                // ── 홈 화면에 추가 안내 ───────────────────────────
-                //
-                // 🔴 로그인 화면에 두는 이유: 프로필>설정은 **로그인해야**
-                // 볼 수 있다. 홈 화면 추가는 로그인과 무관한 기능이므로
-                // 로그인 전에도 닿을 수 있어야 한다.
-                if (pwaState().shouldGuide) ...[
-                  const SizedBox(height: 14),
-                  Center(child: _addToHomeLink()),
-                ],
               ],
             ),
           ),
@@ -451,36 +528,6 @@ class _SplashDsScreenState extends State<SplashDsScreen> {
       ),
     );
   }
-
-  /// "앱처럼 쓰고 싶으세요? 홈 화면에 추가하기"
-  Widget _addToHomeLink() => GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: () => AddToHomeSheet.open(context),
-        child: Padding(
-          // 손가락으로 누를 수 있는 높이를 확보한다.
-          padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 8),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(Icons.add_to_home_screen_rounded,
-                  size: 15, color: FnColors.labelNeutral),
-              const SizedBox(width: 5),
-              Text(
-                '앱처럼 쓰기 — 홈 화면에 추가',
-                style: const TextStyle(
-                  fontFamily: 'Pretendard',
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                  color: FnColors.labelNeutral,
-                  height: 1.4,
-                  decoration: TextDecoration.underline,
-                  decorationColor: FnColors.labelNeutral,
-                ),
-              ),
-            ],
-          ),
-        ),
-      );
 
   static const _legalStyle = TextStyle(
     fontFamily: 'Pretendard',

@@ -139,9 +139,10 @@ class _ProfileDsScreenState extends State<ProfileDsScreen> {
                         ),
                       ),
                 ),
-                // 웹(PWA) 에서만 의미가 있다. 이미 설치돼 있으면 안 보인다.
+                // 웹(PWA) 에서만 의미가 있다. 이미 바탕화면에서 실행 중이면
+                // 할 일이 없으므로 줄 자체를 그리지 않는다. (#182)
                 if (pwaState().shouldGuide)
-                  ('홈 화면에 추가하기', () => AddToHomeSheet.open(context)),
+                  ('바탕화면에 설치하기', () => AddToHomeSheet.open(context)),
                 ('로그아웃', () => _signOut(context)),
               ],
             ),

@@ -156,10 +156,15 @@ void main() {
       expect(c.contains('LegalDocKind.privacy'), isTrue);
     });
 
-    test('🔴 홈 화면에 추가 안내가 남아 있다', () {
+    test('🔴 바탕화면에 설치하기 안내가 남아 있다 (#182)', () {
       final c = code();
-      expect(c.contains('pwaState().shouldGuide'), isTrue);
+      // 이미 바탕화면에서 실행 중이면 그리지 않는다.
+      expect(c.contains('_pwa.shouldGuide'), isTrue);
       expect(c.contains('AddToHomeSheet.open'), isTrue);
+      expect(c.contains("label: '바탕화면에 설치하기'"), isTrue);
+      expect(c.contains('설치하고 로그인하면 다음부터 바로 열려요'), isTrue);
+      // 설치한 뒤 처음 열었을 때의 안내.
+      expect(c.contains('설치 완료! 로그인하면 다음부터 바로 시작돼요'), isTrue);
     });
 
     test('🔴 로그인 성공 후 홈 복귀 안전장치가 남아 있다', () {

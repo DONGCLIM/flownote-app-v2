@@ -1,32 +1,79 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
-import '../../design/fn_button.dart';
-import '../../design/fn_sheet.dart';
-import '../../design/fn_tokens.dart';
 import '../../services/pwa_install.dart';
+import '../../theme/fn_ds.dart';
+import '../../widgets/fn_inquiry_parts.dart';
 
-/// "홈 화면에 추가" 안내 시트.
+/// "바탕화면에 설치하기" 안내창. (#182)
 ///
-/// 사장님이 웹으로 쓰다가 "이거 홈화면 추가 어떻게 하는거야?" 라고 물었을 때
-/// 바로 답이 되도록 만든 화면이다.
+/// 사장님 지시: 로그인 화면과 프로필에서 부르고, **지금 상황에 맞는 단계만**
+/// 보여 준다. 다른 상황 단계를 같이 늘어놓으면 어느 걸 따라야 할지 몰라서
+/// 오히려 못 하신다.
 ///
-/// 브라우저마다 방식이 다르기 때문에 **한 가지 안내만 보여주면 안 된다.**
-///  - 안드로이드 크롬: 버튼 한 번으로 설치창이 뜬다 → 버튼을 준다.
-///  - 아이폰 사파리: API 가 없다 → 공유 버튼 위치를 그림으로 설명한다.
-///  - 아이폰의 다른 브라우저: 아예 안 된다 → 사파리로 열라고 말해준다.
+/// ## 상황별로 하는 일
 ///
-/// 잘못된 안내(예: 아이폰에 "설치" 버튼)를 보여주면 눌러도 아무 일이
-/// 없어서 더 답답해진다. 그래서 `pwaState()` 로 정확히 갈라준다.
+/// | 지금 열린 곳 | 하는 일 |
+/// |---|---|
+/// | 카카오톡 안 | **외부 브라우저로 자동 전환.** 안 넘어가면 안내창 |
+/// | 인스타그램·그 밖 인앱 | 안내창(사파리·크롬으로 옮기는 법) + 주소 복사 |
+/// | 아이폰 사파리 | 안내창(공유 → 홈 화면에 추가) + "설치했어요" |
+/// | 안드로이드 크롬 | **설치창을 바로 띄운다.** 안 뜨면 안내창(⋮ → 설치) |
+/// | PC | 안내창(주소창 설치 아이콘) |
+///
+/// 🔴 잘못된 안내(예: 아이폰에 "설치" 버튼)를 보여주면 눌러도 아무 일이
+///    없어서 더 답답해진다. 그래서 `pwaState()` 로 정확히 갈라준다.
 class AddToHomeSheet extends StatefulWidget {
-  const AddToHomeSheet({super.key});
+  const AddToHomeSheet._({required this.state});
 
-  /// 시트를 띄운다.
-  static Future<void> open(BuildContext context) {
-    return showFnSheet<void>(
-      context,
-      title: '홈 화면에 추가하기',
-      subtitle: '앱처럼 한 번에 열 수 있어요',
-      child: const AddToHomeSheet(),
+  final PwaInstallState state;
+
+  /// 설치를 시작한다.
+  ///
+  /// 상황에 따라 **안내창을 띄우지 않고 바로 처리**하기도 한다.
+  ///  - 안드로이드 크롬: 브라우저 설치창을 바로 띄운다
+  ///  - 카카오톡: 외부 브라우저로 자동 전환을 먼저 시도한다
+  static Future<void> open(BuildContext context) async {
+    final st = pwaState();
+
+    // ── 안드로이드 크롬 — 설치창을 바로 띄운다 ────────────────────
+    if (st.canPrompt) {
+      final r = await pwaPromptInstall();
+      if (!context.mounted) return;
+      if (r == PwaPromptResult.installed) return; // 끝. 더 보여줄 게 없다.
+      if (r == PwaPromptResult.dismissed) return; // 사장님이 취소하셨다.
+      // unavailable — 설치창이 안 떴다. 손으로 하는 법을 안내한다.
+      return _show(context, pwaState());
+    }
+
+    // ── 카카오톡 — 외부 브라우저로 옮겨 준다 ──────────────────────
+    if (st.howTo == PwaHowTo.inAppKakao) {
+      if (pwaOpenExternalBrowser()) {
+        // 넘어가면 이 화면이 가려진다. 잠깐 기다렸다가 아직 보이면
+        // 전환이 안 된 것이므로 손으로 옮기는 법을 안내한다.
+        await Future<void>.delayed(const Duration(milliseconds: 1200));
+        if (!context.mounted) return;
+        if (!pwaPageVisible()) return;
+      }
+      if (!context.mounted) return;
+      return _show(context, st);
+    }
+
+    return _show(context, st);
+  }
+
+  static Future<void> _show(BuildContext context, PwaInstallState st) {
+    // 🔴 공용 `showFnSheet` 를 쓰지 않는다. 그 시트는 옛 토큰(`FnColors`)
+    //    으로 머리글을 그려서, 이 화면만 색·글씨가 달라진다. 시트 껍데기를
+    //    여기서 FnDs 로 그리되 **이 파일 밖으로 내보내지 않는다**(복제 방지).
+    return showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      barrierColor: Colors.black.withValues(alpha: 0.4),
+      builder: (_) => AddToHomeSheet._(state: st),
     );
   }
 
@@ -35,441 +82,408 @@ class AddToHomeSheet extends StatefulWidget {
 }
 
 class _AddToHomeSheetState extends State<AddToHomeSheet> {
-  late PwaInstallState _state = pwaState();
   bool _busy = false;
-  String? _msg;
 
-  Future<void> _install() async {
-    setState(() {
-      _busy = true;
-      _msg = null;
-    });
+  PwaInstallState get _st => widget.state;
+
+  void _close() => Navigator.of(context).maybePop();
+
+  /// 주소를 복사한다. 인앱 브라우저에서 사파리·크롬으로 옮길 때 쓴다.
+  Future<void> _copyUrl() async {
+    final url = _st.url;
+    if (url.isEmpty) return;
+    await Clipboard.setData(ClipboardData(text: url));
+    if (!mounted) return;
+    Navigator.of(context).maybePop();
+    _toast(_st.onIos
+        ? '복사했어요. 사파리 주소창에 붙여 넣어 주세요'
+        : '복사했어요. 크롬 주소창에 붙여 넣어 주세요');
+  }
+
+  /// 아이폰은 설치됐는지 앱이 알 수 없다. 사장님 말씀을 믿고 안내만 한다.
+  void _doneIos() {
+    Navigator.of(context).maybePop();
+    _toast('바탕화면의 FlowNote 아이콘으로 열어 로그인해 주세요');
+  }
+
+  Future<void> _retryPrompt() async {
+    setState(() => _busy = true);
     final r = await pwaPromptInstall();
     if (!mounted) return;
-    setState(() {
-      _busy = false;
-      _state = pwaState();
-      switch (r) {
-        case PwaPromptResult.installed:
-          _msg = '홈 화면에 추가했어요. 이제 바탕화면에서 바로 열 수 있어요.';
-        case PwaPromptResult.dismissed:
-          _msg = '취소하셨어요. 언제든 다시 누르시면 됩니다.';
-        case PwaPromptResult.unavailable:
-          // 프롬프트가 사라진 경우(이미 설치했거나 브라우저가 회수).
-          // 수동 안내로 자연스럽게 넘어간다.
-          _msg = '브라우저가 설치창을 띄우지 못했어요. 아래 방법으로 해보세요.';
-      }
-    });
+    setState(() => _busy = false);
+    if (r == PwaPromptResult.installed) {
+      Navigator.of(context).maybePop();
+      _toast('설치했어요. 바탕화면 아이콘으로 열어 주세요');
+    }
+  }
+
+  void _toast(String msg) {
+    final m = ScaffoldMessenger.maybeOf(context);
+    if (m == null) return;
+    m.showSnackBar(SnackBar(
+      content: Text(msg, style: const TextStyle(fontFamily: FnDs.font)),
+      behavior: SnackBarBehavior.floating,
+      duration: const Duration(seconds: 4),
+    ));
   }
 
   @override
   Widget build(BuildContext context) {
-    final st = _state;
+    final plan = _plan();
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        // 왜 하는지 — 한 줄 이득.
-        const _WhyCard(),
-        const SizedBox(height: FnSpace.x20),
-
-        ..._body(st),
-
-        if (_msg != null) ...[
-          const SizedBox(height: FnSpace.x16),
-          _Note(_msg!),
-        ],
-
-        const SizedBox(height: FnSpace.x24),
-        FnButton(
-          label: '알겠어요',
-          expand: true,
-          variant: FnButtonVariant.outlined,
-          onPressed: () => Navigator.of(context).maybePop(),
+    return Padding(
+      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+      child: Container(
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.of(context).size.height * 0.9,
         ),
-        const SizedBox(height: FnSpace.x8),
-      ],
+        decoration: const BoxDecoration(
+          color: FnDs.card,
+          borderRadius:
+              BorderRadius.vertical(top: Radius.circular(FnDs.cardRadius)),
+        ),
+        child: SafeArea(
+          top: false,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // ── 손잡이 ──────────────────────────────────────────
+              Padding(
+                padding: const EdgeInsets.only(top: FnDs.gapXs, bottom: 2),
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: FnDs.line,
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                ),
+              ),
+              // ── 제목 + 닫기 ─────────────────────────────────────
+              Padding(
+                padding: const EdgeInsets.fromLTRB(
+                    FnDs.pagePad, FnDs.gapS, FnDs.gapXs, 0),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(plan.title, style: FnDs.tsTitle),
+                          if (plan.subtitle != null) ...[
+                            const SizedBox(height: FnDs.gap2xs),
+                            Text(plan.subtitle!,
+                                style: const TextStyle(
+                                  fontFamily: FnDs.font,
+                                  fontSize: FnDs.fontS,
+                                  height: 1.5,
+                                  color: FnDs.body,
+                                )),
+                          ],
+                        ],
+                      ),
+                    ),
+                    GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: _close,
+                      child: const Padding(
+                        padding: EdgeInsets.all(FnDs.gapS),
+                        child: Icon(Icons.close_rounded,
+                            size: 20, color: FnDs.sub),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Flexible(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.fromLTRB(
+                      FnDs.pagePad, FnDs.gapM, FnDs.pagePad, FnDs.gapM),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      for (var i = 0; i < plan.steps.length; i++) ...[
+                        if (i > 0) const SizedBox(height: FnDs.gapM),
+                        _StepRow(no: i + 1, step: plan.steps[i]),
+                      ],
+                      if (plan.note != null) ...[
+                        const SizedBox(height: FnDs.gapM),
+                        Text(
+                          plan.note!,
+                          style: const TextStyle(
+                            fontFamily: FnDs.font,
+                            fontSize: FnDs.fontXs,
+                            height: 1.5,
+                            color: FnDs.sub,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+              // ── 메인 버튼 ───────────────────────────────────────
+              Padding(
+                padding: const EdgeInsets.fromLTRB(
+                    FnDs.pagePad, 0, FnDs.pagePad, FnDs.gapS),
+                child: FnPrimaryButton(
+                  label: plan.action,
+                  busy: _busy,
+                  onTap: _busy ? null : plan.onAction,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 
-  List<Widget> _body(PwaInstallState st) {
-    switch (st.howTo) {
-      case PwaHowTo.alreadyInstalled:
-        return const [
-          _Done(
-            title: '이미 홈 화면에서 실행 중이에요',
-            body: '따로 하실 게 없습니다. 지금처럼 바탕화면 아이콘으로 열면 돼요.',
-          ),
-        ];
+  /// 지금 상황에 맞는 **한 가지** 안내만 만든다.
+  _Plan _plan() {
+    final ios = _st.onIos;
 
-      case PwaHowTo.notWeb:
-        return const [
-          _Done(
-            title: '앱으로 설치된 상태예요',
-            body: '스토어에서 설치한 앱이라 홈 화면 추가가 이미 끝나 있습니다.',
-          ),
-        ];
+    switch (_st.howTo) {
+      // ── 인앱 브라우저 ──────────────────────────────────────────
+      case PwaHowTo.inAppKakao:
+      case PwaHowTo.inAppInstagram:
+      case PwaHowTo.inAppOther:
+        return _Plan(
+          title: ios
+              ? '사파리에서 열면 바로 설치할 수 있어요'
+              : '크롬에서 열면 바로 설치할 수 있어요',
+          subtitle: '바탕화면 설치는 사파리·크롬에서만 할 수 있어서, 한 번만 옮겨 주세요.',
+          steps: ios
+              ? const [
+                  _Step('오른쪽 위 ', icon: _StepIcon.more, tail: ' 누르기'),
+                  _Step('"외부 브라우저에서 열기" 누르기'),
+                ]
+              : const [
+                  _Step('오른쪽 위 ', icon: _StepIcon.vmore, tail: ' 누르기'),
+                  _Step('"Chrome에서 열기" 누르기'),
+                ],
+          action: '주소 복사하기',
+          onAction: _copyUrl,
+        );
 
-      case PwaHowTo.androidPrompt:
-        return [
-          const _Steps(
-            title: '버튼 한 번이면 끝나요',
-            steps: [
-              '아래 [홈 화면에 추가] 버튼을 누르세요.',
-              '브라우저가 물어보면 [설치] 를 누르세요.',
-              '바탕화면에 FlowNote 아이콘이 생깁니다.',
-            ],
-          ),
-          const SizedBox(height: FnSpace.x20),
-          FnButton(
-            label: '홈 화면에 추가',
-            expand: true,
-            leadingIcon: Icons.add_to_home_screen_rounded,
-            loading: _busy,
-            onPressed: _busy ? null : _install,
-          ),
-          const SizedBox(height: FnSpace.x12),
-          const _Fold(
-            label: '버튼이 안 되면 이렇게 해주세요',
-            steps: _androidManualSteps,
-          ),
-        ];
-
-      case PwaHowTo.androidManual:
-        return const [
-          _Steps(
-            title: '크롬 메뉴에서 추가할 수 있어요',
-            steps: _androidManualSteps,
-          ),
-          SizedBox(height: FnSpace.x16),
-          _Note(
-            '삼성 인터넷은 메뉴 이름이 "현재 페이지 추가" 입니다. '
-            '카카오톡·네이버 앱 안에서 열었다면 먼저 크롬으로 열어주세요.',
-          ),
-        ];
-
+      // ── 아이폰 사파리 ──────────────────────────────────────────
       case PwaHowTo.iosSafari:
-        return const [
-          _Steps(
-            title: '사파리 공유 버튼에서 추가해요',
-            steps: [
-              '화면 아래쪽 가운데 공유 버튼(⬆︎ 네모에 위쪽 화살표)을 누르세요.',
-              '올라온 목록을 위로 밀어 [홈 화면에 추가] 를 찾으세요.',
-              '오른쪽 위 [추가] 를 누르면 끝입니다.',
-            ],
-          ),
-          SizedBox(height: FnSpace.x16),
-          _Note(
-            '아이폰은 브라우저가 설치창을 띄우는 기능을 지원하지 않아서 '
-            '이 방법 하나뿐입니다. 공유 버튼은 주소창을 한 번 누르면 나타나요.',
-          ),
-        ];
-
-      case PwaHowTo.iosOther:
-        return const [
-          _Steps(
-            title: '먼저 사파리로 열어주세요',
-            steps: [
-              '지금 브라우저에서 주소를 복사하세요.',
-              '사파리를 열고 주소창에 붙여넣어 접속하세요.',
-              '아래쪽 공유 버튼 → [홈 화면에 추가] 를 누르세요.',
-            ],
-          ),
-          SizedBox(height: FnSpace.x16),
-          _Note(
-            '아이폰에서는 사파리에서만 홈 화면 추가가 됩니다. '
-            '크롬·네이버·카카오톡 안에서는 이 기능이 막혀 있어요.',
-          ),
-        ];
-
-      case PwaHowTo.desktop:
-        return [
-          const _Steps(
-            title: 'PC 에서도 앱처럼 쓸 수 있어요',
-            steps: [
-              '주소창 오른쪽의 설치 아이콘(⊕ 또는 모니터 모양)을 누르세요.',
-              '아이콘이 없으면 우측 상단 ⋮ → [앱 설치] 를 누르세요.',
-              '설치하면 별도 창으로 열립니다.',
-            ],
-          ),
-          if (st.canPrompt) ...[
-            const SizedBox(height: FnSpace.x20),
-            FnButton(
-              label: '지금 설치',
-              expand: true,
-              leadingIcon: Icons.install_desktop_rounded,
-              loading: _busy,
-              onPressed: _busy ? null : _install,
-            ),
+        return _Plan(
+          title: '바탕화면에 설치하기',
+          subtitle: '한 번 설치하면 앱처럼 바로 열려요.',
+          steps: const [
+            _Step('화면 아래 맨 왼쪽 ', icon: _StepIcon.more, tail: ' 누르기'),
+            _Step('"공유" ', icon: _StepIcon.share, tail: ' 누르기'),
+            _Step('맨 아래 "더보기" 누르기'),
+            _Step('"홈 화면에 추가" ', icon: _StepIcon.add, tail: ' 누르기'),
           ],
-          const SizedBox(height: FnSpace.x16),
-          const _Note('휴대폰에서 하시려면 폰 브라우저로 같은 주소를 열어주세요.'),
-        ];
+          note: '메뉴가 다르게 보이면 아래 공유 버튼 → 홈 화면에 추가',
+          action: '설치했어요',
+          onAction: _doneIos,
+        );
 
+      // ── 아이폰인데 사파리가 아니다 ──────────────────────────────
+      case PwaHowTo.iosOther:
+        return _Plan(
+          title: '사파리에서 열면 바로 설치할 수 있어요',
+          subtitle: '바탕화면 설치는 사파리에서만 할 수 있어서, 한 번만 옮겨 주세요.',
+          steps: const [
+            _Step('아래 "주소 복사하기" 누르기'),
+            _Step('사파리를 열고 주소창에 붙여 넣기'),
+          ],
+          action: '주소 복사하기',
+          onAction: _copyUrl,
+        );
+
+      // ── 안드로이드 — 설치창이 안 떴다 ───────────────────────────
+      case PwaHowTo.androidManual:
+      case PwaHowTo.androidPrompt:
+        return _Plan(
+          title: '바탕화면에 설치하기',
+          subtitle: '한 번 설치하면 앱처럼 바로 열려요.',
+          steps: const [
+            _Step('오른쪽 위 ', icon: _StepIcon.vmore, tail: ' 누르기'),
+            _Step('"홈 화면에 추가" 또는 "앱 설치" ',
+                icon: _StepIcon.add, tail: ' 누르기'),
+            _Step('"설치" 누르기'),
+          ],
+          action: '다시 시도하기',
+          onAction: _retryPrompt,
+        );
+
+      // ── PC ────────────────────────────────────────────────────
+      case PwaHowTo.desktop:
+        return _Plan(
+          title: '바탕화면에 설치하기',
+          subtitle: '한 번 설치하면 앱처럼 바로 열려요.',
+          steps: const [
+            _Step('주소창 오른쪽 ', icon: _StepIcon.add, tail: ' 누르기'),
+            _Step('"설치" 누르기'),
+          ],
+          action: _st.canPrompt ? '지금 설치하기' : '알겠어요',
+          onAction: _st.canPrompt ? _retryPrompt : _close,
+        );
+
+      // ── 그 밖 ─────────────────────────────────────────────────
       case PwaHowTo.unknown:
-        return const [
-          _Steps(
-            title: '브라우저 메뉴에서 추가할 수 있어요',
-            steps: [
-              '브라우저 메뉴(⋮ 또는 공유 버튼)를 누르세요.',
-              '[홈 화면에 추가] 또는 [앱 설치] 를 누르세요.',
-              '이름을 확인하고 [추가] 를 누르세요.',
-            ],
-          ),
-        ];
+      case PwaHowTo.notWeb:
+      case PwaHowTo.alreadyInstalled:
+        return _Plan(
+          title: '바탕화면에 설치하기',
+          subtitle: '한 번 설치하면 앱처럼 바로 열려요.',
+          steps: const [
+            _Step('브라우저 메뉴 ', icon: _StepIcon.vmore, tail: ' 누르기'),
+            _Step('"홈 화면에 추가" ', icon: _StepIcon.add, tail: ' 누르기'),
+          ],
+          action: '알겠어요',
+          onAction: _close,
+        );
     }
   }
 }
 
-const _androidManualSteps = [
-  '크롬 오른쪽 위 ⋮ 버튼을 누르세요.',
-  '[홈 화면에 추가] 를 누르세요.',
-  '[설치] 또는 [추가] 를 누르면 끝입니다.',
-];
-
-// ─────────────────────────────────────────────────────────────
-// 부분 위젯
-// ─────────────────────────────────────────────────────────────
-
-class _WhyCard extends StatelessWidget {
-  const _WhyCard();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(FnSpace.x16),
-      decoration: BoxDecoration(
-        color: FnColors.rose95,
-        borderRadius: FnRadius.br12,
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: FnRadius.br10,
-            ),
-            alignment: Alignment.center,
-            child: const Icon(
-              Icons.phonelink_ring_rounded,
-              size: 22,
-              color: FnColors.primaryNormal,
-            ),
-          ),
-          const SizedBox(width: FnSpace.x12),
-          const Expanded(
-            child: Text(
-              '홈 화면에 추가하면 주소를 칠 필요 없이 아이콘 하나로 열려요.\n'
-              '주소창도 사라져서 앱처럼 화면이 넓어집니다.',
-              style: TextStyle(
-                fontFamily: 'Pretendard',
-                fontSize: 14,
-                height: 1.5,
-                color: FnColors.labelNeutral,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _Steps extends StatelessWidget {
-  const _Steps({required this.title, required this.steps});
+/// 한 상황에 보여 줄 안내 묶음.
+class _Plan {
+  const _Plan({
+    required this.title,
+    required this.steps,
+    required this.action,
+    required this.onAction,
+    this.subtitle,
+    this.note,
+  });
 
   final String title;
-  final List<String> steps;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          title,
-          style: const TextStyle(
-            fontFamily: 'Pretendard',
-            fontSize: 16,
-            fontWeight: FontWeight.w700,
-            color: FnColors.labelNormal,
-          ),
-        ),
-        const SizedBox(height: FnSpace.x14),
-        for (var i = 0; i < steps.length; i++)
-          Padding(
-            padding: EdgeInsets.only(
-              bottom: i == steps.length - 1 ? 0 : FnSpace.x12,
-            ),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Container(
-                  width: 22,
-                  height: 22,
-                  margin: const EdgeInsets.only(top: 1),
-                  decoration: const BoxDecoration(
-                    color: FnColors.primaryNormal,
-                    shape: BoxShape.circle,
-                  ),
-                  alignment: Alignment.center,
-                  child: Text(
-                    '${i + 1}',
-                    style: const TextStyle(
-                      fontFamily: 'Pretendard',
-                      fontSize: 12,
-                      fontWeight: FontWeight.w700,
-                      color: Colors.white,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: FnSpace.x10),
-                Expanded(
-                  child: Text(
-                    steps[i],
-                    style: const TextStyle(
-                      fontFamily: 'Pretendard',
-                      fontSize: 15,
-                      height: 1.5,
-                      color: FnColors.labelNormal,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-      ],
-    );
-  }
+  final String? subtitle;
+  final List<_Step> steps;
+  final String? note;
+  final String action;
+  final VoidCallback onAction;
 }
 
-/// 접어둔 보조 안내 (버튼이 안 될 때).
-class _Fold extends StatefulWidget {
-  const _Fold({required this.label, required this.steps});
+/// 문장 안에 넣을 버튼 모양.
+///
+/// 🔴 스크린샷을 쓰지 않는다(사장님 지시). 글자 사이에 **실제 버튼 모양**을
+///    작게 그려 넣어, 폰 화면에서 무엇을 찾아야 하는지 바로 알게 한다.
+enum _StepIcon {
+  /// 가로 점 셋 — 사파리 아래쪽 메뉴, 인앱 브라우저 오른쪽 위.
+  more,
 
-  final String label;
-  final List<String> steps;
+  /// 세로 점 셋 — 크롬 오른쪽 위.
+  vmore,
 
-  @override
-  State<_Fold> createState() => _FoldState();
+  /// 공유 — 네모에서 위로 나가는 화살표.
+  share,
+
+  /// 추가 — 동그라미 안 더하기.
+  add,
 }
 
-class _FoldState extends State<_Fold> {
-  bool _open = false;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        InkWell(
-          borderRadius: FnRadius.br8,
-          onTap: () => setState(() => _open = !_open),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: FnSpace.x6),
-            child: Row(
-              children: [
-                Text(
-                  widget.label,
-                  style: const TextStyle(
-                    fontFamily: 'Pretendard',
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                    color: FnColors.labelAlternative,
-                  ),
-                ),
-                const SizedBox(width: FnSpace.x4),
-                Icon(
-                  _open
-                      ? Icons.keyboard_arrow_up_rounded
-                      : Icons.keyboard_arrow_down_rounded,
-                  size: 18,
-                  color: FnColors.labelAlternative,
-                ),
-              ],
-            ),
-          ),
-        ),
-        if (_open)
-          Padding(
-            padding: const EdgeInsets.only(top: FnSpace.x8),
-            child: _Steps(title: '', steps: widget.steps),
-          ),
-      ],
-    );
-  }
-}
-
-class _Note extends StatelessWidget {
-  const _Note(this.text);
+class _Step {
+  const _Step(this.text, {this.icon, this.tail});
 
   final String text;
+  final _StepIcon? icon;
+
+  /// 아이콘 뒤에 붙는 글자.
+  final String? tail;
+}
+
+/// 코랄 번호 원 + 문장 한 줄.
+class _StepRow extends StatelessWidget {
+  const _StepRow({required this.no, required this.step});
+
+  final int no;
+  final _Step step;
+
+  static const _text = TextStyle(
+    fontFamily: FnDs.font,
+    fontSize: FnDs.fontM,
+    height: 1.5,
+    color: FnDs.title,
+  );
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(FnSpace.x12),
-      decoration: BoxDecoration(
-        color: FnColors.backgroundAlternative,
-        borderRadius: FnRadius.br10,
-      ),
-      child: Text(
-        text,
-        style: const TextStyle(
-          fontFamily: 'Pretendard',
-          fontSize: 13,
-          height: 1.5,
-          color: FnColors.labelAlternative,
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          width: 24,
+          height: 24,
+          margin: const EdgeInsets.only(top: 1),
+          decoration: const BoxDecoration(
+            color: FnDs.coral,
+            shape: BoxShape.circle,
+          ),
+          alignment: Alignment.center,
+          child: Text(
+            '$no',
+            style: const TextStyle(
+              fontFamily: FnDs.font,
+              fontSize: FnDs.fontXs,
+              fontWeight: FontWeight.w800,
+              color: FnDs.onCoral,
+            ),
+          ),
         ),
-      ),
+        const SizedBox(width: FnDs.gapS),
+        Expanded(
+          child: Text.rich(
+            TextSpan(
+              children: [
+                TextSpan(text: step.text),
+                if (step.icon != null)
+                  WidgetSpan(
+                    alignment: PlaceholderAlignment.middle,
+                    child: _IconChip(kind: step.icon!),
+                  ),
+                if (step.tail != null) TextSpan(text: step.tail),
+              ],
+            ),
+            style: _text,
+          ),
+        ),
+      ],
     );
   }
 }
 
-class _Done extends StatelessWidget {
-  const _Done({required this.title, required this.body});
+/// 문장 안에 들어가는 작은 버튼 그림.
+class _IconChip extends StatelessWidget {
+  const _IconChip({required this.kind});
 
-  final String title;
-  final String body;
+  final _StepIcon kind;
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            const Icon(
-              Icons.check_circle_rounded,
-              size: 20,
-              color: FnColors.statusPositive,
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 2),
+      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 3),
+      decoration: BoxDecoration(
+        color: FnDs.coralFaint,
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: switch (kind) {
+        // 사파리 아래쪽 '···' 은 아이콘이 없어서 글자로 그린다.
+        _StepIcon.more => const Text(
+            '···',
+            style: TextStyle(
+              fontFamily: FnDs.font,
+              fontSize: 15,
+              height: 1,
+              fontWeight: FontWeight.w900,
+              color: FnDs.coral,
             ),
-            const SizedBox(width: FnSpace.x8),
-            Text(
-              title,
-              style: const TextStyle(
-                fontFamily: 'Pretendard',
-                fontSize: 16,
-                fontWeight: FontWeight.w700,
-                color: FnColors.labelNormal,
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: FnSpace.x10),
-        Text(
-          body,
-          style: const TextStyle(
-            fontFamily: 'Pretendard',
-            fontSize: 15,
-            height: 1.5,
-            color: FnColors.labelNeutral,
           ),
-        ),
-      ],
+        _StepIcon.vmore =>
+          const Icon(Icons.more_vert_rounded, size: 15, color: FnDs.coral),
+        _StepIcon.share =>
+          const Icon(Icons.ios_share_rounded, size: 15, color: FnDs.coral),
+        _StepIcon.add => const Icon(Icons.add_circle_outline_rounded,
+            size: 15, color: FnDs.coral),
+      },
     );
   }
 }
