@@ -19,6 +19,7 @@ import 'services/user_repository.dart';
 import 'services/notification_service.dart';
 import 'services/training_data_service.dart';
 import 'services/flower_name_service.dart';
+import 'services/home_tips.dart';
 import 'services/vendor_tax_service.dart';
 import 'services/subscription_service.dart';
 import 'services/kakao_config.dart';
@@ -112,6 +113,10 @@ void main() async {
   // Initialize new domain services (vendor tax / subscription)
   await VendorTaxService.instance.init();
   await SubscriptionService.instance.init();
+
+  // 홈 팁 — 어떤 팁을 언제 봤는지 이 기기에서만 읽어 둔다. (#186)
+  // 실패해도 안에서 삼키고 처음 보는 것처럼 돈다.
+  await HomeTipStore.instance.init();
 
   // 꽃 표준 이름 사전 (자동완성/표준화). 40KB asset 파싱이라 빠르고,
   // 실패해도 내부에서 삼켜서 자동완성만 조용히 비활성화된다.

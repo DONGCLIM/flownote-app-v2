@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -12,6 +14,7 @@ import '../../providers/receipt_provider.dart';
 import '../../services/subscription_service.dart';
 import 'fn_data.dart';
 import '../../services/monthly_insight.dart';
+import '../../services/home_tips.dart';
 import 'insight_ds_screens.dart';
 import 'purchase_memo_ds_screen.dart';
 
@@ -38,6 +41,22 @@ class HomeDsScreen extends StatefulWidget {
 }
 
 class _HomeDsScreenState extends State<HomeDsScreen> {
+  /// 오늘 보여줄 팁. 화면이 떠 있는 동안에는 바뀌지 않는다.
+  ///
+  /// 🔴 `build()` 안에서 고르지 않는다. build 는 스크롤만 해도 여러 번
+  ///    불리는데, 그때마다 "봤다" 를 적으면 30일 규칙이 하루 만에 다
+  ///    소모된다.
+  HomeTip? _tip;
+
+  @override
+  void initState() {
+    super.initState();
+    _tip = HomeTipStore.instance.today();
+    final t = _tip;
+    // 본 것으로 적어 둔다. 같은 날 두 번 적지는 않는다.
+    if (t != null) unawaited(HomeTipStore.instance.markSeen(t.id));
+  }
+
   int? _activeSlice;
 
   bool get _isPro => SubscriptionService.instance.isPro;
@@ -726,17 +745,41 @@ class _HomeDsScreenState extends State<HomeDsScreen> {
     );
   }
 
-  /// 시안의 "여름철 절화 수명 관리 팁" 카드.
-  /// 예전 `_priceCard` 가 보여주던 품목 시세로 이어진다.
+  /// 날짜에 맞게 바뀌는 팁. (#186)
+  ///
+  /// 🔴 모양은 그대로 둔다 — 코랄 제목 + 본문, 누르면 이동. 사장님 지시:
+  ///    "지금 팁 카드 모양 그대로", "누르면 지금처럼 이동 유지".
+  ///    바뀐 것은 **글자가 어디서 오는가** 뿐이다. 예전에는 품목 시세
+  ///    한 줄을 지어냈고, 지금은 `kHomeTips` 목록에서 오늘 것을 고른다.
+  ///
+  /// 🔴 고르는 규칙은 화면이 모른다. [HomeTipStore] 가 안다. 화면에서
+  ///    또 고르면 "본 팁" 기록과 어긋난다.
   Widget _tipBox(FnDemoData d) {
-    final name = d.priceData.isEmpty ? null : d.priceData.keys.first;
-    final item = name == null ? null : d.priceData[name]!;
-    final line = item == null
-        ? '영수증이 쌓이면 품목별 단가 흐름을 알려드려요.'
-        : '$name 단가가 ${_won(item.unit)}/단으로 '
-            '전월 대비 ${item.chg >= 0 ? '+' : ''}${item.chg}% 입니다.';
+    final tip = _tip;
+    // 보여줄 팁이 하나도 없을 때만 예전 안내로 돌아간다.
+    if (tip == null) {
+      return _tipShell(
+        title: '오늘의 팁',
+        body: '영수증이 쌓이면 품목별 단가 흐름을 알려드려요.',
+        onTap: null,
+      );
+    }
+    return _tipShell(
+      title: tip.title,
+      body: tip.body,
+      // 예전처럼 품목 시세로 간다.
+      onTap: d.priceData.isEmpty ? null : () => _push(const PriceDsScreen()),
+    );
+  }
+
+  /// 팁 카드 겉모양. 시안 그대로다.
+  Widget _tipShell({
+    required String title,
+    required String body,
+    required VoidCallback? onTap,
+  }) {
     return _Tappable(
-      onTap: name == null ? null : () => _push(const PriceDsScreen()),
+      onTap: onTap,
       radius: 14,
       child: Container(
         padding: const EdgeInsets.fromLTRB(14, 13, 14, 13),
@@ -748,9 +791,9 @@ class _HomeDsScreenState extends State<HomeDsScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Text(
-              '여름철 절화 수명 관리 팁',
-              style: TextStyle(
+            Text(
+              title,
+              style: const TextStyle(
                 fontFamily: 'Pretendard',
                 fontSize: 13,
                 fontWeight: FontWeight.w700,
@@ -759,7 +802,7 @@ class _HomeDsScreenState extends State<HomeDsScreen> {
             ),
             const SizedBox(height: 6),
             Text(
-              line,
+              body,
               style: const TextStyle(
                 fontFamily: 'Pretendard',
                 fontSize: 12,

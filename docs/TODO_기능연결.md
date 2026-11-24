@@ -17,8 +17,8 @@
 |---|---|
 | 브랜치 | `genspark_ai_developer` |
 | 올리는 곳 | `origin` = `https://github.com/DONGCLIM/flownote-app-v2.git` (PR #1 → `main`) |
-| 최신 커밋 | **`88a47c0` 품목별 지출 분석** (확인은 `git log --oneline -1`) |
-| 웹에 올라간 것 | `88a47c0` 그대로 (2026-11-24 배포) |
+| 최신 커밋 | **`2fb187e` 사입 메모장 탭·체크·저장** (확인은 `git log --oneline -1`) |
+| 웹에 올라간 것 | `2fb187e` 그대로 (2026-11-24 배포) |
 | 남은 수정 | 없음. 작업 트리가 깨끗하다 |
 | 웹 주소 | https://flownote-404ef.web.app |
 | Firebase 프로젝트 | `flownote-404ef` (Blaze) |
@@ -39,7 +39,8 @@
 | `8eebfee` | 바탕화면 설치 안내 |
 | `5860297` | 홈 카드 분리 + 영수증 연결 + 바로가기 표시 |
 | `88a47c0` | 품목별 지출 분석 |
-| **(이번)** | **사입 메모장 탭·체크·저장 ← 지금 여기** |
+| `2fb187e` | 사입 메모장 탭·체크·저장 |
+| **(이번)** | **홈 팁 자동 변경 ← 지금 여기** |
 
 </details>
 
@@ -80,7 +81,8 @@ npx firebase deploy --only firestore:rules,storage --project flownote-404ef
 `lib/widgets/fn_purchase_parts.dart`(`FnPill`·`FnNamedField`·`FnItemLineRow` — 원가 계산기·예산 검토·월별 인사이트가 같이 쓴다),
 `lib/services/inquiry_service.dart`, `lib/services/inquiry_picker.dart`,
 `lib/services/cost_calc.dart`(원가 셈), `lib/services/monthly_insight.dart`(월별 인사이트 셈),
-`lib/services/purchase_list_service.dart`(사입 리스트 저장).
+`lib/services/purchase_list_service.dart`(사입 리스트 저장),
+`lib/services/home_tips.dart`(홈 팁 목록·고르는 규칙 — 팁을 더하는 법이 그 파일 맨 위 주석에 있다).
 
 ### 작업 규칙 (사장님이 정하신 것)
 
@@ -119,7 +121,7 @@ flutter test test/<그_화면>_test.dart     # 그 화면 것만
 | 파일 | 개수 | 무엇을 보나 |
 |---|---|---|
 | `test/monthly_insight_test.dart` | 61 | 월별 인사이트 38 + **품목별 지출 분석 23** — 검산·셈 규칙·화면·소스 계약 |
-| `test/home_render_test.dart` | 29 | 홈 — 카드 분리·영수증 연결·0건 안내 |
+| `test/home_render_test.dart` | 54 | 홈 — 카드 분리·영수증 연결·0건 안내 + **날짜별 팁 25** |
 | `test/home_icons_render_test.dart` | 31 | 홈 아이콘·카드 색·탭바 |
 | `test/guide_render_test.dart` | 67 | 사입 가이드·시즌 비교·예산 검토 + **사입 메모장 22** |
 | `test/cost_calc_render_test.dart` | 28 | 원가 계산기 |
@@ -142,6 +144,33 @@ flutter test test/<그_화면>_test.dart     # 그 화면 것만
 > (`touch()` 폰 즉시 + 서버 4초 모아서 / 나갈 때 `flush()`).
 > **새 저장 구조를 만들지 않았다** — 체크 상태는 `MemoText` 가 글 앞에 `[x] ` 를
 > 붙여 `PurchaseList.memo` 한 칸에 담는다.
+
+> 🔴 **홈 팁 — 데이터 팁(`D01`~`D10`) 이 남았다.** (#186 에서 S·C·O 58개만 넣었다)
+>
+> 지금 팁은 `lib/services/home_tips.dart` 의 `kHomeTips` 목록에 있고, **날짜만**
+> 본다(이번 달 팁 + 연중 팁 / 하루 하나 / 본 팁은 30일 쉬기 / 세무 팁은 신고
+> 기한까지 / 추석 팁은 3주 전부터). 아직 **영수증을 보지 않는다.**
+>
+> 다음 작업에서 넣을 데이터 팁 열 가지와 그 조건:
+>
+> | ID | 팁 | 띄울 조건 |
+> |---|---|---|
+> | `D01` | `{품목}` 단가 상승 | 지난달 대비 단가 10% 이상 오른 품목(지난달 2번 이상 구매) |
+> | `D02` | 이번 달 매입 증가 | 지난달 같은 기간 대비 매입 15% 이상 증가 |
+> | `D03` | 이번 달 매입 감소 | 지난달 같은 기간 대비 매입 15% 이상 감소 |
+> | `D04` | 부자재 비중 확인 | 이번 달 부자재 비중 25% 이상 |
+> | `D05` | 가장 많이 산 꽃 | 이번 달 절화 영수증 1장 이상 |
+> | `D06` | `{품목}` 거래처별 가격 차 | 같은 이름·같은 단위 품목, 거래처 간 단가 차 5% 이상 |
+> | `D07` | 이번 주 영수증 알림 | 이번 주(월~오늘) 영수증 0장, 지난 4주 중 영수증 있는 주가 있음 |
+> | `D08` | 이번 달 사입 횟수 | 사입 일수가 지난달 같은 기간보다 2번 이상 많음(같은 날 여러 장은 1번) |
+> | `D09` | 처음 산 꽃 | 최근 3개월에 없던 품목명 1개 이상 |
+> | `D10` | 작년 이맘때 매입 | 작년 같은 달 영수증 있음 |
+>
+> 셈은 이미 있는 것을 다시 쓰면 된다 — `ItemSpend`(품목별·부자재 비중·거래처),
+> `MonthlyInsight`(단가 상승·매입 증감). 새로 짜지 않는다.
+>
+> 🔴 본문에 `{품목}`·`{상승률}` 같은 빈칸이 있다. 조건에 맞는 영수증이 없으면
+> 그 팁은 **아예 띄우지 않아야 한다.** 빈칸이 그대로 보이면 고장으로 보인다.
 
 1. **기능을 붙이기 전에 아래 "🟠 나중에 결정할 것" 절을 사장님께 먼저 여쭌다.**
 2. **🔴 품목군 분류(절화 / 부자재 / 화분·식물 / 기타)를 사장님께 여쭌다.**

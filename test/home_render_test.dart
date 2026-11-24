@@ -5,6 +5,7 @@ import 'package:flow_note/design/fn_home_tokens.dart';
 import 'package:flow_note/providers/receipt_provider.dart';
 import 'package:flow_note/screens/ds/home_ds_screen.dart';
 import 'package:flow_note/services/subscription_service.dart';
+import 'package:flow_note/services/home_tips.dart';
 import 'package:flow_note/screens/ds/insight_ds_screens.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flow_note/models/receipt_model.dart';
@@ -16,6 +17,8 @@ import 'package:flow_note/screens/ds/fn_data.dart';
 /// 로 시안 품목명을 하드코딩 역참조했다. 실데이터에서는 품목명이 실제 매입한
 /// 꽃 이름(상위 8개)이라 '장미(레드)' 가 없으면 build() 가 throw 하고,
 /// 릴리즈 빌드에서는 화면 전체가 회색 ErrorWidget 으로 덮였다.
+String _read(String p) => io.File(p).readAsStringSync();
+
 ReceiptModel _r(String id, String store, DateTime date,
     List<({String name, int qty, double price})> items) {
   final flowers = items
@@ -282,6 +285,13 @@ void _k135() {
 
   group('#135 홈 — 시안 구조가 보인다', () {
     testWidgets('시안의 글귀가 실제로 화면에 있다', (tester) async {
+      // 🔴 #186 부터 팁 글자가 날마다 바뀐다. 고정 문구로 집으면 달이
+      //    바뀔 때마다 깨진다. 화면과 **같은 곳**에 물어본다.
+      //    띄우기 **전에** 물어야 한다 — 화면이 뜨면서 "봤다" 를 적어
+      //    다음 팁으로 넘어가기 때문이다.
+      final tip = HomeTipStore.instance.today();
+      expect(tip, isNotNull);
+
       await _pumpHome(tester);
       expect(find.text('이번 달 총 지출'), findsOneWidget);
       expect(find.text('지출 추이'), findsOneWidget);
@@ -289,7 +299,7 @@ void _k135() {
       expect(find.text('스마트 사입 가이드'), findsOneWidget);
       expect(find.text('권장 사입 주기'), findsOneWidget);
       expect(find.text('권장 절화 비중'), findsOneWidget);
-      expect(find.text('여름철 절화 수명 관리 팁'), findsOneWidget);
+      expect(find.text(tip!.title), findsOneWidget);
       expect(find.text('상세 분석 보기 >'), findsOneWidget);
       expect(find.textContaining('맞춤 사입 리포트 보기'), findsOneWidget);
     });
@@ -583,6 +593,280 @@ void _k135() {
       // 🔴 #183 영수증이 0건일 때 카드가 보여줄 안내.
       expect(code.contains('영수증을 찍으면 여기에 정리돼요'), isTrue,
           reason: '0건일 때 빈 카드만 남으면 고장처럼 보인다');
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════
+  // 홈 팁 자동 변경 (#186)
+  // ═══════════════════════════════════════════════════════════════════
+
+  /// 셈만 확인할 때 쓰는 작은 팁 목록. 진짜 목록과 떼어 둔다.
+  ///
+  /// 🔴 `kHomeTips` 로 규칙을 확인하면, 나중에 팁을 한 줄 더할 때마다
+  ///    엉뚱한 테스트가 깨진다. 규칙은 작은 목록으로, 진짜 목록은
+  ///    "모양이 맞는지" 만 본다.
+  const sample = <HomeTip>[
+    HomeTip(
+      id: 'M1',
+      group: '시즌',
+      when: TipWhen.month,
+      month: 9,
+      title: '9월 팁 하나',
+      body: '9월에만 보여요.',
+    ),
+    HomeTip(
+      id: 'M2',
+      group: '시즌',
+      when: TipWhen.month,
+      month: 9,
+      title: '9월 팁 둘',
+      body: '9월에만 보여요.',
+    ),
+    HomeTip(
+      id: 'Y1',
+      group: '관리',
+      when: TipWhen.allYear,
+      title: '연중 팁',
+      body: '아무 때나 보여요.',
+    ),
+    HomeTip(
+      id: 'T1',
+      group: '세무',
+      when: TipWhen.month,
+      month: 7,
+      title: '기한 있는 팁',
+      body: '7월 25일까지 신고가 있어요.',
+      deadline: (7, 25),
+    ),
+    HomeTip(
+      id: 'K1',
+      group: '시즌',
+      when: TipWhen.chuseok,
+      title: '추석 팁',
+      body: '추석 전에만 보여요.',
+    ),
+  ];
+
+  group('홈 팁 — 고르는 규칙 (#186)', () {
+    test('🔴 오늘 보여줄 수 있는 팁 = 이번 달 팁 + 연중 팁', () {
+      final list = HomeTipPicker.candidates(DateTime(2026, 9, 1), all: sample);
+      final ids = list.map((e) => e.id).toList();
+      expect(ids, contains('M1'));
+      expect(ids, contains('M2'));
+      expect(ids, contains('Y1'));
+      // 7월 팁은 9월에 안 나온다.
+      expect(ids, isNot(contains('T1')));
+    });
+
+    test('🔴 이번 달 팁을 연중 팁보다 먼저 보여준다', () {
+      final list = HomeTipPicker.candidates(DateTime(2026, 9, 1), all: sample);
+      final yearIdx = list.indexWhere((e) => e.when == TipWhen.allYear);
+      final monthIdx = list.lastIndexWhere((e) => e.when == TipWhen.month);
+      expect(monthIdx, lessThan(yearIdx),
+          reason: '연중 팁이 이번 달 팁보다 앞에 왔다');
+    });
+
+    test('🔴 날짜가 바뀌면 다음 팁으로 넘어간다', () {
+      final seen = <String>{};
+      for (var i = 0; i < 3; i++) {
+        final t = HomeTipPicker.pick(DateTime(2026, 9, 1 + i), all: sample);
+        seen.add(t!.id);
+      }
+      expect(seen.length, greaterThan(1), reason: '며칠이 지나도 같은 팁만 나온다');
+    });
+
+    test('🔴 같은 날 두 번 물어도 같은 팁이다', () {
+      final a = HomeTipPicker.pick(DateTime(2026, 9, 7), all: sample);
+      final b = HomeTipPicker.pick(DateTime(2026, 9, 7), all: sample);
+      expect(a!.id, b!.id, reason: '화면을 두 번 열면 팁이 달라진다');
+    });
+
+    test('🔴 한 번 본 팁은 30일 동안 다시 안 나온다', () {
+      // 🔴 9월 4일부터는 추석 팁(K1)도 후보라 답이 둘이 된다.
+      //    추석 기간 **밖**의 날을 골라 M1·M2·Y1 만 남긴다.
+      final today = DateTime(2026, 9, 1);
+      // M1·M2 를 어제 봤다. 남은 건 연중 팁뿐이다.
+      final seen = {
+        'M1': today.subtract(const Duration(days: 1)),
+        'M2': today.subtract(const Duration(days: 2)),
+      };
+      final t = HomeTipPicker.pick(today, seen: seen, all: sample);
+      expect(t!.id, 'Y1');
+    });
+
+    test('30일이 지난 팁은 다시 나올 수 있다', () {
+      final today = DateTime(2026, 9, 1);
+      final seen = {'M1': today.subtract(const Duration(days: 31))};
+      final ids = <String>{};
+      for (var i = 0; i < 5; i++) {
+        final t = HomeTipPicker.pick(
+            today.add(Duration(days: i)), seen: seen, all: sample);
+        ids.add(t!.id);
+      }
+      expect(ids, contains('M1'));
+    });
+
+    test('🔴 다 봤으면 빈칸 대신 가장 오래전에 본 것을 다시 보여준다', () {
+      // 추석 기간 밖. 후보는 M1·M2·Y1 셋뿐이고 셋 다 봤다.
+      final today = DateTime(2026, 9, 1);
+      final seen = {
+        'M1': today.subtract(const Duration(days: 3)),
+        'M2': today.subtract(const Duration(days: 1)),
+        'Y1': today.subtract(const Duration(days: 2)),
+      };
+      final t = HomeTipPicker.pick(today, seen: seen, all: sample);
+      expect(t, isNotNull, reason: '빈칸이 되면 카드가 비어 보인다');
+      expect(t!.id, 'M1', reason: '가장 오래전에 본 것부터 다시 돌아야 한다');
+    });
+
+    test('🔴 세무 팁은 신고 기한이 지나면 안 보인다', () {
+      // 7월 25일까지. 당일은 보이고, 다음 날은 안 보인다.
+      expect(sample[3].showsOn(DateTime(2026, 7, 25)), isTrue);
+      expect(sample[3].showsOn(DateTime(2026, 7, 26)), isFalse);
+      expect(sample[3].showsOn(DateTime(2026, 7, 1)), isTrue);
+    });
+
+    test('🔴 추석 팁은 3주 전부터 추석 당일까지만', () {
+      // 2026년 추석은 9월 25일. 3주 전은 9월 4일.
+      final chuseok = KoreanDates.chuseok(2026)!;
+      const tip = HomeTip(
+        id: 'K1',
+        group: '시즌',
+        when: TipWhen.chuseok,
+        title: '추석 팁',
+        body: '',
+      );
+      expect(tip.showsOn(DateTime(2026, 9, 3), chuseok: chuseok), isFalse);
+      expect(tip.showsOn(DateTime(2026, 9, 4), chuseok: chuseok), isTrue);
+      expect(tip.showsOn(DateTime(2026, 9, 25), chuseok: chuseok), isTrue);
+      expect(tip.showsOn(DateTime(2026, 9, 26), chuseok: chuseok), isFalse);
+    });
+
+    test('🔴 추석 날짜를 모르는 해에는 추석 팁이 안 보인다', () {
+      // 2029년은 표에 없다. 틀린 날짜로 보여주느니 숨긴다.
+      expect(KoreanDates.chuseok(2029), isNull);
+      final ids = HomeTipPicker.candidates(DateTime(2029, 9, 10), all: sample)
+          .map((e) => e.id);
+      expect(ids, isNot(contains('K1')));
+    });
+
+    test('보여줄 팁이 하나도 없으면 null', () {
+      expect(HomeTipPicker.pick(DateTime(2026, 9, 1), all: const []), isNull);
+    });
+  });
+
+  group('홈 팁 — 추석·수능 날짜 (사장님 확인 #186)', () {
+    test('🔴 추석 2026~2028', () {
+      expect(KoreanDates.chuseok(2026), DateTime(2026, 9, 25));
+      expect(KoreanDates.chuseok(2027), DateTime(2027, 9, 15));
+      expect(KoreanDates.chuseok(2028), DateTime(2028, 10, 3));
+    });
+
+    test('🔴 수능 2026~2028', () {
+      expect(KoreanDates.suneung(2026), DateTime(2026, 11, 19));
+      expect(KoreanDates.suneung(2027), DateTime(2027, 11, 18));
+      expect(KoreanDates.suneung(2028), DateTime(2028, 11, 16));
+    });
+  });
+
+  group('홈 팁 — 목록 (#186)', () {
+    test('🔴 S·C·O 팁만 넣었다. 데이터 팁(D)은 아직 없다', () {
+      expect(kHomeTips.length, 58);
+      for (final t in kHomeTips) {
+        expect('SCO'.contains(t.id[0]), isTrue, reason: '${t.id} 가 섞여 있다');
+      }
+      expect(kHomeTips.any((e) => e.id.startsWith('D')), isFalse);
+    });
+
+    test('🔴 ID 가 겹치지 않는다', () {
+      final ids = kHomeTips.map((e) => e.id).toSet();
+      expect(ids.length, kHomeTips.length, reason: 'ID 가 겹치면 본 기록이 엉킨다');
+    });
+
+    test('🔴 달 팁은 1~12월이 다 있고, 달이 빠진 줄이 없다', () {
+      final months = <int>{};
+      for (final t in kHomeTips) {
+        if (t.when != TipWhen.month) continue;
+        expect(t.month, inInclusiveRange(1, 12), reason: '${t.id} 의 달이 이상하다');
+        months.add(t.month);
+      }
+      expect(months.length, 12, reason: '팁이 없는 달이 있으면 그 달엔 연중 팁만 돈다');
+    });
+
+    test('🔴 제목·본문이 빈 줄이 없다', () {
+      for (final t in kHomeTips) {
+        expect(t.title.trim(), isNotEmpty, reason: '${t.id} 제목이 비었다');
+        expect(t.body.trim(), isNotEmpty, reason: '${t.id} 본문이 비었다');
+      }
+    });
+
+    test('🔴 세무 팁 S02·S04·S19 에 신고 기한이 달려 있다', () {
+      HomeTip byId(String id) => kHomeTips.firstWhere((e) => e.id == id);
+      expect(byId('S02').deadline, (1, 25));
+      expect(byId('S04').deadline, (2, 10));
+      expect(byId('S19').deadline, (7, 25));
+      // 기한이 지나면 안 보인다.
+      expect(byId('S19').showsOn(DateTime(2026, 7, 26)), isFalse);
+    });
+
+    test('🔴 추석 팁 S23 은 추석 기간에만 보인다', () {
+      final s23 = kHomeTips.firstWhere((e) => e.id == 'S23');
+      expect(s23.when, TipWhen.chuseok);
+      final chuseok = KoreanDates.chuseok(2026)!;
+      expect(s23.showsOn(DateTime(2026, 9, 10), chuseok: chuseok), isTrue);
+      expect(s23.showsOn(DateTime(2026, 8, 1), chuseok: chuseok), isFalse);
+    });
+
+    test('어느 달에 열어도 보여줄 팁이 있다', () {
+      for (var m = 1; m <= 12; m++) {
+        final t = HomeTipPicker.pick(DateTime(2026, m, 15));
+        expect(t, isNotNull, reason: '$m월에 보여줄 팁이 없다');
+      }
+    });
+  });
+
+  group('홈 팁 — 소스 계약 (#186)', () {
+    test('🔴 팁을 앱 안 목록에 담았다 (Firestore 아님)', () {
+      final src = _read('lib/services/home_tips.dart');
+      expect(src.contains('const List<HomeTip> kHomeTips'), isTrue);
+      // 🔴 글자만 세면 "Firestore 가 아니다" 라고 적은 **주석**에 걸린다.
+      //    실제로 쓰는지 보려면 import 를 본다.
+      for (final banned in [
+        'cloud_firestore',
+        'package:http',
+        'FirebaseFirestore.instance',
+      ]) {
+        expect(src.contains(banned), isFalse, reason: '$banned 를 쓰고 있다');
+      }
+    });
+
+    test('🔴 본 기록을 이 기기에만 남긴다 (클라우드 저장 안 함)', () {
+      final src = _read('lib/services/home_tips.dart');
+      expect(src.contains('SharedPreferences'), isTrue);
+      expect(src.contains('UserRepository'), isFalse);
+      expect(src.contains('backup'), isFalse);
+    });
+
+    test('🔴 팁 카드 모양과 이동이 그대로다', () {
+      final home = _read('lib/screens/ds/home_ds_screen.dart');
+      // 코랄 제목 + 본문, 누르면 품목 시세로.
+      expect(home.contains('FnHome.coralText'), isTrue);
+      expect(home.contains('PriceDsScreen()'), isTrue);
+      // 옛 고정 문구는 사라졌다.
+      expect(home.contains('여름철 절화 수명 관리 팁'), isFalse);
+    });
+
+    test('🔴 팁을 build() 안에서 고르지 않는다', () {
+      final home = _read('lib/screens/ds/home_ds_screen.dart');
+      // build 마다 고르면 "봤다" 기록이 하루 만에 다 소모된다.
+      expect(home.contains('HomeTipStore.instance.today()'), isTrue);
+      expect(home.contains('_tip = HomeTipStore'), isTrue);
+    });
+
+    test('🔴 데이터 팁(D01~D10)이 다음 할 일로 문서에 적혀 있다', () {
+      final doc = _read('docs/TODO_기능연결.md');
+      expect(doc.contains('D01'), isTrue);
+      expect(doc.contains('데이터 팁'), isTrue);
     });
   });
 }
