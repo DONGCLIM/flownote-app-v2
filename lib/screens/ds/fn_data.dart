@@ -5,6 +5,7 @@ import '../../design/fn_charts_ds.dart';
 import '../../models/receipt_model.dart';
 import '../../providers/receipt_provider.dart';
 import '../../services/insight_service.dart';
+import '../../services/monthly_insight.dart';
 
 /// 시안 `AppH3` 상단의 데이터 정의를 그대로 옮긴 모듈.
 ///
@@ -60,6 +61,7 @@ class FnDemoData {
     required this.priceData,
     required this.insights,
     required this.isDemo,
+    this.itemMix = const {},
   });
 
   final List<String> months;
@@ -74,6 +76,14 @@ class FnDemoData {
 
   /// true면 시안 데모 수치를 그리고 있다는 뜻
   final bool isDemo;
+
+  /// 🔴 이번 달 품목군별 매입액. 홈의 '품목 비중' 카드가 쓴다. (#183)
+  ///
+  /// 분류는 `MonthlyInsight.groupOf()` 한 곳에서만 한다. 과세/면세를 쓰던
+  /// `taxData` 와는 기준이 다르다 — 그쪽은 **매입처**로 가르고, 이쪽은
+  /// **품목 이름**으로 가른다. 시안의 네 칸(절화/부자재/화분·식물/기타)은
+  /// 품목 기준이라 이 값을 쓴다.
+  final Map<ItemGroup, double> itemMix;
 }
 
 class FnDemo {
@@ -288,10 +298,35 @@ class FnDemo {
       priceData: _livePriceData(receipts),
       insights: _liveInsights(receipts, values),
       isDemo: false,
+      itemMix: _liveItemMix(receipts, now),
     );
   }
 
   // ── 실데이터 파생값 ────────────────────────────────────────
+
+  /// 이번 달 품목군별 매입액. (#183)
+  ///
+  /// 🔴 분류는 `MonthlyInsight.groupOf()` 를 **그대로 쓴다.** 여기서 또
+  ///    나누면 월별 인사이트와 홈의 비율이 어긋난다. 영수증에 품목군 칸이
+  ///    없어 이름으로 짐작하는 값이라, 기준이 정해지면 그 한 곳만 고친다.
+  ///
+  /// 품목 줄이 비어 있는 영수증(금액만 적은 것)은 어느 칸에도 못 넣으므로
+  /// 뺀다. 넣으면 '기타' 가 부풀어 비중이 거짓말이 된다.
+  static Map<ItemGroup, double> _liveItemMix(
+      List<ReceiptModel> receipts, DateTime now) {
+    final out = <ItemGroup, double>{};
+    for (final r in receipts) {
+      if (r.date.year != now.year || r.date.month != now.month) continue;
+      for (final it in r.items) {
+        if (it.name.trim().isEmpty) continue;
+        final amount = it.unitPrice * it.quantity;
+        if (amount <= 0) continue;
+        final g = MonthlyInsight.groupOf(it.name);
+        out[g] = (out[g] ?? 0) + amount;
+      }
+    }
+    return out;
+  }
 
   /// 과세/면세 도넛 — `VendorTaxService` 분류 기준으로 실제 금액 집계.
   static List<FnChartDatum> _liveTaxData(List<ReceiptModel> receipts) {

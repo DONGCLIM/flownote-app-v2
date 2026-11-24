@@ -39,12 +39,20 @@ class _Fake extends ReceiptProvider {
   List<ReceiptModel> get allReceipts => _items;
 }
 
-List<ReceiptModel> _items() => <ReceiptModel>[
-      for (var i = 0; i < 8; i++)
-        _r('a$i', DateTime(2026, 8, 3 + i), '화람원예', 320000 + i * 11000),
-      for (var i = 0; i < 6; i++)
-        _r('b$i', DateTime(2026, 7, 2 + i * 3), '플라워팜', 280000 + i * 9000),
-    ];
+/// 🔴 날짜를 박아 두지 않는다. 홈 알림 카드가 **이번 달** 영수증 수를
+///    보기 때문에(#183), 고정 날짜를 쓰면 달이 바뀌는 순간 0건이 되어
+///    문구가 "이번 주 영수증을 찍어 주세요" 로 바뀌고 테스트가 깨진다.
+List<ReceiptModel> _items() {
+  final now = DateTime.now();
+  return <ReceiptModel>[
+    for (var i = 0; i < 8; i++)
+      _r('a$i', DateTime(now.year, now.month, 3 + i), '화람원예',
+          320000 + i * 11000),
+    for (var i = 0; i < 6; i++)
+      _r('b$i', DateTime(now.year, now.month - 1, 2 + i * 3), '플라워팜',
+          280000 + i * 9000),
+  ];
+}
 
 /// 홈 탭만 띄운다(헤더·탭바 없음). 카드 자체를 보는 테스트용.
 Future<void> _pumpHome(WidgetTester t, {Size size = const Size(390, 844)}) async {
@@ -124,7 +132,7 @@ void main() {
   group('#146 홈 카드 색·그림자', () {
     testWidgets('카드1(영수증 정리)은 순백이 아니라 #FFFDFC 다', (t) async {
       await _pumpHome(t);
-      final d = _cardOf('장미 단가가 전월 대비 +19% 상승했어요');
+      final d = _cardOf('이번 달 영수증 8매 정리했어요');
       // 🔴 자기 자신(FnHome.cardWarm)과 비교하면 토큰을 바꿔도 통과한다.
       //    시안 실측값을 **리터럴로** 박아 비교한다.
       expect(d.color, const Color(0xFFFFFDFC));
@@ -140,7 +148,7 @@ void main() {
 
     testWidgets('카드1·3 내부색이 서로 다르다', (t) async {
       await _pumpHome(t);
-      final c1 = _cardOf('장미 단가가 전월 대비 +19% 상승했어요').color;
+      final c1 = _cardOf('이번 달 영수증 8매 정리했어요').color;
       final c3 = _cardOf('지출 추이').color;
       expect(c1, isNot(c3),
           reason: '시안은 카드1 #FFFDFC / 카드3 #FFFFFF 로 다르다');
@@ -148,7 +156,7 @@ void main() {
 
     testWidgets('카드1에 그림자가 있다', (t) async {
       await _pumpHome(t);
-      final d = _cardOf('장미 단가가 전월 대비 +19% 상승했어요');
+      final d = _cardOf('이번 달 영수증 8매 정리했어요');
       expect(d.boxShadow, isNotNull);
       expect(d.boxShadow!, isNotEmpty);
     });
@@ -163,7 +171,7 @@ void main() {
     testWidgets('카드3 그림자가 카드1보다 진하다', (t) async {
       await _pumpHome(t);
       // 시안 Δ: 카드1 9.4 / 카드3 19.4 — 카드3 이 약 2배 진하다.
-      final a1 = _cardOf('장미 단가가 전월 대비 +19% 상승했어요')
+      final a1 = _cardOf('이번 달 영수증 8매 정리했어요')
           .boxShadow!
           .first
           .color

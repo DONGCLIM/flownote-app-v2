@@ -150,6 +150,24 @@ String _codeOf(String path) => io.File(path)
     })
     .join('\n');
 
+/// 홈 숫자를 확인할 때 쓰는 영수증. (#183)
+///
+/// 🔴 이번 달 50만 / 전월 30만 으로 **일부러 딱 떨어지게** 잡았다.
+///    화면에 `500,000원`·`300,000원` 이 그대로 떠야 하므로, 품목 금액의
+///    합이 곧 총액이 되도록 수량 1 로 맞춘다.
+List<ReceiptModel> _sample() {
+  final now = DateTime.now();
+  return [
+    _r('cur', '대한꽃도매', DateTime(now.year, now.month, 3), [
+      (name: '장미', qty: 1, price: 400000),
+      (name: '포장지', qty: 1, price: 100000),
+    ]),
+    _r('prev', '대한꽃도매', DateTime(now.year, now.month - 1, 12), [
+      (name: '장미', qty: 1, price: 300000),
+    ]),
+  ];
+}
+
 Widget _home(List<ReceiptModel> items) =>
     ChangeNotifierProvider<ReceiptProvider>.value(
       // 🔴 Provider 를 MaterialApp **바깥**에 둬야 한다. 안쪽(home:)에 두면
@@ -228,7 +246,9 @@ void _k135() {
 
     testWidgets('연한 살구 막대(#FFD4C2)와 강조 글자(#E8555E)가 보인다',
         (tester) async {
-      await _pumpHome(tester);
+      // 🔴 #183 부터 영수증이 0건이면 막대를 아예 그리지 않는다(빈 안내).
+      //    색을 보려면 실데이터가 있어야 한다.
+      await _pumpHome(tester, items: _sample());
       final used = _paintedColors(tester);
       expect(used, contains(0xFFFFD4C2));
       expect(used, contains(0xFFE8555E));
@@ -275,11 +295,14 @@ void _k135() {
     });
 
     testWidgets('막대가 6개이고 마지막만 넓게 강조된다', (tester) async {
-      await _pumpHome(tester);
-      // 데모 데이터는 12개월 -> 꼬리 6개만 그린다.
-      final labels = ['2월', '3월', '4월', '5월', '6월', '7월'];
-      for (final m in labels) {
-        expect(find.text(m), findsWidgets, reason: '$m 막대 라벨이 없다');
+      // 🔴 #183 부터 달 라벨은 **오늘 기준 최근 6개월**이다. 예전에는
+      //    시안 고정값(2~7월)이었는데, 그건 데모 숫자라 지웠다.
+      await _pumpHome(tester, items: _sample());
+      final now = DateTime.now();
+      for (var i = 5; i >= 0; i--) {
+        final m = DateTime(now.year, now.month - i);
+        expect(find.text('${m.month}월'), findsWidgets,
+            reason: '${m.month}월 막대 라벨이 없다');
       }
       // 강조 막대 폭(42) > 일반 막대 폭(27)
       expect(FnHome.barActiveW, greaterThan(FnHome.barW));
@@ -287,13 +310,16 @@ void _k135() {
 
     testWidgets('총 지출 금액과 전월/영수증/변동폭이 함께 보인다',
         (tester) async {
-      await _pumpHome(tester);
-      // 데모: 이번 달 305만, 전월 262만, 영수증 8매
-      expect(find.text('₩3,050,000'), findsOneWidget);
-      expect(find.text('₩2,620,000'), findsOneWidget);
-      expect(find.text('8매'), findsOneWidget);
+      // 🔴 #183 금액 표기에서 ₩ 를 빼고 `3,050,000원` 꼴로 바꿨다.
+      //    숫자도 데모가 아니라 **이 사용자의 영수증**에서 나온다.
+      await _pumpHome(tester, items: _sample());
+      expect(find.text('500,000원'), findsOneWidget); // 이번 달
+      expect(find.text('300,000원'), findsOneWidget); // 전월
+      expect(find.text('1매'), findsOneWidget);
       expect(find.text('전월 지출'), findsOneWidget);
       expect(find.text('변동폭'), findsOneWidget);
+      // ₩ 기호가 홈에 남아 있으면 안 된다.
+      expect(find.textContaining('₩'), findsNothing);
     });
 
     testWidgets('카드 좌우 여백이 좌우 대칭이다(시안 19.7dp)', (tester) async {
@@ -341,8 +367,8 @@ void _k135() {
       // 세 폭 전부에서 그랬다. 320dp 렌더 스크린샷에서 눈으로 먼저 보였고,
       // 픽셀로 재서 확인한 뒤 좌우 7dp 를 넣었다.
       for (final w in [320.0, 360.0, 390.0]) {
-        await _pumpHome(tester, size: Size(w, 900));
-        final amount = tester.getRect(find.text('₩2,620,000'));
+        await _pumpHome(tester, items: _sample(), size: Size(w, 900));
+        final amount = tester.getRect(find.text('300,000원'));
 
         // 구분선은 폭이 정확히 1 인 박스다.
         final lines = <Rect>[];
@@ -400,8 +426,8 @@ void _k135() {
     });
 
     testWidgets('총 지출 카드를 누르면 지출 추이 화면이 열린다', (tester) async {
-      await _pumpHome(tester);
-      await tester.tap(find.text('₩3,050,000'));
+      await _pumpHome(tester, items: _sample());
+      await tester.tap(find.text('500,000원'));
       // 🔴 라우트 전환에는 pump 가 **두 번** 필요하다.
       //    첫 pump 가 새 라우트를 트리에 끼워 넣고, 두 번째가 전환을 끝낸다.
       //    한 번만 하면 화면이 아직 안 바뀌어 findsNothing 이 된다.
@@ -411,13 +437,15 @@ void _k135() {
       expect(find.byType(TrendDsScreen), findsOneWidget);
     });
 
-    testWidgets('상세 분석 보기를 누르면 과세/면세 상세가 열린다', (tester) async {
+    testWidgets('🔴 품목 비중 카드를 누르면 월별 인사이트가 열린다 (#183 임시 연결)',
+        (tester) async {
       // `SubscriptionService.unlockEverything == true` 라 모든 기능이 열려
       // 있다. (사장님 지시: "프로 어쩌고 이런거는 다 빼기로 했잖아")
-      // 따라서 Pro 모달이 아니라 실제 화면이 뜨는 게 맞는 동작이다.
       expect(SubscriptionService.instance.isPro, isTrue,
           reason: '구독 정책이 바뀌었다면 이 테스트의 기대값도 같이 바꿔야 한다');
-      await _pumpHome(tester);
+      await _pumpHome(tester, items: _sample());
+      // 🔴 품목별 지출 분석 화면은 아직 없다. 다음 작업에서 만들 때까지
+      //    월별 인사이트로 임시 연결해 뒀다.
       await tester.tap(find.text('상세 분석 보기 >'));
       // 🔴 라우트 전환에는 pump 가 **두 번** 필요하다.
       //    첫 pump 가 새 라우트를 트리에 끼워 넣고, 두 번째가 전환을 끝낸다.
@@ -425,11 +453,21 @@ void _k135() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 500));
       expect(tester.takeException(), isNull);
-      expect(find.byType(DonutDsScreen), findsOneWidget);
+      expect(find.byType(InsightsDsScreen), findsOneWidget);
+    });
+
+    testWidgets('🔴 지출 추이 카드를 누르면 시즌 매입 비교가 열린다 (#183)',
+        (tester) async {
+      await _pumpHome(tester, items: _sample());
+      await tester.tap(find.text('자세히 보기 >'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(tester.takeException(), isNull);
+      expect(find.byType(GuideSeasonDsScreen), findsOneWidget);
     });
 
     testWidgets('CTA 를 누르면 전체 인사이트가 열린다', (tester) async {
-      await _pumpHome(tester);
+      await _pumpHome(tester, items: _sample());
       // CTA 는 접힌 화면 기준 y≈938 — 844 뷰포트 밖이다. 먼저 끌어올린다.
       await tester.drag(find.byType(SingleChildScrollView).first,
           const Offset(0, -200));
@@ -455,8 +493,8 @@ void _k135() {
       await _pumpHome(tester, items: items);
       expect(tester.takeException(), isNull);
       // 데모 고정값(305만)이 더 이상 보이면 안 된다.
-      expect(find.text('₩3,050,000'), findsNothing);
-      expect(find.text('₩50,000'), findsOneWidget);
+      expect(find.text('3,050,000원'), findsNothing);
+      expect(find.text('50,000원'), findsOneWidget);
     });
 
     testWidgets('영수증이 하나도 없어도 깨지지 않는다', (tester) async {
@@ -512,17 +550,24 @@ void _k135() {
       }
     });
 
-    testWidgets('🔴 영수증 0건 홈에 94dp 빈칸이 아니라 막대가 보인다', (tester) async {
+    testWidgets('🔴 영수증 0건이면 빈칸이 아니라 안내와 스캔 버튼이 보인다 (#183)',
+        (tester) async {
       await _pumpHome(tester);
       expect(tester.takeException(), isNull);
 
-      // 차트 카드가 있고
+      // 두 카드가 다 있고
       expect(find.text('지출 추이'), findsOneWidget);
-      // "최근 0개월" 같은 고장 표시가 없어야 한다
-      expect(find.text('최근 0개월'), findsNothing,
-          reason: '막대가 없다는 뜻이라 고장처럼 보인다');
-      // 데모 데이터라 6개월 배지가 뜬다
-      expect(find.text('최근 6개월'), findsOneWidget);
+      expect(find.text('품목 비중'), findsOneWidget);
+
+      // 🔴 #183 부터 영수증이 0건이면 시안 데모 막대를 그리지 않는다.
+      //    예전에는 305만 짜리 가짜 막대가 떠서 자기 매입으로 오해하셨다.
+      //    두 카드 모두 같은 안내 + 스캔 버튼을 보여준다.
+      expect(find.text('영수증을 찍으면 여기에 정리돼요'), findsNWidgets(2));
+      expect(find.text('영수증 스캔하기'), findsNWidgets(2));
+
+      // 코랄 카드도 데모 숫자(305만) 대신 0원이어야 한다.
+      expect(find.text('3,050,000원'), findsNothing);
+      expect(find.text('0원'), findsOneWidget);
     });
 
     test('🔴 bars 가 비면 빈칸 대신 안내문을 보여준다', () {
@@ -534,8 +579,9 @@ void _k135() {
           .join('\n');
       expect(code.contains('아직 지출 기록이 없어요'), isTrue,
           reason: 'bars 가 비었을 때 94dp 빈칸만 남으면 고장처럼 보인다');
-      expect(code.contains("bars.isEmpty ? '기록 없음'"), isTrue,
-          reason: '배지에 "최근 0개월" 이 뜨면 안 된다');
+      // 🔴 #183 영수증이 0건일 때 카드가 보여줄 안내.
+      expect(code.contains('영수증을 찍으면 여기에 정리돼요'), isTrue,
+          reason: '0건일 때 빈 카드만 남으면 고장처럼 보인다');
     });
   });
 }
