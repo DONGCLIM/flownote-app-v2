@@ -10,6 +10,7 @@ import '../../design/fn_home_tokens.dart';
 import '../../providers/receipt_provider.dart';
 import '../../services/subscription_service.dart';
 import 'fn_data.dart';
+import '../../services/monthly_insight.dart';
 import 'insight_ds_screens.dart';
 
 /// 홈 화면 — #135 시안(PNG) 기준으로 톤앤톤/컬러를 다시 맞춘 버전.
@@ -672,7 +673,11 @@ class _HomeDsScreenState extends State<HomeDsScreen> {
   // ── 5 : CTA ───────────────────────────────────────────────────────
   /// 시안의 코랄 버튼. 예전 `_insightCard` 의 '더보기' 와 같은 곳으로 간다.
   Widget _ctaButton(FnDemoData d) {
-    final month = d.months.isEmpty ? '' : '${d.months.last} ';
+    // 🔴 리포트의 기준 달은 **지난달**(이미 마감된 달)이다. 버튼 글자도
+    //    같은 달이어야 한다. 화면에 보이는 달과 리포트 달이 다르면
+    //    사장님이 이번 달 숫자인 줄 알고 보신다. (#180)
+    final base = MonthlyInsight.baseMonth();
+    final month = '${base.month}월 ';
     return _Tappable(
       onTap: () => _isPro
           ? _push(const InsightsDsScreen())

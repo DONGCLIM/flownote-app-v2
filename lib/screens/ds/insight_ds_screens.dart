@@ -13,8 +13,8 @@ import '../../design/fn_charts_ds.dart';
 import '../../design/fn_avatar.dart';
 import '../../providers/receipt_provider.dart';
 import '../../models/purchase_list_model.dart';
-import '../../services/flower_season_service.dart';
 import '../../services/cost_calc.dart';
+import '../../services/monthly_insight.dart';
 import '../../services/purchase_list_service.dart';
 import '../../widgets/fn_purchase_parts.dart';
 import '../../services/subscription_service.dart';
@@ -22,7 +22,6 @@ import '../../theme/fn_ds.dart';
 import '../../widgets/fn_inquiry_parts.dart';
 import 'fn_data.dart';
 import 'purchase_memo_ds_screen.dart';
-import 'season_ds_screen.dart';
 
 /// 시안 `AppH3`의 서브 화면들을 1:1로 옮긴 파일.
 /// trend / donut / price / insights / compare / guide(+season/cost/budget)
@@ -436,124 +435,360 @@ class _PriceDsScreenState extends State<PriceDsScreen> {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
-// insights — 월별 인사이트
+// insights — 월별 인사이트 (#180)
 // ═══════════════════════════════════════════════════════════════════════
-/// ```js
-/// Shell(navTitle:'월별 인사이트', onBack)
-///   div p16 column gap:10
-///     insights.map → Card bordered onClick
-///       ContentBadge color mb8   '단가 변동' | '비교 안내' | '지출 점검'
-///       div 15                    text
-///     div 12 label-assistive padding '8px 4px'  '인사이트는 참고 정보이며...'
+/// 월별 인사이트 — 지난달 매입을 돌아보는 리포트. (시안 #180)
+///
+/// ## 배치 (시안 순서)
+///
 /// ```
-class InsightsDsScreen extends StatelessWidget {
-  const InsightsDsScreen({super.key});
+///   [←] 월별 인사이트
+///   ┌ 2026년 7월 점검 결과                 ┐ _InsightHeadCard (코랄)
+///   │ 살펴볼 항목 4건                      │
+///   │ 절감 여지 175,000원                  │
+///   └ 영수증 8매 · 매입 3,050,000원         ┘
+///   (전체 4)(단가 3)(지출 1)                 _InsightChips
+///   ┌ [단가] 장미(레드) 단가 급등           ┐ _InsightCardView
+///   │ +12.0%        7,140원 → 8,000원      │
+///   │ 절감 여지 77,000원                    │
+///   └ 직전 3개월 평균보다 …                 ┘
+///   내 영수증 데이터를 기반으로 계산해요
+/// ```
+///
+/// ## 어디까지 되나 (#180 1차)
+///
+/// * **단가 카드**와 **지출 카드**만 만든다. 거래처·부자재 카드는
+///   `docs/TODO_기능연결.md` 에 남겼다.
+/// * 숫자는 전부 내 영수증에서 [MonthlyInsight] 가 계산한다. 예시값이 아니다.
+/// * 카드 아래 바로가기 줄은 **지금은 그리지 않는다.** 사장님 지시.
+///
+/// 🔴 셈은 이 파일에서 하지 않는다. 화면에서 또 나누면 배지의 `+12.0%` 와
+///    설명 문장의 `12.0%` 가 어긋난다.
+class InsightsDsScreen extends StatefulWidget {
+  const InsightsDsScreen({super.key, this.report, this.now});
+
+  /// 미리 만든 리포트. 비워 두면 내 영수증에서 만든다.
+  ///
+  /// 🔴 테스트에서 Provider 없이 띄우려고 열어 두었다. (원가 계산기와 같은 방식)
+  final MonthlyInsightReport? report;
+
+  /// '오늘'을 바꿔 끼울 수 있게 둔다. 테스트에서 달을 고정한다.
+  final DateTime? now;
+
+  @override
+  State<InsightsDsScreen> createState() => _InsightsDsScreenState();
+}
+
+class _InsightsDsScreenState extends State<InsightsDsScreen> {
+  /// null 이면 전체. 아니면 그 종류만.
+  InsightKind? _filter;
+
+  MonthlyInsightReport? _build() {
+    final given = widget.report;
+    if (given != null) return given;
+    try {
+      return MonthlyInsight.build(
+        context.watch<ReceiptProvider>().allReceipts,
+        now: widget.now,
+      );
+    } catch (_) {
+      // Provider 가 없는 자리(테스트 등)에서는 만들지 않는다.
+      return null;
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    // 실데이터가 있으면 실제 매입 내역에서 계산한 인사이트, 없으면 시안 문구.
-    final insights =
-        FnDemo.resolve(context.watch<ReceiptProvider>()).insights;
+    final report = _build();
 
     return FnShell(
       navTitle: '월별 인사이트',
+      bg: FnDs.bg,
       onBack: () => Navigator.of(context).pop(),
-      child: FnColumn(
-        gap: 10,
+      child: ColoredBox(
+        color: FnDs.bg,
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(
+              FnDs.pagePad, 14, FnDs.pagePad, FnDs.gapXl),
+          children: [
+            if (report == null)
+              // 영수증이 아직 안 쌓였다. 무엇을 기다리면 되는지 알려 준다.
+              const _InsightEmpty(
+                text: '영수증이 3개월 쌓이면 맞춤 리포트를 만들어 드려요',
+              )
+            else ...[
+              _InsightHeadCard(report: report),
+              if (!report.isEmpty) ...[
+                const SizedBox(height: FnDs.gapM),
+                _InsightChips(
+                  report: report,
+                  selected: _filter,
+                  onTap: (k) => setState(() => _filter = k),
+                ),
+                for (final c in report.cards)
+                  if (_filter == null || c.kind == _filter) ...[
+                    const SizedBox(height: FnDs.gapM),
+                    _InsightCardView(card: c),
+                  ],
+              ] else ...[
+                const SizedBox(height: FnDs.gapM),
+                const _InsightEmpty(
+                  text: '이번 달은 살펴볼 항목이 없어요. 잘 관리하고 계세요!',
+                ),
+              ],
+            ],
+            const SizedBox(height: FnDs.gapM),
+            const Text(
+              '내 영수증 데이터를 기반으로 계산해요',
+              style: FnDs.tsSub,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// 맨 위 코랄 카드 — 이 달에 무엇을 찾았는지 한눈에.
+class _InsightHeadCard extends StatelessWidget {
+  const _InsightHeadCard({required this.report});
+
+  final MonthlyInsightReport report;
+
+  @override
+  Widget build(BuildContext context) {
+    final m = report.month;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(FnDs.cardPad),
+      decoration: BoxDecoration(
+        color: FnDs.coral,
+        borderRadius: BorderRadius.circular(FnDs.cardRadius),
+        boxShadow: FnDs.cardShadow,
+      ),
+      child: Column(
         children: [
-          // 계절 패턴은 매입 내역이 없어도 항상 말할 수 있는 유일한 인사이트다.
-          // 다른 카드들은 사장님이 찍은 영수증이 있어야 계산되는데, 이건 2년치
-          // 양재 경매 실적에서 나오므로 첫 사용자에게도 보여줄 게 있다.
-          _seasonCard(context),
-          ...insights.map(
-            (it) => FnCard(
-              bordered: true,
-              onTap: () => _go(context, it.target),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  FnBadge(it.badge, color: _badgeColor(it.color)),
-                  const SizedBox(height: 8),
-                  Text(it.text, style: _t15.copyWith(height: 1.45)),
-                ],
+          Container(
+            padding:
+                const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+            decoration: BoxDecoration(
+              color: const Color(0x33FFFFFF),
+              borderRadius: BorderRadius.circular(999),
+            ),
+            child: Text(
+              '${m.year}년 ${m.month}월 점검 결과',
+              style: const TextStyle(
+                fontFamily: FnDs.font,
+                fontSize: FnDs.fontXs,
+                fontWeight: FontWeight.w700,
+                color: FnDs.onCoral,
               ),
             ),
           ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
-            child: Text(
-              '인사이트는 참고 정보이며, 세무·회계 판단은 전문가 확인이 필요합니다.',
-              style: _t13.copyWith(
-                  fontSize: 12, color: FnColors.labelAssistive, height: 1.5),
+          const SizedBox(height: FnDs.gapS),
+          Text(
+            '살펴볼 항목 ${report.cards.length}건',
+            style: const TextStyle(
+              fontFamily: FnDs.font,
+              fontSize: FnDs.fontS,
+              fontWeight: FontWeight.w600,
+              color: Color(0xCCFFFFFF),
+            ),
+          ),
+          const SizedBox(height: FnDs.gap2xs),
+          Text(
+            '절감 여지 ${InsightFmt.wonFloor(report.totalSaving)}',
+            style: const TextStyle(
+              fontFamily: FnDs.font,
+              fontSize: FnDs.font2xl,
+              fontWeight: FontWeight.w800,
+              letterSpacing: -0.5,
+              color: FnDs.onCoral,
+            ),
+          ),
+          const SizedBox(height: FnDs.gapXs),
+          Text(
+            '영수증 ${report.receiptCount}매 · '
+            '매입 ${InsightFmt.won(report.monthTotal)}',
+            style: const TextStyle(
+              fontFamily: FnDs.font,
+              fontSize: FnDs.fontXs,
+              color: Color(0xCCFFFFFF),
             ),
           ),
         ],
       ),
     );
   }
+}
 
-  /// 꽃별 계절 시세로 들어가는 카드.
-  ///
-  /// 검증을 통과한 품목이 하나도 없거나 자산 로드가 실패했으면 아예 그리지
-  /// 않는다. 눌러도 빈 화면이 나오는 카드는 없는 게 낫다.
-  static Widget _seasonCard(BuildContext context) {
-    final svc = FlowerSeasonService.instance;
-    if (!svc.isReady) return const SizedBox.shrink();
+/// 전체 / 단가 / 지출 칩. 0개짜리는 아예 안 보여준다.
+class _InsightChips extends StatelessWidget {
+  const _InsightChips({
+    required this.report,
+    required this.selected,
+    required this.onTap,
+  });
 
-    final month = svc.currentMonth;
-    final notes = svc.notesForMonth(limit: 2);
+  final MonthlyInsightReport report;
+  final InsightKind? selected;
+  final ValueChanged<InsightKind?> onTap;
 
-    // 이번 달에 평소와 다른 꽃이 없으면 그 사실 자체를 알려준다.
-    final preview = notes.isEmpty
-        ? '$month월은 대부분의 꽃이 연평균과 비슷한 수준이에요.'
-        : notes.map((n) => n.lineText).join('\n');
+  @override
+  Widget build(BuildContext context) {
+    final price = report.countOf(InsightKind.unitPrice);
+    final spend = report.countOf(InsightKind.spending);
 
-    return FnCard(
-      bordered: true,
-      onTap: () => Navigator.of(context)
-          .push(MaterialPageRoute(builder: (_) => const SeasonDsScreen())),
+    final chips = <(String, InsightKind?)>[
+      ('전체 ${report.cards.length}', null),
+      if (price > 0) ('단가 $price', InsightKind.unitPrice),
+      if (spend > 0) ('지출 $spend', InsightKind.spending),
+    ];
+
+    return SizedBox(
+      height: 34,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        itemCount: chips.length,
+        separatorBuilder: (_, __) => const SizedBox(width: FnDs.gapXs),
+        itemBuilder: (_, i) => FnPill(
+          label: chips[i].$1,
+          selected: selected == chips[i].$2,
+          onTap: () => onTap(chips[i].$2),
+        ),
+      ),
+    );
+  }
+}
+
+/// 인사이트 한 장.
+class _InsightCardView extends StatelessWidget {
+  const _InsightCardView({required this.card});
+
+  final InsightCard card;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(FnDs.cardPad),
+      decoration: FnDs.cardDeco(),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
         children: [
+          Align(
+            alignment: Alignment.centerLeft,
+            child: Container(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+              decoration: BoxDecoration(
+                color: FnDs.coralFaint,
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: Text(
+                card.badge,
+                style: const TextStyle(
+                  fontFamily: FnDs.font,
+                  fontSize: FnDs.fontXs,
+                  fontWeight: FontWeight.w700,
+                  color: FnDs.coral,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: FnDs.gapXs),
+          Text(card.title, style: FnDs.tsSection),
+          const SizedBox(height: FnDs.gapS),
           Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
             children: [
-              const FnBadge('계절 패턴', color: FnBadgeColor.accent),
-              const Spacer(),
-              const Icon(Icons.chevron_right_rounded,
-                  size: 18, color: FnColors.labelAssistive),
+              Text(
+                card.deltaText,
+                style: const TextStyle(
+                  fontFamily: FnDs.font,
+                  fontSize: FnDs.fontXl,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: -0.5,
+                  color: FnDs.negative,
+                ),
+              ),
+              const SizedBox(width: FnDs.gapS),
+              if (card.fromTo != null)
+                // 🔴 Flexible 로 감싼다. `2,520,000원 → 3,050,000원` 처럼
+                //    긴 금액이 오면 좁은 폰에서 Row 가 넘쳐 줄무늬가 뜬다.
+                Flexible(
+                  child: Text(
+                    card.fromTo!,
+                    textAlign: TextAlign.right,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontFamily: FnDs.font,
+                      fontSize: FnDs.fontS,
+                      fontWeight: FontWeight.w700,
+                      color: FnDs.title,
+                    ),
+                  ),
+                ),
             ],
           ),
-          const SizedBox(height: 8),
-          Text(preview, style: _t15.copyWith(height: 1.45)),
-          const SizedBox(height: 6),
+          // 절감 여지가 없는 카드(지출)에는 이 줄을 아예 안 그린다.
+          if (card.saving > 0) ...[
+            const SizedBox(height: FnDs.gapS),
+            const Divider(height: 1, thickness: 1, color: FnDs.hair),
+            const SizedBox(height: FnDs.gapS),
+            Text(
+              '절감 여지 ${InsightFmt.wonFloor(card.saving)}',
+              style: const TextStyle(
+                fontFamily: FnDs.font,
+                fontSize: FnDs.fontS,
+                fontWeight: FontWeight.w700,
+                color: FnDs.coral,
+              ),
+            ),
+          ],
+          const SizedBox(height: FnDs.gapS),
           Text(
-            // 근거 기간과 성격(예측 아님)을 한 줄로 밝힌다.
-            '최근 2년 양재 경매에서 매년 반복된 흐름이에요',
-            style: _t13.copyWith(
-                fontSize: 12, color: FnColors.labelAssistive, height: 1.45),
+            card.body,
+            style: const TextStyle(
+              fontFamily: FnDs.font,
+              fontSize: FnDs.fontS,
+              height: 1.5,
+              color: FnDs.body,
+            ),
           ),
+          // 🔴 카드 아래 바로가기 줄은 지금은 그리지 않는다.
+          //    사장님 지시(#180). 연결할 화면이 정해지면 되살린다.
         ],
       ),
     );
   }
+}
 
-  static FnBadgeColor _badgeColor(String c) => switch (c) {
-        'cautionary' => FnBadgeColor.cautionary,
-        'accent' => FnBadgeColor.accent,
-        'positive' => FnBadgeColor.positive,
-        _ => FnBadgeColor.negative,
-      };
+/// 보여줄 게 없을 때.
+class _InsightEmpty extends StatelessWidget {
+  const _InsightEmpty({required this.text});
 
-  static void _go(BuildContext context, FnInsightTarget t) {
-    final page = switch (t) {
-      FnInsightTarget.price => const PriceDsScreen(),
-      FnInsightTarget.compare => const CompareDsScreen(),
-      FnInsightTarget.donut => const DonutDsScreen(),
-      FnInsightTarget.trend => const TrendDsScreen(),
-    };
-    Navigator.of(context).push(MaterialPageRoute(builder: (_) => page));
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(
+          horizontal: FnDs.cardPad, vertical: 32),
+      decoration: FnDs.cardDeco(),
+      child: Text(
+        text,
+        textAlign: TextAlign.center,
+        style: const TextStyle(
+          fontFamily: FnDs.font,
+          fontSize: FnDs.fontS,
+          height: 1.5,
+          color: FnDs.sub,
+        ),
+      ),
+    );
   }
 }
 
