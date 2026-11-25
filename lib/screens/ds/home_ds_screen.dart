@@ -17,6 +17,7 @@ import '../../services/monthly_insight.dart';
 import '../../services/home_tips.dart';
 import 'insight_ds_screens.dart';
 import 'purchase_memo_ds_screen.dart';
+import 'saved_lists_ds_screen.dart';
 
 /// 홈 화면 — #135 시안(PNG) 기준으로 톤앤톤/컬러를 다시 맞춘 버전.
 ///
@@ -647,8 +648,12 @@ class _HomeDsScreenState extends State<HomeDsScreen> {
       case 'memo':
         // 🔴 #185 에서 만들었다. 어느 리스트에 적을지는 화면이 고른다.
         _push(const PurchaseMemoDsScreen());
+      case 'list':
+        // 🔴 #190 에서 이었다. 전에는 가이드 목록으로 떨어져서, 칩을 눌러도
+        //    저장된 리스트가 안 보였다. 거기서 '시장에서 열기' 로 메모장을
+        //    열어 체크한다.
+        _push(const SavedListsDsScreen());
       default:
-        // 저장된 사입 리스트는 아직 화면이 없다. (사입 리스트 5단계)
         _push(const GuideDsScreen());
     }
   }

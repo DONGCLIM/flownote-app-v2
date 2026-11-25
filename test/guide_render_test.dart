@@ -1099,7 +1099,9 @@ void main() {
       // 🔴 #189 에서 빈 안내 대신 **메모 줄 미리보기**를 보여 준다.
       expect(find.text('화병'), findsOneWidget);
       expect(find.text('리본'), findsOneWidget);
-      expect(find.text('메모장 열기'), findsOneWidget);
+      // 🔴 #190 에서 '메모장 열기' 가 '시장에서 열기' 로 통일됐다.
+      expect(find.text('메모장 열기'), findsNothing);
+      expect(find.text('시장에서 열기'), findsOneWidget);
       // 금액이 0원으로 적히면 안 된다. 비워야 한다.
       expect(find.text('0원'), findsNothing);
       // 합계·평균은 그대로.
@@ -1752,7 +1754,9 @@ void main() {
       // 나머지는 숫자로 알린다.
       expect(find.text('외 2줄'), findsOneWidget);
 
-      expect(find.text('메모장 열기'), findsOneWidget);
+      // 🔴 #190 에서 '시장에서 열기' 로 통일됐다.
+      expect(find.text('시장에서 열기'), findsOneWidget);
+      expect(find.text('메모장 열기'), findsNothing);
       // 메모 리스트에는 '이 리스트로 새로 만들기' 가 없다 (복사할 품목이 없다).
       expect(find.text('이 리스트로 새로 만들기'), findsNothing);
     });
@@ -1768,6 +1772,8 @@ void main() {
       );
       expect(find.text('장미(레드)'), findsOneWidget);
       expect(find.text('이 리스트로 새로 만들기'), findsOneWidget);
+      // 🔴 #190 — 예산 검토로 만든 리스트도 시장에서 열 수 있다.
+      expect(find.text('시장에서 열기'), findsOneWidget);
       expect(find.text('메모장 열기'), findsNothing);
     });
 
@@ -1788,6 +1794,233 @@ void main() {
     test('🔴 "PC↔폰 동기화 확인 필요" 가 문서에 적혀 있다', () {
       final doc = _read('docs/TODO_기능연결.md');
       expect(doc.contains('PC↔폰 동기화 확인 필요'), isTrue);
+    });
+  });
+
+
+  // ────────────────────────────────────────────────────────────
+  // #190 — 시장 체크 연결
+  // ────────────────────────────────────────────────────────────
+
+  group('시장 체크 — 셈 (#190)', () {
+    test('🔴 체크 개수는 품목 + 메모 줄을 합친다', () {
+      // 품목 3개(1개 체크) + 메모 2줄(1줄 체크) = 2/5
+      final l = plist('a', DateTime(2026, 7, 24), items: [
+        pi('장미(레드)', 20, 8000)..checked = true,
+        pi('거베라', 15, 6000),
+        pi('수국', 5, 2400, unit: '개'),
+      ], memo: '[x] 화병\n[ ] 리본');
+
+      expect(l.checkTotal, 5);
+      expect(l.checkDone, 2);
+      expect(l.checkLabel, '2/5');
+    });
+
+    test('🔴 품목만 있어도, 메모만 있어도 센다', () {
+      final onlyItems = plist('b', DateTime(2026, 7, 24),
+          items: [pi('장미', 10, 8000)..checked = true]);
+      expect(onlyItems.checkLabel, '1/1');
+
+      final onlyMemo =
+          plist('c', DateTime(2026, 7, 24), memo: '[ ] 가\n[ ] 나');
+      expect(onlyMemo.checkLabel, '0/2');
+    });
+
+    test('🔴 셀 게 없으면 빈 글자다 (0/0 이라고 안 쓴다)', () {
+      expect(plist('d', DateTime(2026, 7, 24)).checkLabel, '');
+    });
+
+    test('🔴 빈 메모 줄은 세지 않는다', () {
+      final l = plist('e', DateTime(2026, 7, 24), memo: '[ ] 가\n[ ] \n[ ] 나');
+      expect(l.checkTotal, 2);
+    });
+  });
+
+  group('저장된 사입 리스트 — 시장에서 열기 (#190)', () {
+    testWidgets('🔴 예산 리스트도 "시장에서 열기" 가 있다', (t) async {
+      await pumpTallBudget(
+        t,
+        SavedListsDsScreen(openId: 'a', lists: [
+          plist('a', DateTime(2026, 7, 24), purpose: '주말 부케', items: [
+            pi('장미(레드)', 20, 8000),
+            pi('거베라', 15, 6000),
+          ]),
+        ]),
+      );
+      // 🔴 예산 검토로 만든 리스트도 시장에서 체크할 수 있어야 한다.
+      expect(find.text('시장에서 열기'), findsOneWidget);
+      // 기존 버튼도 그대로.
+      expect(find.text('이 리스트로 새로 만들기'), findsOneWidget);
+      expect(find.text('삭제'), findsOneWidget);
+    });
+
+    testWidgets('🔴 메모 리스트도 같은 버튼이다 (이름 통일)', (t) async {
+      await pumpTallBudget(
+        t,
+        SavedListsDsScreen(
+          openId: 'm',
+          lists: [plist('m', DateTime(2026, 7, 24), memo: '[ ] 화병')],
+        ),
+      );
+      expect(find.text('시장에서 열기'), findsOneWidget);
+      expect(find.text('메모장 열기'), findsNothing);
+    });
+
+    testWidgets('🔴 카드에 "○/○ 구매" 가 보인다', (t) async {
+      await pumpTallBudget(
+        t,
+        SavedListsDsScreen(openId: 'none', lists: [
+          plist('a', DateTime(2026, 7, 24), purpose: '주말 부케', items: [
+            pi('장미(레드)', 20, 8000)..checked = true,
+            pi('거베라', 15, 6000),
+          ], memo: '[ ] 화병'),
+        ]),
+      );
+      // 품목 2(1체크) + 메모 1(0체크) = 1/3
+      expect(find.text('1/3 구매'), findsOneWidget);
+    });
+
+    testWidgets('🔴 셀 게 없으면 "구매" 줄을 안 그린다', (t) async {
+      await pumpTallBudget(
+        t,
+        SavedListsDsScreen(
+          openId: 'none',
+          lists: [plist('a', DateTime(2026, 7, 24), purpose: '빈 것')],
+        ),
+      );
+      expect(find.textContaining('구매'), findsNothing);
+    });
+
+    test('🔴 그 리스트의 메모장을 연다 (새 메모장이 아니다)', () {
+      final src = _read('lib/screens/ds/saved_lists_ds_screen.dart');
+      // 🔴 `listId` 를 안 넘기면 임시 작성분이 열려 품목이 안 보인다.
+      expect(src.contains('PurchaseMemoDsScreen(listId: e.id)'), isTrue);
+    });
+  });
+
+  group('저장된 리스트의 메모장 — 사야 할 품목 (#190)', () {
+    /// 품목 2개 + 메모 1줄이 든 리스트를 그대로 띄운다.
+    Widget memoFor(List<PurchaseItem> items, {String memo = ''}) =>
+        PurchaseMemoDsScreen(
+          listId: 'x',
+          list: plist('x', DateTime(2026, 7, 24),
+              purpose: '주말 부케', items: items, memo: memo),
+        );
+
+    testWidgets('🔴 품목이 품목명·수량·단위로 보인다', (t) async {
+      await pumpTall(
+        t,
+        memoFor([
+          pi('장미(레드)', 20, 8000),
+          pi('수국', 5, 2400, unit: '개'),
+        ]),
+      );
+
+      expect(find.text('사야 할 품목'), findsOneWidget);
+      expect(find.text('장미(레드)'), findsOneWidget);
+      expect(find.text('20단'), findsOneWidget);
+      expect(find.text('수국'), findsOneWidget);
+      // 🔴 단위는 영수증 것을 따른다. 늘 '단' 이면 화분도 20단이 된다.
+      expect(find.text('5개'), findsOneWidget);
+    });
+
+    testWidgets('🔴 체크하면 코랄 ✓ + 가운데줄, 그 품목에 저장된다', (t) async {
+      final list = plist('x', DateTime(2026, 7, 24),
+          items: [pi('장미(레드)', 20, 8000)]);
+      await pumpTall(
+          t, PurchaseMemoDsScreen(listId: 'x', list: list));
+
+      expect(find.byIcon(Icons.check_rounded), findsNothing);
+      expect(list.items.first.checked, isFalse);
+
+      await t.tap(find.text('장미(레드)'));
+      await t.pump(const Duration(milliseconds: 300));
+
+      expect(find.byIcon(Icons.check_rounded), findsOneWidget);
+      // 🔴 체크는 **그 품목에** 담긴다. 메모 글로 옮겨 적지 않는다.
+      expect(list.items.first.checked, isTrue);
+
+      final name = t.widget<Text>(find.text('장미(레드)'));
+      expect(name.style!.decoration, TextDecoration.lineThrough);
+      expect(name.style!.color, FnDs.sub);
+
+      // 다시 누르면 풀린다.
+      await t.tap(find.text('장미(레드)'));
+      await t.pump(const Duration(milliseconds: 300));
+      expect(list.items.first.checked, isFalse);
+    });
+
+    testWidgets('🔴 품목이 없는 메모 리스트는 이 목록을 숨긴다', (t) async {
+      await pumpTall(t, memoFor(const [], memo: '[ ] 화병'));
+      expect(find.text('사야 할 품목'), findsNothing);
+      // 자유 메모는 그대로 보인다.
+      expect(find.text('화병'), findsOneWidget);
+    });
+
+    testWidgets('🔴 품목 아래에 자유 메모 줄이 이어진다', (t) async {
+      await pumpTall(
+          t, memoFor([pi('장미(레드)', 20, 8000)], memo: '[ ] 화병도 사기'));
+      expect(find.text('사야 할 품목'), findsOneWidget);
+      expect(find.text('장미(레드)'), findsOneWidget);
+      // 자유 메모는 글칸이라 TextField 로 들어 있다.
+      expect(find.text('화병도 사기'), findsOneWidget);
+    });
+
+    testWidgets('🔴 탭 개수가 품목 + 메모 줄 합계다', (t) async {
+      await pumpTall(
+        t,
+        memoFor([
+          pi('장미(레드)', 20, 8000)..checked = true,
+          pi('거베라', 15, 6000),
+          pi('수국', 5, 2400, unit: '개'),
+        ], memo: '[x] 화병\n[ ] 리본'),
+      );
+      // 품목 3(1체크) + 메모 2(1체크) = 2/5
+      expect(find.text('메모 2/5'), findsOneWidget);
+    });
+
+    testWidgets('🔴 품목을 체크하면 탭 숫자도 같이 오른다', (t) async {
+      await pumpTall(
+          t, memoFor([pi('장미(레드)', 20, 8000), pi('거베라', 15, 6000)]));
+      expect(find.text('메모 0/2'), findsOneWidget);
+
+      await t.tap(find.text('장미(레드)'));
+      await t.pump(const Duration(milliseconds: 300));
+      expect(find.text('메모 1/2'), findsOneWidget);
+    });
+
+    test('🔴 품목을 복사하지 않고 리스트 것을 그대로 가리킨다', () {
+      // 🔴 복사하면 예산 검토에서 품목을 고쳐도 메모장이 옛 품목을 든다.
+      //    사장님 지시(#190): "예산 검토에서 품목을 고치면 여기도 같이 바뀜".
+      final src = _read('lib/screens/ds/purchase_memo_ds_screen.dart');
+      expect(src.contains('List<PurchaseItem> get _items => _list?.items'),
+          isTrue);
+      expect(src.contains('_items = _list!.items.map('), isFalse);
+    });
+
+    test('🔴 새 메모장(임시 작성분) 길은 그대로다', () {
+      final src = _read('lib/screens/ds/purchase_memo_ds_screen.dart');
+      expect(src.contains('svc.memoDraft()'), isTrue);
+      expect(src.contains('clearMemoDraft()'), isTrue);
+      // 품목이 없으면 머리를 숨기므로 빈 메모장 모양은 안 바뀐다.
+      expect(src.contains('bool get _showItems => _items.isNotEmpty;'), isTrue);
+    });
+  });
+
+  group('저장된 사입 리스트 — 입구 (#190)', () {
+    test('🔴 가이드 카드와 홈 칩이 저장된 사입 리스트로 간다', () {
+      final guide = _read('lib/screens/ds/insight_ds_screens.dart');
+      expect(guide.contains("'saved' => const SavedListsDsScreen()"), isTrue);
+
+      // 🔴 홈 바로가기 칩 '사입 리스트' — 전에는 가이드 목록으로 떨어졌다.
+      final home = _read('lib/screens/ds/home_ds_screen.dart');
+      expect(home.contains("case 'list':"), isTrue);
+      expect(home.contains('const SavedListsDsScreen()'), isTrue);
+    });
+
+    test('🔴 사입 리스트 진행 상태가 문서에 적혀 있다', () {
+      final doc = _read('docs/TODO_기능연결.md');
+      expect(doc.contains('시장 체크 연결'), isTrue);
     });
   });
 

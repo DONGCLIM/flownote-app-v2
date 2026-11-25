@@ -316,6 +316,15 @@ class _SavedListCard extends StatelessWidget {
     return purpose.isEmpty ? items : '$purpose · $items';
   }
 
+  /// 셋째 줄 — `2/5 구매`. 시장에서 어디까지 샀는지. (#190)
+  ///
+  /// 🔴 품목 + 메모 줄을 **합쳐서** 센다. 모델의 [PurchaseList.checkLabel]
+  ///    과 같은 규칙이라 메모장 탭의 숫자와 늘 같다.
+  String get _buyLabel {
+    final l = list.checkLabel;
+    return l.isEmpty ? '' : '$l 구매';
+  }
+
   @override
   Widget build(BuildContext context) {
     return Container(
@@ -346,6 +355,18 @@ class _SavedListCard extends StatelessWidget {
                       ),
                       const SizedBox(height: 2),
                       Text(_sub, style: FnDs.tsSub),
+                      if (_buyLabel.isNotEmpty) ...[
+                        const SizedBox(height: 2),
+                        Text(
+                          _buyLabel,
+                          style: const TextStyle(
+                            fontFamily: FnDs.font,
+                            fontSize: FnDs.fontXs,
+                            fontWeight: FontWeight.w700,
+                            color: FnDs.coral,
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                 ),
@@ -373,6 +394,11 @@ class _SavedListCard extends StatelessWidget {
             const SizedBox(height: FnDs.gapS),
             const Divider(height: 1, thickness: 1, color: FnDs.hair),
             const SizedBox(height: FnDs.gapS),
+            // 🔴 **모든** 리스트 위쪽에 둔다(#190). 예산 검토로 만든
+            //    리스트도 시장에서 메모장으로 열어 체크할 수 있어야 한다.
+            //    사장님 지시: 메모 리스트의 '메모장 열기' 도 이걸로 통일.
+            FnOutlineButton(label: '시장에서 열기', onTap: onMemo),
+            const SizedBox(height: FnDs.gapS),
             if (list.isMemoOnly) ...[
               // 🔴 메모로 만든 리스트. 품목 대신 메모 줄을 보여 준다. (#189)
               if (_memoPreview.isEmpty)
@@ -390,8 +416,6 @@ class _SavedListCard extends StatelessWidget {
                   style: FnDs.tsSub,
                 ),
               ],
-              const SizedBox(height: FnDs.gapM),
-              FnOutlineButton(label: '메모장 열기', onTap: onMemo),
             ] else ...[
               for (var i = 0; i < list.items.length; i++) ...[
                 if (i > 0) const SizedBox(height: FnDs.gapS),

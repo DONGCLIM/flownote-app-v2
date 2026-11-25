@@ -102,6 +102,21 @@ class PurchaseList extends HiveObject {
   int get memoLineCount =>
       MemoText.total(MemoText.parse(memo));
 
+  /// 시장에서 체크할 것이 모두 몇 개인가 — **품목 + 메모 줄**. (#190)
+  ///
+  /// 🔴 둘을 합치는 이유: 사장님이 시장에서 보는 것은 "살 것 몇 개 중
+  ///    몇 개 샀나" 하나다. 예산 검토에서 적은 품목과 메모장에 적은 줄을
+  ///    따로 세면 `3/5` 와 `1/2` 두 숫자를 머리로 더해야 한다.
+  int get checkTotal => items.length + memoLineCount;
+
+  /// 그중 체크한 것. 품목은 [PurchaseItem.checked], 메모는 `[x]` 표시.
+  int get checkDone =>
+      items.where((e) => e.checked).length +
+      MemoText.done(MemoText.parse(memo));
+
+  /// 카드와 탭에 적는 `3/5`. 셀 게 없으면 빈 글자.
+  String get checkLabel => checkTotal == 0 ? '' : '$checkDone/$checkTotal';
+
   /// 장바구니에 남은 예산 — 한도에서 **이미 쓴 돈**을 뺀다.
   double get liveRemaining => budgetCap - spentTotal;
 

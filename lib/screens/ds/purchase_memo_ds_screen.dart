@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import '../../design/fn_feedback.dart';
 import '../../design/fn_shell.dart';
 import '../../models/purchase_list_model.dart';
+import '../../services/cost_calc.dart';
 import '../../services/purchase_list_service.dart';
 import '../../theme/fn_ds.dart';
 import '../../widgets/fn_inquiry_parts.dart';
@@ -51,13 +52,19 @@ import 'saved_lists_ds_screen.dart';
 ///    앱을 꺼도 임시 작성분이 그대로 남는다. 버튼을 누를 때만
 ///    예산 검토와 **같은** `saveNow()` 를 쓴다.
 class PurchaseMemoDsScreen extends StatefulWidget {
-  const PurchaseMemoDsScreen({super.key, this.listId});
+  const PurchaseMemoDsScreen({super.key, this.listId, this.list});
 
   /// 어느 사입 리스트를 펼칠지.
   ///
   /// 🔴 비워 두면 **임시 작성분**을 연다(새 메모장). 저장된 사입 리스트에서
   ///    열면 그 리스트의 id 가 들어온다. 둘은 섞이지 않는다. (#189)
   final String? listId;
+
+  /// 미리 넣어 줄 리스트. 비워 두면 저장된 것에서 찾는다.
+  ///
+  /// 🔴 테스트에서 Hive 없이 띄우려고 열어 두었다. (저장된 사입 리스트
+  ///    화면의 `lists` 와 같은 방식) 앱에서는 쓰지 않는다.
+  final PurchaseList? list;
 
   @override
   State<PurchaseMemoDsScreen> createState() => _PurchaseMemoDsScreenState();
@@ -107,6 +114,8 @@ class _PurchaseMemoDsScreenState extends State<PurchaseMemoDsScreen> {
   /// 🔴 못 고르는 경우를 남기지 않는다. 메모장은 시장에서 급히 여는
   ///    화면이라, "리스트를 찾지 못했어요" 를 띄우면 아무것도 못 적는다.
   PurchaseList? _resolveList() {
+    final given = widget.list;
+    if (given != null) return given;      // 테스트에서 넣어 준 것
     try {
       final svc = PurchaseListService.instance;
       final given = widget.listId;
@@ -247,6 +256,27 @@ class _PurchaseMemoDsScreenState extends State<PurchaseMemoDsScreen> {
     }
   }
 
+  /// 시장에서 체크할 품목 줄. 예산 검토에서 적은 것이 그대로 온다. (#190)
+  ///
+  /// 🔴 **복사해 두지 않는다.** `_list.items` 를 그대로 가리킨다. 복사하면
+  ///    예산 검토에서 품목을 고쳤을 때 메모장이 옛 품목을 들고 있게 된다.
+  ///    사장님 지시(#190): "예산 검토에서 품목을 고치면 여기도 같이 바뀜".
+  List<PurchaseItem> get _items => _list?.items ?? const <PurchaseItem>[];
+
+  /// 품목 목록을 보여 줄까. 품목이 없는 메모 리스트는 숨긴다.
+  bool get _showItems => _items.isNotEmpty;
+
+  /// 품목을 샀다고 체크했다.
+  ///
+  /// 🔴 체크 상태는 **그 품목에** 담는다(`PurchaseItem.checked`). 메모 글에
+  ///    옮겨 적지 않는다 — 예산 검토가 품목을 고치면 글과 어긋난다.
+  void _toggleItem(int i) {
+    final list = _items;
+    if (i >= list.length) return;
+    setState(() => list[i].checked = !list[i].checked);
+    _autoSave();
+  }
+
   // ── 메모 탭 ──────────────────────────────────────────────────
 
   /// 엔터를 쳤다. 그 아래에 줄을 하나 더한다.
@@ -315,7 +345,14 @@ class _PurchaseMemoDsScreenState extends State<PurchaseMemoDsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final counter = MemoText.counter([for (final r in _rows) r.snapshot]);
+    // 🔴 품목과 메모 줄을 **합쳐서** 센다(#190). 사장님 지시:
+    //    "메모 탭 이름 옆 개수는 품목 + 메모 줄 합쳐서 3/5".
+    //    모델(`checkLabel`)과 같은 규칙이라 카드와 탭 숫자가 어긋나지 않는다.
+    final memoLines = [for (final r in _rows) r.snapshot];
+    final total = _items.length + MemoText.total(memoLines);
+    final done = _items.where((e) => e.checked).length +
+        MemoText.done(memoLines);
+    final counter = total == 0 ? '' : '$done/$total';
     final ready = _hasContent;
 
     return FnShell(
@@ -386,6 +423,11 @@ class _PurchaseMemoDsScreenState extends State<PurchaseMemoDsScreen> {
   }
 
   Widget _memoCard() {
+    // 🔴 품목 목록 + 자유 메모를 **한 스크롤**에 담는다(#190). 카드를 둘로
+    //    나누면 시장에서 한 화면에 안 들어와 번갈아 스크롤해야 한다.
+    final items = _items;
+    final head = _showItems ? items.length + 1 : 0;
+
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.fromLTRB(
@@ -393,13 +435,26 @@ class _PurchaseMemoDsScreenState extends State<PurchaseMemoDsScreen> {
       decoration: FnDs.cardDeco(),
       child: ListView.builder(
         padding: EdgeInsets.zero,
-        itemCount: _rows.length,
-        itemBuilder: (_, i) => _MemoRowView(
-          row: _rows[i],
-          onToggle: () => _toggle(i),
-          onEnter: () => _addLineAfter(i),
-          onBackspaceEmpty: () => _removeLine(i),
-        ),
+        itemCount: head + _rows.length,
+        itemBuilder: (_, i) {
+          if (_showItems) {
+            if (i == 0) return const _ItemsHead();
+            if (i <= items.length) {
+              final at = i - 1;
+              return _ItemCheckRow(
+                item: items[at],
+                onToggle: () => _toggleItem(at),
+              );
+            }
+          }
+          final at = i - head;
+          return _MemoRowView(
+            row: _rows[at],
+            onToggle: () => _toggle(at),
+            onEnter: () => _addLineAfter(at),
+            onBackspaceEmpty: () => _removeLine(at),
+          );
+        },
       ),
     );
   }
@@ -595,6 +650,106 @@ class _MemoRow {
       ..removeListener(onChanged)
       ..dispose();
     focus.dispose();
+  }
+}
+
+/// 메모 탭 맨 위의 `사야 할 품목` 머리. (#190)
+class _ItemsHead extends StatelessWidget {
+  const _ItemsHead();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Padding(
+      padding: EdgeInsets.fromLTRB(8, 0, 8, 8),
+      child: Text('사야 할 품목', style: FnDs.tsSection),
+    );
+  }
+}
+
+/// 예산 검토에서 적은 품목 한 줄 — 체크칸 + 이름 + 수량·단위. (#190)
+///
+/// 🔴 글칸이 아니라 **읽기 전용**이다. 품목은 예산 검토에서 고친다.
+///    여기서 고치면 같은 품목이 두 곳에서 달라져 어느 쪽이 맞는지 모른다.
+class _ItemCheckRow extends StatelessWidget {
+  const _ItemCheckRow({required this.item, required this.onToggle});
+
+  final PurchaseItem item;
+  final VoidCallback onToggle;
+
+  @override
+  Widget build(BuildContext context) {
+    final done = item.checked;
+    final unit = item.unit.trim().isEmpty ? '단' : item.unit.trim();
+    final qty = item.qty <= 0 ? '' : '${CostCalc.comma(item.qty)}$unit';
+
+    return Semantics(
+      button: true,
+      checked: done,
+      label: done ? '구매 완료' : '구매 전',
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: onToggle,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 1),
+          child: Row(
+            children: [
+              // 체크칸 — 자유 메모 줄과 **같은 모양**이다. (#185 과 맞춤)
+              SizedBox(
+                width: 36,
+                height: 36,
+                child: Center(
+                  child: Container(
+                    width: 20,
+                    height: 20,
+                    decoration: BoxDecoration(
+                      color: done ? FnDs.coral : Colors.transparent,
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: done ? FnDs.coral : FnDs.line,
+                        width: 1.5,
+                      ),
+                    ),
+                    child: done
+                        ? const Icon(Icons.check_rounded,
+                            size: 14, color: FnDs.onCoral)
+                        : null,
+                  ),
+                ),
+              ),
+              Expanded(
+                child: Text(
+                  item.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontFamily: FnDs.font,
+                    fontSize: FnDs.fontM,
+                    color: done ? FnDs.sub : FnDs.title,
+                    decoration: done ? TextDecoration.lineThrough : null,
+                    decorationColor: FnDs.sub,
+                  ),
+                ),
+              ),
+              if (qty.isNotEmpty) ...[
+                const SizedBox(width: FnDs.gapXs),
+                Text(
+                  qty,
+                  style: TextStyle(
+                    fontFamily: FnDs.font,
+                    fontSize: FnDs.fontS,
+                    fontWeight: FontWeight.w600,
+                    color: done ? FnDs.sub : FnDs.body,
+                    decoration: done ? TextDecoration.lineThrough : null,
+                    decorationColor: FnDs.sub,
+                  ),
+                ),
+              ],
+              const SizedBox(width: 8),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }
 
