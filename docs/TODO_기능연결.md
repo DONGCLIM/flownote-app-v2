@@ -145,9 +145,40 @@ flutter test test/<그_화면>_test.dart     # 그 화면 것만
 |---|---|---|
 | ① 보안 규칙 점검 | 익명 사용자 공용 쓰기 차단 | ✅ 완료 (`0d33d2d`, 배포됨) |
 | ② 첫 화면·게스트 계정 | `signInAnonymously` + `GuestService` | ✅ 완료 (`8a05f72`, **꺼둠**) |
-| ③ 제한·잠금 | 스캔 5장·PDF 3회·잠긴 화면 바텀시트 | ⬜ **남음** |
+| ②-b 규칙 보정 | 게스트 사진 저장 허용 · PDF 카운터 제거 | ✅ 완료 (#193, 배포됨) |
+| ③ 제한·잠금 | 스캔 5장·PDF 저장 시 안내·잠긴 화면 바텀시트 | ⬜ **남음** |
 | ④ 프로필·가입 유도 | 체험 배너·진행바·🔒 표시·남은 장수 | ⬜ **남음** |
 | ⑤ 가입 전환·Analytics | `linkWithCredential` + 이벤트 전송 | ⬜ **남음** |
+
+#### ②-b 에서 확인하고 고친 것 (#193)
+
+🔴 **게스트도 영수증 사진 저장이 필요하다 — 웹에서만.**
+`receipt_image_upload_web.dart` 가 `users/<uid>/receipts/*.jpg` 에 올린다.
+브라우저에서 고른 사진의 `blob:` URL 은 **탭이 닫히면 죽어서**, 안 올리면
+체험으로 찍은 영수증이 새로고침 한 번에 회색 칸이 된다.
+안드로이드·iOS 는 앱 문서 폴더에 두고 올리지 않는다(`..._stub.dart`).
+
+| 규칙 | 전 | 후 |
+|---|---|---|
+| storage `users/{uid}/**` write | 주인만 (크기 제한 없음) | 주인 + **게스트는 5MB·이미지만** |
+| firestore `usage` | `scans` + `pdfs` | **`scans` 만** (PDF 안 셈) |
+
+최상위 `receipts/**` 는 **학습용 업로드**라 회원 전용 그대로 둔다 —
+체험 사진과 다른 경로다.
+PDF 는 사장님 지시대로 **세지 않는다.** 미리보기는 몇 번이든 열 수 있고,
+저장·공유를 누르는 순간에만 가입 안내를 띄운다(③에서 붙인다).
+
+#### 🔴 ③ 에서 이어서 할 일 — 붙일 자리를 찾아 두었다
+
+| 할 일 | 붙일 자리 |
+|---|---|
+| PDF 저장·공유 → 가입 안내 | `settle_preview_ds_screen.dart` 의 `_openMethodSheet()` 앞 |
+| 잠긴 화면 → 가입 안내 | `home_ds_screen.dart` 의 `_push(Widget page)` (한 곳으로 모여 있다) |
+| 스캔 5장 한도·첫 스캔 안내 | `scan_ds_screen.dart` (저장 성공 지점에서 `GuestService.countScan()`) |
+| 가입 안내 바텀시트 | `showFnDsBottomSheet` (`fn_controls_ds.dart`) 로 새 공용 조각 하나 |
+
+`GuestService` 에 `canScan`·`canExportPdf`·`isFirstScan`·`scansLeft` 가
+이미 있다. 화면에서 그것만 보면 된다.
 
 #### ① 에서 찾은 "로그인만 하면 쓰기 가능" 이던 곳 (전부 막음)
 

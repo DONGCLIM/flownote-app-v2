@@ -69,10 +69,28 @@ service firebase.storage {
     }
 
     // ── 사용자별 영수증 이미지 백업 ──────────────────────────
-    //   🔴 게스트도 **자기 폴더**에는 쓸 수 있다(#192). 체험으로 찍은
-    //      영수증이 여기 담긴다. 남의 uid 아래는 여전히 못 본다.
+    //   경로: users/<uid>/receipts/r_<id>_<시각>.jpg
+    //   (`receipt_image_upload_web.dart` 가 쓴다 — **웹에서만**.
+    //    안드로이드/iOS 는 앱 문서 폴더에 두고 올리지 않는다)
+    //
+    //   🔴 게스트도 **자기 폴더**에는 쓸 수 있다(#192·#193). 웹에서 고른
+    //      사진의 `blob:` URL 은 탭이 닫히면 죽어서, 여기 안 올리면
+    //      체험으로 찍은 영수증이 새로고침 한 번에 회색 칸이 된다.
+    //      남의 uid 아래는 여전히 못 본다.
+    //
+    //   🔴 게스트에게는 **파일 하나 5MB 이하·이미지만** 허용한다(#193).
+    //      가입자는 예전처럼 제한이 없다. 익명 계정은 얼마든지 새로
+    //      만들 수 있어서, 크기를 안 막으면 저장소를 채울 수 있다.
     match /users/{uid}/{allPaths=**} {
-      allow read, write: if isOwnerUid(uid);
+      allow read: if isOwnerUid(uid);
+      allow write: if isOwnerUid(uid)
+                   && (
+                     isMember()
+                     || (
+                       request.resource.size < 5 * 1024 * 1024
+                       && request.resource.contentType.matches('image/.*')
+                     )
+                   );
     }
 
     // ── 문의 첨부 사진 ───────────────────────────────────────

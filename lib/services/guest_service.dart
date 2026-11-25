@@ -45,10 +45,13 @@ class GuestService extends ChangeNotifier {
   ///    예전처럼 인트로 → 로그인으로 간다.
   static const bool enabled = false;
 
-  /// 체험 한도. **`firestore.rules` 의 `guestScanMax()`·`guestPdfMax()` 와
-  /// 같은 값**이어야 한다. 한쪽만 바꾸면 앱은 통과시키는데 서버가 거부한다.
+  /// 체험 한도. **`firestore.rules` 의 `guestScanMax()` 와 같은 값**이어야
+  /// 한다. 한쪽만 바꾸면 앱은 통과시키는데 서버가 거부한다.
   static const int scanMax = 5;
-  static const int pdfMax = 3;
+
+  /// 🔴 PDF 는 **세지 않는다**(#193). 사장님 지시가 바뀌었다 —
+  ///    미리보기는 몇 번이든 열 수 있고, **저장·공유를 누르는 순간**
+  ///    가입 안내를 띄운다. 셀 것이 없으니 칸도 두지 않았다.
 
   /// 체험 영수증을 며칠 뒤에 지우는가. 안내 문구와 2차 작업이 같이 쓴다.
   static const int keepDays = 30;
@@ -57,14 +60,12 @@ class GuestService extends ChangeNotifier {
   static const String _usageDoc = 'counters';
 
   int _scans = 0;
-  int _pdfs = 0;
   bool _loaded = false;
 
   /// 첫 스캔 전 안내에 동의했는가.
   bool _agreed = false;
 
   int get scans => _scans;
-  int get pdfs => _pdfs;
   bool get isLoaded => _loaded;
   bool get agreedToTrial => _agreed;
 
@@ -75,13 +76,18 @@ class GuestService extends ChangeNotifier {
   bool get isGuest => AuthService.instance.currentUser?.isAnonymous ?? false;
 
   int get scansLeft => (scanMax - _scans).clamp(0, scanMax);
-  int get pdfsLeft => (pdfMax - _pdfs).clamp(0, pdfMax);
 
   /// 영수증을 더 찍을 수 있는가. 가입자는 늘 true.
   bool get canScan => !isGuest || _scans < scanMax;
 
-  /// PDF 를 더 뽑을 수 있는가.
-  bool get canExportPdf => !isGuest || _pdfs < pdfMax;
+  /// PDF 를 **저장·공유**할 수 있는가. 게스트는 못 한다(#193).
+  ///
+  /// 🔴 미리보기는 막지 않는다. 뭘 받게 되는지 봐야 가입할 마음이 든다.
+  ///    버튼을 누르는 순간에만 가입 안내를 띄운다.
+  bool get canExportPdf => !isGuest;
+
+  /// 체험에서 첫 영수증인가. 첫 스캔 안내를 한 번만 띄우는 데 쓴다.
+  bool get isFirstScan => isGuest && _scans == 0;
 
   // ── 게스트 계정 ──────────────────────────────────────────────
 
@@ -129,7 +135,6 @@ class GuestService extends ChangeNotifier {
       final snap = await ref.get();
       final m = snap.data();
       _scans = (m?['scans'] as num?)?.toInt() ?? 0;
-      _pdfs = (m?['pdfs'] as num?)?.toInt() ?? 0;
       _agreed = m?['trialAgreed'] as bool? ?? false;
       _loaded = true;
       notifyListeners();
@@ -146,22 +151,12 @@ class GuestService extends ChangeNotifier {
   ///    "실패·다시 찍기는 세지 않음". 연속 촬영도 장당으로 한 번씩.
   ///
   /// 돌려주는 값은 올렸는가다. 한도를 넘었으면 false.
-  Future<bool> countScan() => _bump('scans', scanMax);
-
-  /// PDF 한 번을 썼다고 올린다.
-  Future<bool> countPdf() => _bump('pdfs', pdfMax);
-
-  Future<bool> _bump(String key, int max) async {
+  Future<bool> countScan() async {
     if (!isGuest) return true;              // 가입자는 안 센다
-    final now = key == 'scans' ? _scans : _pdfs;
-    if (now >= max) return false;
+    if (_scans >= scanMax) return false;
 
-    // 화면이 바로 반응하게 먼저 올린다. 서버가 거부하면 되돌린다.
-    if (key == 'scans') {
-      _scans = now + 1;
-    } else {
-      _pdfs = now + 1;
-    }
+    // 화면이 바로 반응하게 먼저 올린다.
+    _scans = _scans + 1;
     notifyListeners();
 
     final ref = _usageRef();
@@ -169,7 +164,8 @@ class GuestService extends ChangeNotifier {
     try {
       // 🔴 `set(merge)` 가 아니라 **증가**를 쓴다. 두 화면에서 동시에
       //    올려도 하나가 묻히지 않는다. 규칙이 +1 만 통과시킨다.
-      await ref.set({key: FieldValue.increment(1)}, SetOptions(merge: true));
+      await ref.set({'scans': FieldValue.increment(1)},
+          SetOptions(merge: true));
     } catch (e) {
       if (kDebugMode) debugPrint('[Guest] 횟수 올리기 실패: $e');
     }
@@ -193,15 +189,13 @@ class GuestService extends ChangeNotifier {
   /// 가입이 끝났다. 체험 숫자를 치운다.
   void clearAfterSignUp() {
     _scans = 0;
-    _pdfs = 0;
     _agreed = false;
     notifyListeners();
   }
 
   @visibleForTesting
-  void setForTest({int scans = 0, int pdfs = 0, bool agreed = false}) {
+  void setForTest({int scans = 0, bool agreed = false}) {
     _scans = scans;
-    _pdfs = pdfs;
     _agreed = agreed;
     _loaded = true;
   }

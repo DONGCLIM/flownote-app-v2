@@ -54,7 +54,6 @@ service cloud.firestore {
     // 🔴 앱에서만 막으면 서버에 직접 요청해 뚫을 수 있다. 규칙에서도
     //    못 박아야 진짜 한도다.
     function guestScanMax() { return 5; }
-    function guestPdfMax()  { return 3; }
 
     // 관리자 한 명.
     //
@@ -96,35 +95,30 @@ service cloud.firestore {
       //   🔴 게스트는 **한 번에 1씩만** 올릴 수 있고 한도를 못 넘는다.
       //      사장님 지시(#192). 한 번에 여러 개를 올리거나 되돌리는
       //      요청은 거부된다.
+      //
+      //   🔴 PDF 횟수는 세지 않는다(#193). 사장님 지시로 바뀌었다 —
+      //      미리보기는 몇 번이든 열 수 있고, **저장·공유를 누르는 순간**
+      //      가입 안내를 띄운다. 셀 것이 없으니 칸도 두지 않는다.
       match /usage/{docId} {
         allow read: if isOwner(uid);
 
         // 처음 만들 때는 0 또는 1 에서 시작한다.
         allow create: if isOwner(uid)
                       && request.resource.data.scans is int
-                      && request.resource.data.pdfs is int
                       && request.resource.data.scans >= 0
-                      && request.resource.data.pdfs >= 0
-                      && request.resource.data.scans <= 1
-                      && request.resource.data.pdfs <= 1;
+                      && request.resource.data.scans <= 1;
 
         // 가입자는 자유롭게. 게스트는 1씩, 한도까지만.
         allow update: if isOwnerMember(uid)
                       || (
                         isOwner(uid)
                         && request.resource.data.scans is int
-                        && request.resource.data.pdfs is int
                         && request.resource.data.scans <= guestScanMax()
-                        && request.resource.data.pdfs <= guestPdfMax()
                         // 되돌리거나 건너뛸 수 없다. 그대로이거나 +1.
                         && request.resource.data.scans
                              >= resource.data.scans
                         && request.resource.data.scans
                              <= resource.data.scans + 1
-                        && request.resource.data.pdfs
-                             >= resource.data.pdfs
-                        && request.resource.data.pdfs
-                             <= resource.data.pdfs + 1
                       );
 
         allow delete: if isOwner(uid);
