@@ -10,7 +10,10 @@ import 'package:flow_note/design/fn_shell.dart';
 import 'package:flow_note/models/receipt_model.dart';
 import 'package:flow_note/providers/receipt_provider.dart';
 import 'package:flow_note/screens/ds/home_ds_screen.dart';
+import 'package:flow_note/screens/ds/calendar_ds_screen.dart';
 import 'package:flow_note/screens/ds/main_ds_screen.dart';
+import 'package:flow_note/services/guest_service.dart';
+import 'package:flow_note/widgets/fn_signup_sheet.dart';
 
 /// #146 홈 시안 반영 검증.
 ///
@@ -501,6 +504,92 @@ void main() {
       expect(FnHome.decoLine.r, closeTo(1.0, 0.01));
       expect(FnHome.decoLine.g, closeTo(1.0, 0.01));
       expect(FnHome.decoLine.b, closeTo(1.0, 0.01));
+    });
+  });
+
+  _k195GuestTab();
+}
+
+// ─────────────────────────────────────────────────────────────────────
+//  #195 — 게스트가 캘린더 탭을 누르면 탭 이동 대신 가입 안내
+//
+//  🔴 캘린더는 홈의 `_push()` 를 지나지 않는다. 아래 **탭바**에서 바로
+//     열려서, 홈 쪽 잠금이 여기까지 닿지 않았다. 그래서 `_onTab()` 에
+//     따로 붙였고, 여기서 그게 도는지 본다.
+//
+//  🔴 테스트에는 Firebase 가 없어 `isAnonymous` 를 만들 수 없다.
+//     `GuestService.debugIsGuest` 로 게스트인 척한다.
+// ─────────────────────────────────────────────────────────────────────
+void _k195GuestTab() {
+  group('#195 게스트 잠금 — 캘린더 탭', () {
+    tearDown(() => GuestService.debugIsGuest = null);
+
+    testWidgets('🔴 게스트가 캘린더 탭을 누르면 탭이 안 바뀌고 바텀시트가 뜬다',
+        (t) async {
+      GuestService.debugIsGuest = true;
+      await _pumpShell(t);
+      expect(find.byType(CalendarDsScreen), findsNothing,
+          reason: '시작은 홈 탭이다');
+
+      await t.tap(find.text('캘린더'));
+      await t.pump();
+      await t.pump(const Duration(milliseconds: 500));
+
+      expect(t.takeException(), isNull);
+      expect(find.byType(CalendarDsScreen), findsNothing,
+          reason: '잠긴 탭이 열렸다');
+      expect(find.text(kSignUpSheetTitle), findsOneWidget);
+    });
+
+    testWidgets('🔴 회원은 지금처럼 캘린더 탭이 열린다', (t) async {
+      GuestService.debugIsGuest = false;
+      await _pumpShell(t);
+
+      await t.tap(find.text('캘린더'));
+      await t.pump();
+      await t.pump(const Duration(milliseconds: 500));
+
+      expect(t.takeException(), isNull);
+      expect(find.byType(CalendarDsScreen), findsOneWidget);
+      expect(find.text(kSignUpSheetTitle), findsNothing);
+    });
+
+    testWidgets('🔴 아무 설정도 안 하면(기본값) 캘린더가 열린다', (t) async {
+      // 실제 앱에서 `debugIsGuest` 는 늘 null 이다. 그때 게스트 갈래로
+      // 새면 가입한 분들이 캘린더를 못 연다.
+      expect(GuestService.debugIsGuest, isNull);
+      await _pumpShell(t);
+
+      await t.tap(find.text('캘린더'));
+      await t.pump();
+      await t.pump(const Duration(milliseconds: 500));
+
+      expect(find.byType(CalendarDsScreen), findsOneWidget);
+    });
+
+    testWidgets('🔴 게스트도 다른 탭(내역)은 그대로 열린다', (t) async {
+      // 전부 잠그면 체험할 게 없어 가입할 마음이 안 든다. 잠근 건
+      // 캘린더 하나뿐이다.
+      GuestService.debugIsGuest = true;
+      await _pumpShell(t);
+
+      await t.tap(find.text('내역'));
+      await t.pump();
+      await t.pump(const Duration(milliseconds: 500));
+
+      expect(t.takeException(), isNull);
+      expect(find.text(kSignUpSheetTitle), findsNothing,
+          reason: '안 잠근 탭인데 가입 안내가 떴다');
+    });
+
+    test('🔴 잠금은 `_onTab` 한 곳에만 붙어 있다', () {
+      final src = File('lib/screens/ds/main_ds_screen.dart').readAsStringSync();
+      expect('GuestService.instance.isGuest'.allMatches(src).length, 1);
+      expect('showFnSignUpSheet'.allMatches(src).length, 1);
+      // 탭을 바꾸기 **전에** 막아야 캘린더가 한 번 보였다 사라지지 않는다.
+      final guard = src.indexOf('GuestService.instance.isGuest');
+      final swap = src.indexOf('setState(() => _index = i);', guard);
+      expect(guard, lessThan(swap));
     });
   });
 }

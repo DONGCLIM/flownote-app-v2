@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -7,7 +9,9 @@ import '../../design/fn_tab_intent.dart';
 import '../../widgets/lazy_tabs.dart';
 import '../../providers/receipt_provider.dart';
 import '../../services/notice_feed.dart';
+import '../../services/guest_service.dart';
 import '../../services/purchase_list_service.dart';
+import '../../widgets/fn_signup_sheet.dart';
 import 'calendar_ds_screen.dart';
 import 'home_ds_screen.dart';
 import 'notice_list_ds_screen.dart';
@@ -132,9 +136,34 @@ class _MainDsScreenState extends State<MainDsScreen> {
     );
   }
 
+  /// 게스트에게 잠긴 탭. 잠겼으면 **기능 한 줄 설명**을 준다. (#195)
+  ///
+  /// 🔴 홈의 `_push()` 와 달리 캘린더는 **탭바**로 열린다. 그래서 홈 쪽
+  ///    잠금이 여기까지 닿지 않았고, 이 자리에 따로 붙였다.
+  ///
+  /// 🔴 잠그는 건 캘린더 하나뿐이다. 홈·내역·스캔·프로필은 체험해 보셔야
+  ///    가입할 마음이 들기 때문에 일부러 열어 둔다.
+  static String? _guestLockLine(String key) {
+    if (key == 'calendar') {
+      return '어느 날 얼마나 사입했는지 달력 위에서 한눈에 보여 드려요';
+    }
+    return null;
+  }
+
   void _onTab(String key) {
     final i = fnTabs.indexWhere((t) => t.key == key);
     if (i < 0) return;
+
+    // 🔴 **게스트일 때만** 갈라진다. 회원은 아래로 그대로 내려가 탭이 바뀐다.
+    //    탭을 바꾸기 **전에** 막아야 캘린더가 한 번 보였다 사라지지 않는다.
+    if (GuestService.instance.isGuest) {
+      final line = _guestLockLine(key);
+      if (line != null) {
+        unawaited(showFnSignUpSheet(context, feature: line));
+        return;
+      }
+    }
+
     // 스캔 탭을 이미 보고 있는 상태에서 다시 누르면 촬영 시트를 연다.
     if (i == 2 && _index == 2) {
       _scanKey.currentState?.showCameraOptions();
