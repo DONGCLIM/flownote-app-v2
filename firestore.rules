@@ -20,40 +20,9 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    // 게스트(익명) 로그인인가. (#192)
-    //
-    // 🔴 Firebase 익명 로그인도 `request.auth != null` 이다. 그래서
-    //    "로그인했으면 통과" 규칙은 **게스트도 전부 통과시킨다.**
-    //    게스트는 가입 절차가 없어 누구인지 알 수 없고, 앱을 지웠다
-    //    깔면 새 계정이 무한정 만들어진다. 공용 컬렉션에 그대로 열어
-    //    두면 아무나 쓰레기를 쌓을 수 있다.
-    function isAnon() {
-      return isSignedIn()
-             && request.auth.token.firebase.sign_in_provider == 'anonymous';
-    }
-
-    /// 정식 가입자(게스트 아님).
-    function isMember() {
-      return isSignedIn() && !isAnon();
-    }
-
     function isOwner(uid) {
       return isSignedIn() && request.auth.uid == uid;
     }
-
-    // 게스트가 자기 uid 아래에 쓰는 것만 허용한다. (#192)
-    //
-    // 🔴 사장님 지시(#192): "익명 사용자는 users/{자기 uid} 아래에는
-    //    쓸 수 있고, 그 외에는 아무것도 쓸 수 없게".
-    function isOwnerMember(uid) {
-      return isOwner(uid) && isMember();
-    }
-
-    // 게스트 체험 한도. 앱(`GuestLimits`)과 **같은 값**이어야 한다. (#192)
-    //
-    // 🔴 앱에서만 막으면 서버에 직접 요청해 뚫을 수 있다. 규칙에서도
-    //    못 박아야 진짜 한도다.
-    function guestScanMax() { return 5; }
 
     // 관리자 한 명.
     //
@@ -83,45 +52,6 @@ service cloud.firestore {
 
       match /receipts/{receiptId} {
         allow read, write: if isOwner(uid);
-      }
-
-      // ── 게스트 체험 사용 횟수 (#192) ───────────────────────
-      //   users/{uid}/usage/counters  { scans: 0, pdfs: 0 }
-      //
-      //   🔴 왜 서버에 두나 — 예전에는 `SharedPreferences` 에만 적었다.
-      //      앱을 지웠다 깔면 0 으로 돌아가고, 기기에서 고칠 수도 있다.
-      //      체험 한도는 서버가 지켜야 한다.
-      //
-      //   🔴 게스트는 **한 번에 1씩만** 올릴 수 있고 한도를 못 넘는다.
-      //      사장님 지시(#192). 한 번에 여러 개를 올리거나 되돌리는
-      //      요청은 거부된다.
-      //
-      //   🔴 PDF 횟수는 세지 않는다(#193). 사장님 지시로 바뀌었다 —
-      //      미리보기는 몇 번이든 열 수 있고, **저장·공유를 누르는 순간**
-      //      가입 안내를 띄운다. 셀 것이 없으니 칸도 두지 않는다.
-      match /usage/{docId} {
-        allow read: if isOwner(uid);
-
-        // 처음 만들 때는 0 또는 1 에서 시작한다.
-        allow create: if isOwner(uid)
-                      && request.resource.data.scans is int
-                      && request.resource.data.scans >= 0
-                      && request.resource.data.scans <= 1;
-
-        // 가입자는 자유롭게. 게스트는 1씩, 한도까지만.
-        allow update: if isOwnerMember(uid)
-                      || (
-                        isOwner(uid)
-                        && request.resource.data.scans is int
-                        && request.resource.data.scans <= guestScanMax()
-                        // 되돌리거나 건너뛸 수 없다. 그대로이거나 +1.
-                        && request.resource.data.scans
-                             >= resource.data.scans
-                        && request.resource.data.scans
-                             <= resource.data.scans + 1
-                      );
-
-        allow delete: if isOwner(uid);
       }
 
       // 사입 리스트 PC↔폰 동기화 (#191)
@@ -156,11 +86,9 @@ service cloud.firestore {
     //   - 생성/수정: 로그인 사용자
     //   - 읽기: 금지 (관리자만 콘솔에서 열람)
     //   - 삭제: 금지
-    //   🔴 게스트는 쓸 수 없다(#192). 익명 계정은 앱을 지웠다 깔면 얼마든지
-    //      새로 만들어져서, 열어 두면 학습 데이터가 쓰레기로 덮인다.
     match /training_data/{docId} {
-      allow create: if isMember();
-      allow update: if isMember();
+      allow create: if isSignedIn();
+      allow update: if isSignedIn();
       allow read: if false;
       allow delete: if false;
     }
@@ -173,8 +101,6 @@ service cloud.firestore {
     //   읽기를 로그인 사용자로 제한하는 이유: 게스트 모드를 없앴으므로
     //   앱 사용자는 항상 로그인 상태다. 공개로 열면 서비스키로 뽑은
     //   데이터를 아무나 긁어갈 수 있다.
-    //   🔴 읽기는 게스트에게도 연다(#192). 홈 화면에 시세 줄이 있는데
-    //      막으면 체험 중에 빈 칸이 보인다. 쓰기는 여전히 전부 금지다.
     match /market/{docId} {
       allow read: if isSignedIn();
       allow write: if false;
@@ -195,9 +121,7 @@ service cloud.firestore {
     //      작성자가 자기 글의 `status` 를 '답변완료' 로 바꾸거나
     //      `answer` 에 아무 말이나 적어 넣을 수 있다.
     match /inquiries/{docId} {
-      // 🔴 게스트는 글을 쓸 수 없다(#192). 답변을 보낼 곳이 없고,
-      //    앱 프로필에서도 '가입 후' 로 잠가 두었다. 두 곳이 같아야 한다.
-      allow create: if isMember()
+      allow create: if isSignedIn()
                     && request.resource.data.uid == request.auth.uid
                     && request.resource.data.status == '접수'
                     && request.resource.data.answer == ''
