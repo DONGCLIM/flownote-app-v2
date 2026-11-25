@@ -11,6 +11,7 @@ import 'package:flow_note/screens/ds/saved_lists_ds_screen.dart';
 import 'package:flow_note/services/cost_calc.dart';
 import 'package:flow_note/services/purchase_list_service.dart';
 import 'package:flow_note/theme/fn_ds.dart';
+import 'package:flow_note/widgets/fn_inquiry_parts.dart';
 import 'package:flow_note/widgets/fn_purchase_parts.dart';
 
 String _read(String p) => File(p).readAsStringSync();
@@ -306,14 +307,14 @@ void main() {
       expect(find.text('이번 사입 한도'), findsOneWidget);
     });
 
-    testWidgets('🔴 하단 버튼이 "저장하고 사입 리스트로" 다 (#187)', (t) async {
+    testWidgets('🔴 하단 버튼이 "사입 리스트 저장" 이다 (#188)', (t) async {
       await pumpTallBudget(
           t, const GuideBudgetDsScreen(priceBook: PriceBook.empty, frequent: []));
-      // 🔴 #187 에서 글자와 가는 곳이 함께 바뀌었다. 이제 저장된 사입
-      //    리스트로 간다. (사입 메모장 연동은 다음 작업)
+      // 🔴 #188 에서 글자를 짧게 바꿨다. 저장하면 저장된 사입 리스트로 간다.
       expect(find.text('사입 메모장 열기'), findsNothing);
       expect(find.text('저장하고 사입 메모장으로'), findsNothing);
-      expect(find.text('저장하고 사입 리스트로'), findsOneWidget);
+      expect(find.text('저장하고 사입 리스트로'), findsNothing);
+      expect(find.text('사입 리스트 저장'), findsOneWidget);
     });
 
     testWidgets('🔴 적으면 예상 예산과 남은 예산이 바로 바뀐다', (t) async {
@@ -360,7 +361,9 @@ void main() {
       await t.pump(const Duration(milliseconds: 300));
 
       // 가장 최근(7/24) 단가가 채워지고, 그 날짜가 함께 보여야 한다.
-      expect(find.textContaining('07/24 기준'), findsOneWidget);
+      // 🔴 #188 에서 문구가 '07/24 영수증 기준' 으로 짧아졌다.
+      //    반쪽 폭 줄에 들어가야 해서 '1단 기준' 을 뺐다.
+      expect(find.textContaining('07/24 영수증 기준'), findsOneWidget);
     });
 
     testWidgets('🔴 자주 산 품목을 누르면 한 줄이 채워진다', (t) async {
@@ -1119,11 +1122,16 @@ void main() {
       expect(find.text('152,900원'), findsOneWidget);
     });
 
-    testWidgets('🔴 저장된 게 없으면 안내와 버튼을 보여 준다', (t) async {
+    testWidgets('🔴 저장된 게 없으면 문구 하나 · 버튼 하나 · 링크 하나 (#188)', (t) async {
       await pumpTallBudget(t, const SavedListsDsScreen(lists: []));
-      expect(find.text('아직 저장된 사입 리스트가 없어요.\n예산 검토에서 살 품목을 적으면 여기에 쌓여요.'),
-          findsOneWidget);
-      expect(find.text('예산 검토로 리스트 만들기'), findsOneWidget);
+      expect(find.text('아직 저장한 사입 리스트가 없어요'), findsOneWidget);
+      expect(find.text('새 사입 리스트 만들기'), findsOneWidget);
+      expect(find.text('메모로 빠르게 적기'), findsOneWidget);
+      // 옛 문구·옛 버튼은 사라졌다.
+      expect(find.text('예산 검토로 리스트 만들기'), findsNothing);
+      expect(find.textContaining('여기에 쌓여요'), findsNothing);
+      // 버튼은 **하나뿐**이다. 링크는 버튼이 아니다.
+      expect(find.byType(FnPrimaryButton), findsOneWidget);
       // 빈 요약 카드를 그리지 않는다.
       expect(find.text('저장된 리스트'), findsNothing);
     });
@@ -1298,6 +1306,244 @@ void main() {
         ),
       ];
       expect(PriceBook.fromReceipts(rs).lookup('장미')!.mixedUnit, isFalse);
+    });
+  });
+
+
+  /// 영수증 몇 장. #188 블록에서 쓴다. (#179 그룹 안의 것과 같은 값)
+  List<ReceiptModel> rcpts() => [
+        ReceiptModel(
+          id: 'r3',
+          date: DateTime(2026, 7, 24),
+          storeName: '양재',
+          rawOcrText: '',
+          createdAt: DateTime(2026, 7, 24),
+          totalAmount: 160000,
+          items: [
+            FlowerItem(
+                name: '장미(레드)', quantity: 20, unitPrice: 8000, unit: '단'),
+          ],
+        ),
+        ReceiptModel(
+          id: 'r2',
+          date: DateTime(2026, 7, 17),
+          storeName: '양재',
+          rawOcrText: '',
+          createdAt: DateTime(2026, 7, 17),
+          totalAmount: 90000,
+          items: [
+            FlowerItem(
+                name: '장미(레드)', quantity: 10, unitPrice: 7000, unit: '단'),
+            FlowerItem(name: '거베라', quantity: 15, unitPrice: 6000, unit: '단'),
+          ],
+        ),
+      ];
+
+  // ────────────────────────────────────────────────────────────
+  // #188 — 저장 버그 · 입력 칸 정리
+  // ────────────────────────────────────────────────────────────
+
+  group('사입 리스트 저장 버그 (#188)', () {
+    test('🔴 앱이 뜰 때 사입 리스트 상자를 연다', () {
+      // 🔴 이게 빠져서 생긴 버그다. `PurchaseListService.init()` 을 아무도
+      //    안 불러서 상자가 닫힌 채였고, `touch()` 는 첫 줄
+      //    `if (!_ready) return;` 에서 조용히 끝났다. 저장은 안 됐는데
+      //    화면은 넘어갔고, 저장된 사입 리스트는 늘 비어 있었다.
+      final main = _read('lib/main.dart');
+      expect(main.contains("import 'services/purchase_list_service.dart';"),
+          isTrue);
+      expect(main.contains('PurchaseListService.instance.init()'), isTrue);
+    });
+
+    test('🔴 저장은 자동 저장(4초)을 기다리지 않는다', () {
+      final svc = _read('lib/services/purchase_list_service.dart');
+      // 성공·실패를 돌려주는 즉시 저장 길이 있어야 한다.
+      expect(svc.contains('Future<bool> saveNow('), isTrue);
+      // 상자가 닫혀 있으면 열어 본다. 조용히 포기하지 않는다.
+      expect(svc.contains('await _openFor(AuthService.instance.uid);'), isTrue);
+      // 자동 저장은 4초 그대로 둔다 (메모장이 쓴다).
+      expect(svc.contains('Duration(seconds: 4)'), isTrue);
+    });
+
+    test('🔴 화면은 저장이 끝난 뒤에만 이동한다', () {
+      final src = _read('lib/screens/ds/insight_ds_screens.dart');
+      expect(src.contains('await PurchaseListService.instance.saveNow(list)'),
+          isTrue);
+      // 실패하면 안내만 하고 돌아간다.
+      expect(src.contains("'저장하지 못했어요. 다시 눌러 주세요'"), isTrue);
+      // 성공하면 짧은 안내 뒤에 이동한다.
+      expect(src.contains("showFnToast(context, '저장했어요'"), isTrue);
+      expect(src.contains('SavedListsDsScreen(openId: list.id)'), isTrue);
+      // 🔴 옛 길(touch + 기다리지 않는 flush)로 저장하지 않는다.
+      expect(src.contains('PurchaseListService.instance.touch(list)'), isFalse);
+    });
+
+    testWidgets('🔴 품목이 없으면 버튼이 흐리고 안내가 뜬다', (t) async {
+      await pumpTallBudget(
+          t, const GuideBudgetDsScreen(priceBook: PriceBook.empty, frequent: []));
+
+      final btn = t.widget<FnPrimaryButton>(find.byType(FnPrimaryButton));
+      expect(btn.onTap, isNull, reason: '품목이 없는데 눌린다');
+      expect(find.text('살 꽃을 한 가지 이상 적어 주세요'), findsWidgets);
+
+      // 한 줄 적으면 살아난다.
+      await t.enterText(fieldFor('품목명'), '장미');
+      await t.enterText(fieldFor('수량'), '20');
+      await t.enterText(fieldFor('단가'), '8000');
+      await t.pump(const Duration(milliseconds: 200));
+
+      expect(t.widget<FnPrimaryButton>(find.byType(FnPrimaryButton)).onTap,
+          isNotNull);
+    });
+
+    testWidgets('🔴 품목 2개를 적고 저장하면 리스트 맨 위에 펼쳐져 보인다', (t) async {
+      // 🔴 사장님이 직접 확인해 달라고 하신 흐름이다(#188).
+      //    예산 검토에서 적은 두 품목이 그대로 저장돼, 저장된 사입
+      //    리스트 **맨 위에 펼쳐진 채** 보여야 한다.
+      final list = PurchaseList(
+        id: 'new',
+        date: DateTime(2026, 7, 24),
+        purpose: '주말 부케 3건 대비',
+        items: [pi('장미(레드)', 20, 8000), pi('거베라', 15, 6000)],
+        budgetCap: 400000,
+        createdAt: DateTime(2026, 7, 23),
+        updatedAt: DateTime(2026, 7, 23),
+      );
+      // 날짜가 더 오래된 리스트가 하나 더 있어도 방금 것이 위다.
+      await pumpTallBudget(
+        t,
+        SavedListsDsScreen(openId: 'new', lists: [
+          plist('old', DateTime(2026, 7, 11), purpose: '정기 매장 진열',
+              items: [pi('안개', 12, 2800)]),
+          list,
+        ]),
+      );
+
+      // 맨 위 = 날짜가 가장 최근인 것.
+      expect(find.text('2026.07.24 (금)'), findsOneWidget);
+      // 펼쳐져 있다 — 품목 줄이 보인다.
+      expect(find.text('장미(레드)'), findsOneWidget);
+      expect(find.text('거베라'), findsOneWidget);
+      expect(find.text('20단 · 8,000원'), findsOneWidget);
+      // 20×8,000 + 15×6,000 = 160,000 + 90,000 = 250,000
+      expect(find.text('250,000원'), findsWidgets);
+      // 접혀 있는 쪽은 품목이 안 보인다.
+      expect(find.text('안개'), findsNothing);
+    });
+  });
+
+  group('예산 검토 — 입력 칸 한 줄 배치 (#188)', () {
+    testWidgets('🔴 수량과 단가가 같은 줄에 나란히 있다', (t) async {
+      await pumpTallBudget(
+          t, const GuideBudgetDsScreen(priceBook: PriceBook.empty, frequent: []));
+
+      // 두 칸을 같이 안고 있는 Row 가 있어야 한다.
+      final row = find.ancestor(
+        of: find.text('수량'),
+        matching: find.byType(Row),
+      );
+      expect(
+        find.descendant(of: row.last, matching: find.text('단가')),
+        findsOneWidget,
+        reason: '수량과 단가가 다른 줄에 있다',
+      );
+
+      // 수량 칸이 화면 절반쯤이다 (한 줄을 혼자 쓰지 않는다).
+      final qtyBox = t.getSize(fieldFor('수량'));
+      expect(qtyBox.width, lessThan(200));
+    });
+
+    testWidgets('🔴 칸 하나에 테두리가 하나다', (t) async {
+      await pumpTallBudget(
+          t, const GuideBudgetDsScreen(priceBook: PriceBook.empty, frequent: []));
+
+      // 🔴 전역 테마(`app_theme.dart`)가 `enabledBorder` 를 깔아 둬서,
+      //    `border: InputBorder.none` 만으로는 안 꺼졌다. 안쪽 TextField 는
+      //    테두리를 하나도 그리지 않아야 한다 — 바깥 상자가 그린다.
+      for (final label in ['품목명', '수량', '단가']) {
+        final f = t.widget<TextField>(fieldFor(label));
+        final d = f.decoration!;
+        expect(d.border, InputBorder.none, reason: '$label border');
+        expect(d.enabledBorder, InputBorder.none, reason: '$label enabled');
+        expect(d.focusedBorder, InputBorder.none, reason: '$label focused');
+        expect(d.filled, isFalse, reason: '$label filled');
+      }
+    });
+
+    testWidgets('🔴 － 버튼이 보이고 수량 칸 왼쪽에 빈 칸이 없다', (t) async {
+      await pumpTallBudget(
+          t, const GuideBudgetDsScreen(priceBook: PriceBook.empty, frequent: []));
+
+      // － 아이콘이 가운데 놓여 실제로 보인다.
+      final minus = find.byIcon(Icons.remove_rounded);
+      expect(minus, findsOneWidget);
+      expect(t.getSize(minus).width, greaterThan(0));
+
+      // 숫자는 단위 쪽(오른쪽)에 붙는다. 왼쪽에 빈 칸을 남기지 않는다.
+      expect(t.widget<TextField>(fieldFor('수량')).textAlign, TextAlign.right);
+      // 단가도 '원' 쪽에 붙는다.
+      expect(t.widget<TextField>(fieldFor('단가')).textAlign, TextAlign.right);
+    });
+
+    testWidgets('🔴 삭제는 ✕ 다 (품목이 둘 이상일 때만)', (t) async {
+      await pumpTallBudget(
+          t, const GuideBudgetDsScreen(priceBook: PriceBook.empty, frequent: []));
+      // 한 줄뿐이면 지울 수 없다.
+      expect(find.byIcon(Icons.close_rounded), findsNothing);
+
+      await t.tap(find.text('항목 추가'));
+      await t.pump(const Duration(milliseconds: 300));
+      expect(find.byIcon(Icons.close_rounded), findsNWidgets(2));
+    });
+
+    testWidgets('🔴 아래 작은 글씨가 왼쪽 기준 · 오른쪽 금액이다', (t) async {
+      await pumpTallBudget(
+          t, const GuideBudgetDsScreen(priceBook: PriceBook.empty, frequent: []));
+
+      // 직접 적으면 '직접 입력'.
+      expect(find.text('직접 입력'), findsOneWidget);
+      await t.enterText(fieldFor('수량'), '20');
+      await t.enterText(fieldFor('단가'), '8000');
+      await t.pump(const Duration(milliseconds: 200));
+      expect(find.text('160,000원'), findsWidgets);
+    });
+
+    testWidgets('🔴 영수증에서 고르면 "○/○ 영수증 기준" 이 된다', (t) async {
+      await pumpTallBudget(t, GuideBudgetDsScreen(
+          priceBook: PriceBook.fromReceipts(rcpts()), frequent: const []));
+
+      await t.tap(fieldFor('품목명'));
+      await t.enterText(fieldFor('품목명'), '장미');
+      await t.pump(const Duration(milliseconds: 200));
+      await t.tap(find.text('장미(레드)').last);
+      await t.pump(const Duration(milliseconds: 300));
+
+      expect(find.text('07/24 영수증 기준'), findsOneWidget);
+      // 반쪽 폭에서 잘리지 않게 '1단 기준' 은 빼 뒀다.
+      expect(find.textContaining('1단 기준'), findsNothing);
+    });
+
+    testWidgets('🔴 위쪽 "자주 산 품목" 칩은 그대로다', (t) async {
+      final freq = PurchaseListService.frequentItems(rcpts(),
+          now: DateTime(2026, 7, 25));
+      await pumpTallBudget(t, GuideBudgetDsScreen(
+          priceBook: PriceBook.fromReceipts(rcpts()), frequent: freq));
+      expect(find.text('자주 산 품목'), findsOneWidget);
+      expect(find.byType(FnPill), findsWidgets);
+    });
+
+    testWidgets('🔴 높이 56 · 글자 L 은 그대로 (원가 계산기는 48)', (t) async {
+      await pumpTallBudget(
+          t, const GuideBudgetDsScreen(priceBook: PriceBook.empty, frequent: []));
+      expect(FnDs.inputBigH, 56.0);
+      expect(FnDs.inputBigFont, FnDs.fontL);
+      expect(FnDs.inputH, 48.0);
+
+      for (final label in ['품목명', '수량', '단가']) {
+        expect(t.widget<TextField>(fieldFor(label)).style!.fontSize,
+            FnDs.inputBigFont,
+            reason: label);
+      }
     });
   });
 

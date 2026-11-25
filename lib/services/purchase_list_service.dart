@@ -171,6 +171,39 @@ class PurchaseListService extends ChangeNotifier {
     if (notify) notifyListeners();
   }
 
+  /// **지금 바로** 저장한다. 자동 저장(4초)을 기다리지 않는다. (#188)
+  ///
+  /// 🔴 왜 [touch] 를 안 쓰나 — `touch` 는 상자가 안 열려 있으면 첫 줄
+  ///    `if (!_ready) return;` 에서 **조용히 아무것도 안 하고 끝난다.**
+  ///    저장 버튼은 성공한 줄 알고 넘어갔고, 저장된 사입 리스트는
+  ///    늘 비어 있었다(#188 버그). 여기서는
+  ///    1) 상자가 닫혀 있으면 열어 보고,
+  ///    2) 그래도 안 되면 **false 를 돌려준다.**
+  ///    화면이 그걸 보고 "저장하지 못했어요" 라고 알린다.
+  ///
+  /// 서버 올리기는 기다리지 않는다. 폰(Hive)에 들어갔으면 저장된 것이다.
+  /// 꽃시장은 인터넷이 자주 끊기는데, 그때마다 저장을 막으면 안 된다.
+  Future<bool> saveNow(PurchaseList list) async {
+    if (!_ready) {
+      try {
+        await _openFor(AuthService.instance.uid);
+      } catch (_) {
+        return false;
+      }
+    }
+    if (!_ready || _box == null) return false;
+    try {
+      list.updatedAt = DateTime.now();
+      await _box!.put(list.id, list);
+      _dirty.add(list.id);
+    } catch (_) {
+      return false;
+    }
+    notifyListeners();
+    unawaited(flush());
+    return true;
+  }
+
   Future<void> remove(String id) async {
     if (!_ready) return;
     await _box!.delete(id);

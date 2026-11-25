@@ -19,6 +19,34 @@ double fnNum(String s) {
   return double.tryParse(digits) ?? 0;
 }
 
+/// 테두리·채움이 **하나도 없는** 입력칸 꾸밈. (#188)
+///
+/// 🔴 왜 필요한가 — `app_theme.dart` 의 `inputDecorationTheme` 이
+///    `filled: true` 와 `enabledBorder`·`focusedBorder` 를 전역으로 깔아 둔다.
+///    `border: InputBorder.none` 만 주면 `border` 하나만 꺼지고
+///    `enabledBorder`/`focusedBorder` 는 **그대로 남아** 테두리가 한 번 더
+///    그려졌다. 바깥 `Container` 에도 테두리가 있어서 칸 하나에 선이 둘이었다.
+///    → 여기서 다섯 가지를 전부 끄고 `filled` 도 끈다.
+InputDecoration fnBareInput({String hint = '', double? hintSize}) {
+  return InputDecoration(
+    isDense: true,
+    filled: false,
+    border: InputBorder.none,
+    enabledBorder: InputBorder.none,
+    focusedBorder: InputBorder.none,
+    errorBorder: InputBorder.none,
+    focusedErrorBorder: InputBorder.none,
+    disabledBorder: InputBorder.none,
+    contentPadding: EdgeInsets.zero,
+    hintText: hint,
+    hintStyle: TextStyle(
+      fontFamily: FnDs.font,
+      fontSize: hintSize ?? FnDs.inputBigFont,
+      color: FnDs.inputHint,
+    ),
+  );
+}
+
 /// 칠해지는 알약 버튼. 칩·판매 배수·자주 산 품목이 같이 쓴다.
 class FnPill extends StatelessWidget {
   const FnPill({
@@ -427,11 +455,16 @@ class _FnItemLineRowState extends State<FnItemLineRow> {
   }
 }
 
-/// 수량 칸 — `－ [ 20 ] 단 ＋`. (#187 예산 검토 전용)
+/// 수량 칸 — `－ [ 20단 ] ＋`. (#187 예산 검토 전용 / #188 한 줄 배치)
 ///
 /// 🔴 `FnNamedField` 를 안 쓰고 따로 만든 이유: 원가 계산기도 같은 조각을
 ///    쓰는데, 거기까지 모양이 바뀌면 안 된다. 사장님 지시(#187):
 ///    "다른 화면 디자인은 건드리지 마."
+///
+/// 🔴 단가 칸과 **나란히** 놓인다(#188). 390 폭에서 반씩 나눠 쓰므로
+///    버튼은 [stepW] 로 좁히고, 칸 안 여백도 [_padH] 로 줄였다.
+///    숫자는 단위 바로 왼쪽에 붙여 쓴다 — 사장님 지시(#188):
+///    "수량 칸 왼쪽 빈 칸 없애기".
 class FnStepperField extends StatelessWidget {
   const FnStepperField({
     super.key,
@@ -448,6 +481,15 @@ class FnStepperField extends StatelessWidget {
 
   /// 한 번 누를 때 얼마씩.
   static const double step = 1;
+
+  /// － / ＋ 버튼 가로. 세로는 칸과 같은 [FnDs.inputBigH] 다.
+  static const double stepW = 34;
+
+  /// 버튼과 칸 사이.
+  static const double _gap = 4;
+
+  /// 칸 안 좌우 여백. 기본 14 는 반쪽 폭에서 숫자 자리를 다 먹는다.
+  static const double _padH = 6;
 
   void _bump(double by) {
     final now = fnNum(controller.text);
@@ -468,12 +510,11 @@ class FnStepperField extends StatelessWidget {
         Row(
           children: [
             _StepButton(icon: Icons.remove_rounded, onTap: () => _bump(-step)),
-            const SizedBox(width: 6),
+            const SizedBox(width: _gap),
             Expanded(
               child: Container(
                 height: FnDs.inputBigH,
-                padding:
-                    const EdgeInsets.symmetric(horizontal: FnDs.inputPadH),
+                padding: const EdgeInsets.symmetric(horizontal: _padH),
                 decoration: BoxDecoration(
                   color: FnDs.card,
                   borderRadius: BorderRadius.circular(FnDs.inputRadius),
@@ -489,25 +530,18 @@ class FnStepperField extends StatelessWidget {
                         // 🔴 숫자만. 글자를 적으면 금액이 0 이 되는데
                         //    사장님은 왜 0 인지 알 수 없다.
                         inputFormatters: [FnDigitsFormatter()],
+                        // 단위 바로 왼쪽에 붙인다. 왼쪽에 빈 칸을 남기지 않는다.
+                        textAlign: TextAlign.right,
                         style: const TextStyle(
                           fontFamily: FnDs.font,
                           fontSize: FnDs.inputBigFont,
                           fontWeight: FontWeight.w600,
                           color: FnDs.title,
                         ),
-                        decoration: const InputDecoration(
-                          isDense: true,
-                          border: InputBorder.none,
-                          contentPadding: EdgeInsets.zero,
-                          hintText: '0',
-                          hintStyle: TextStyle(
-                            fontFamily: FnDs.font,
-                            fontSize: FnDs.inputBigFont,
-                            color: FnDs.inputHint,
-                          ),
-                        ),
+                        decoration: fnBareInput(hint: '0'),
                       ),
                     ),
+                    const SizedBox(width: 2),
                     Text(
                       unit.isEmpty ? FnUnits.fallback : unit,
                       style: const TextStyle(
@@ -520,7 +554,7 @@ class FnStepperField extends StatelessWidget {
                 ),
               ),
             ),
-            const SizedBox(width: 6),
+            const SizedBox(width: _gap),
             _StepButton(icon: Icons.add_rounded, onTap: () => _bump(step)),
           ],
         ),
@@ -530,6 +564,9 @@ class FnStepperField extends StatelessWidget {
 }
 
 /// － / ＋ 네모 버튼.
+///
+/// 🔴 `alignment` 를 꼭 준다(#188). 안 주면 56 짜리 꽉 찬 제약이
+///    아이콘에 그대로 내려가 `－` 글리프가 구석으로 밀려 안 보였다.
 class _StepButton extends StatelessWidget {
   const _StepButton({required this.icon, required this.onTap});
 
@@ -542,14 +579,16 @@ class _StepButton extends StatelessWidget {
       behavior: HitTestBehavior.opaque,
       onTap: onTap,
       child: Container(
-        width: FnDs.inputBigH,
+        width: FnStepperField.stepW,
         height: FnDs.inputBigH,
+        alignment: Alignment.center,
         decoration: BoxDecoration(
           color: FnDs.card,
           borderRadius: BorderRadius.circular(FnDs.inputRadius),
           border: Border.all(color: FnDs.line, width: FnDs.inputBorderW),
         ),
-        child: Icon(icon, size: 18, color: FnDs.body),
+        // 가는 회색 선이면 안 보인다. 글자색으로 또렷하게.
+        child: Icon(icon, size: 20, color: FnDs.title),
       ),
     );
   }
@@ -585,18 +624,25 @@ class FnCommaFormatter extends TextInputFormatter {
 }
 
 /// 큰 입력칸 — 높이 56, 글자 L. 오른쪽에 고정 글자. (#187 예산 검토 전용)
+///
+/// 🔴 테두리는 바깥 [Container] 하나뿐이다. 안쪽 `TextField` 는
+///    [fnBareInput] 으로 전부 꺼 둔다(#188). 예전에는 전역 테마의
+///    `enabledBorder` 가 살아 있어 선이 두 겹으로 보였다.
 class FnBigField extends StatelessWidget {
   const FnBigField({
     super.key,
-    required this.label,
+    this.label = '',
     required this.controller,
     this.hint = '',
     this.suffix = '',
     this.focusNode,
     this.formatters,
     this.numeric = false,
+    this.alignRight = false,
+    this.padH = FnDs.inputPadH,
   });
 
+  /// 칸 위에 붙는 작은 라벨. 빈 글자면 라벨 줄을 아예 그리지 않는다.
   final String label;
   final TextEditingController controller;
   final String hint;
@@ -607,61 +653,63 @@ class FnBigField extends StatelessWidget {
   final List<TextInputFormatter>? formatters;
   final bool numeric;
 
+  /// 숫자를 고정 글자 쪽(오른쪽)에 붙여 쓴다. 단가 칸이 쓴다.
+  final bool alignRight;
+
+  /// 칸 안 좌우 여백. 반쪽 폭에서는 좁혀 쓴다.
+  final double padH;
+
   @override
   Widget build(BuildContext context) {
+    final box = Container(
+      height: FnDs.inputBigH,
+      padding: EdgeInsets.symmetric(horizontal: padH),
+      decoration: BoxDecoration(
+        color: FnDs.card,
+        borderRadius: BorderRadius.circular(FnDs.inputRadius),
+        border: Border.all(color: FnDs.line, width: FnDs.inputBorderW),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: TextField(
+              controller: controller,
+              focusNode: focusNode,
+              keyboardType:
+                  numeric ? TextInputType.number : TextInputType.text,
+              inputFormatters: formatters,
+              textAlign: alignRight ? TextAlign.right : TextAlign.left,
+              style: const TextStyle(
+                fontFamily: FnDs.font,
+                fontSize: FnDs.inputBigFont,
+                fontWeight: FontWeight.w600,
+                color: FnDs.title,
+              ),
+              decoration: fnBareInput(hint: hint),
+            ),
+          ),
+          if (suffix.isNotEmpty) ...[
+            const SizedBox(width: 2),
+            Text(
+              suffix,
+              style: const TextStyle(
+                fontFamily: FnDs.font,
+                fontSize: FnDs.inputBigFont,
+                color: FnDs.sub,
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+
+    if (label.isEmpty) return box;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(label, style: FnDs.tsSub),
         const SizedBox(height: 6),
-        Container(
-          height: FnDs.inputBigH,
-          padding: const EdgeInsets.symmetric(horizontal: FnDs.inputPadH),
-          decoration: BoxDecoration(
-            color: FnDs.card,
-            borderRadius: BorderRadius.circular(FnDs.inputRadius),
-            border: Border.all(color: FnDs.line, width: FnDs.inputBorderW),
-          ),
-          child: Row(
-            children: [
-              Expanded(
-                child: TextField(
-                  controller: controller,
-                  focusNode: focusNode,
-                  keyboardType:
-                      numeric ? TextInputType.number : TextInputType.text,
-                  inputFormatters: formatters,
-                  style: const TextStyle(
-                    fontFamily: FnDs.font,
-                    fontSize: FnDs.inputBigFont,
-                    fontWeight: FontWeight.w600,
-                    color: FnDs.title,
-                  ),
-                  decoration: InputDecoration(
-                    isDense: true,
-                    border: InputBorder.none,
-                    contentPadding: EdgeInsets.zero,
-                    hintText: hint,
-                    hintStyle: const TextStyle(
-                      fontFamily: FnDs.font,
-                      fontSize: FnDs.inputBigFont,
-                      color: FnDs.inputHint,
-                    ),
-                  ),
-                ),
-              ),
-              if (suffix.isNotEmpty)
-                Text(
-                  suffix,
-                  style: const TextStyle(
-                    fontFamily: FnDs.font,
-                    fontSize: FnDs.inputBigFont,
-                    color: FnDs.sub,
-                  ),
-                ),
-            ],
-          ),
-        ),
+        box,
       ],
     );
   }
@@ -774,6 +822,7 @@ class _FnBigItemLineRowState extends State<FnBigItemLineRow> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        // 1줄 — 품목명 + 오른쪽 ✕ 삭제.
         Row(
           crossAxisAlignment: CrossAxisAlignment.end,
           children: [
@@ -792,9 +841,8 @@ class _FnBigItemLineRowState extends State<FnBigItemLineRow> {
                 onTap: widget.onRemove,
                 child: const SizedBox(
                   height: FnDs.inputBigH,
-                  width: 32,
-                  child: Icon(Icons.remove_circle_outline_rounded,
-                      size: 20, color: FnDs.sub),
+                  width: 30,
+                  child: Icon(Icons.close_rounded, size: 18, color: FnDs.sub),
                 ),
               ),
             ],
@@ -844,24 +892,37 @@ class _FnBigItemLineRowState extends State<FnBigItemLineRow> {
           ),
         ],
         const SizedBox(height: FnDs.gapS),
-        FnStepperField(
-          controller: l.qty,
-          unit: unit,
-          onChanged: widget.onChanged,
-        ),
-        const SizedBox(height: FnDs.gapS),
-        FnBigField(
-          label: '단가',
-          controller: l.price,
-          hint: '0',
-          suffix: '원',
-          numeric: true,
-          formatters: [FnCommaFormatter()],
+        // 2줄 — 수량과 단가를 **나란히**. 사장님 지시(#188): "처음 시안처럼".
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            Expanded(
+              child: FnStepperField(
+                controller: l.qty,
+                unit: unit,
+                onChanged: widget.onChanged,
+              ),
+            ),
+            const SizedBox(width: FnDs.gapS),
+            Expanded(
+              child: FnBigField(
+                label: '단가',
+                controller: l.price,
+                hint: '0',
+                suffix: '원',
+                numeric: true,
+                alignRight: true,
+                padH: 10,
+                formatters: [FnCommaFormatter()],
+              ),
+            ),
+          ],
         ),
         const SizedBox(height: 6),
+        // 3줄 — 왼쪽에 어디서 온 단가인지, 오른쪽에 금액.
         Row(
           children: [
-            Expanded(child: Text(_basisText(l, unit), style: FnDs.tsSub)),
+            Expanded(child: Text(_basisText(l), style: FnDs.tsSub)),
             Text(
               CostCalc.won(l.amount),
               style: const TextStyle(
@@ -877,15 +938,16 @@ class _FnBigItemLineRowState extends State<FnBigItemLineRow> {
     );
   }
 
-  /// 어디서 온 단가인지 알려 준다. (#179 와 같은 문구)
-  String _basisText(FnLineCtrl l, String unit) {
-    final unitLabel = '1$unit 기준';
-    if (!l.fromReceipt) return '직접 입력 · $unitLabel';
+  /// 어디서 온 단가인지 알려 준다.
+  ///
+  /// 🔴 단위(`1단 기준`)는 빼 둔다(#188). 수량 칸에 단위가 이미 붙어 있고,
+  ///    반쪽 폭 줄에서는 글자가 길면 잘린다. 사장님 지시: 왼쪽에
+  ///    "○/○ 영수증 기준" 또는 "직접 입력".
+  String _basisText(FnLineCtrl l) {
+    if (!l.fromReceipt) return '직접 입력';
     final d = l.basisDate;
-    final when = d == null
-        ? ''
-        : ' · ${d.month.toString().padLeft(2, '0')}/'
-            '${d.day.toString().padLeft(2, '0')} 기준';
-    return '직전 영수증 단가 기준$when · $unitLabel';
+    if (d == null) return '직전 영수증 기준';
+    return '${d.month.toString().padLeft(2, '0')}/'
+        '${d.day.toString().padLeft(2, '0')} 영수증 기준';
   }
 }

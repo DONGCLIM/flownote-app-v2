@@ -13,6 +13,7 @@ import '../../services/purchase_list_service.dart';
 import '../../theme/fn_ds.dart';
 import '../../widgets/fn_inquiry_parts.dart';
 import 'insight_ds_screens.dart';
+import 'purchase_memo_ds_screen.dart';
 
 /// 저장된 사입 리스트 — 지난 사입을 돌아보고 그대로 다시 만든다. (시안 #187)
 ///
@@ -182,14 +183,6 @@ class _SavedListsDsScreenState extends State<SavedListsDsScreen> {
             const SizedBox(height: FnDs.gapM),
             if (lists.isEmpty) ...[
               const _SavedEmpty(),
-              const SizedBox(height: FnDs.gapM),
-              FnPrimaryButton(
-                label: '예산 검토로 리스트 만들기',
-                onTap: () => Navigator.of(context).push(
-                  MaterialPageRoute(
-                      builder: (_) => const GuideBudgetDsScreen()),
-                ),
-              ),
             ] else ...[
               _SavedSummaryCard(summary: summary),
               for (final e in lists) ...[
@@ -433,27 +426,65 @@ class _SavedItemRow extends StatelessWidget {
   }
 }
 
-/// 저장된 게 하나도 없을 때.
+/// 아직 아무것도 없을 때. (#188 단순하게)
+///
+/// 🔴 사장님 지시(#188): 문구 한 줄, 버튼 **하나만**, 그 아래 작은 글씨 링크.
+///    예전에는 안내 카드와 버튼 글자가 서로 다른 말을 해서 헷갈렸다.
 class _SavedEmpty extends StatelessWidget {
   const _SavedEmpty();
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding:
-          const EdgeInsets.symmetric(horizontal: FnDs.cardPad, vertical: 32),
-      decoration: FnDs.cardDeco(),
-      child: const Text(
-        '아직 저장된 사입 리스트가 없어요.\n예산 검토에서 살 품목을 적으면 여기에 쌓여요.',
-        textAlign: TextAlign.center,
-        style: TextStyle(
-          fontFamily: FnDs.font,
-          fontSize: FnDs.fontS,
-          height: 1.5,
-          color: FnDs.sub,
+    return Column(
+      children: [
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(
+              horizontal: FnDs.cardPad, vertical: 36),
+          decoration: FnDs.cardDeco(),
+          child: const Text(
+            '아직 저장한 사입 리스트가 없어요',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontFamily: FnDs.font,
+              fontSize: FnDs.fontM,
+              fontWeight: FontWeight.w600,
+              height: 1.5,
+              color: FnDs.body,
+            ),
+          ),
         ),
-      ),
+        const SizedBox(height: FnDs.gapM),
+        FnPrimaryButton(
+          label: '새 사입 리스트 만들기',
+          onTap: () => Navigator.of(context).push(
+            MaterialPageRoute(builder: (_) => const GuideBudgetDsScreen()),
+          ),
+        ),
+        const SizedBox(height: FnDs.gapS),
+        GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: () => Navigator.of(context).push(
+            MaterialPageRoute(builder: (_) => const PurchaseMemoDsScreen()),
+          ),
+          child: const SizedBox(
+            height: 28,
+            child: Center(
+              child: Text(
+                '메모로 빠르게 적기',
+                style: TextStyle(
+                  fontFamily: FnDs.font,
+                  fontSize: FnDs.fontS,
+                  fontWeight: FontWeight.w600,
+                  color: FnDs.sub,
+                  decoration: TextDecoration.underline,
+                  decorationColor: FnDs.sub,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

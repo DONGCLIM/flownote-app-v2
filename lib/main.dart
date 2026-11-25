@@ -20,6 +20,7 @@ import 'services/notification_service.dart';
 import 'services/training_data_service.dart';
 import 'services/flower_name_service.dart';
 import 'services/home_tips.dart';
+import 'services/purchase_list_service.dart';
 import 'services/vendor_tax_service.dart';
 import 'services/subscription_service.dart';
 import 'services/kakao_config.dart';
@@ -113,6 +114,19 @@ void main() async {
   // Initialize new domain services (vendor tax / subscription)
   await VendorTaxService.instance.init();
   await SubscriptionService.instance.init();
+
+  // 🔴 사입 리스트 상자를 연다. (#188 버그)
+  //
+  //    이게 빠져 있어서 `PurchaseListService` 가 `_ready = false` 로 남았고,
+  //    `touch()` 는 첫 줄에서 조용히 돌아가 **아무것도 저장되지 않았다.**
+  //    읽는 쪽 `all` 도 빈 목록을 돌려줘서, 저장된 사입 리스트 화면은
+  //    늘 "아직 저장된 사입 리스트가 없어요" 였다.
+  //    실패해도 안에서 삼키고 앱은 계속 뜬다.
+  try {
+    await PurchaseListService.instance.init();
+  } catch (e) {
+    debugPrint('[boot] 사입 리스트 상자를 열지 못했습니다: $e');
+  }
 
   // 홈 팁 — 어떤 팁을 언제 봤는지 이 기기에서만 읽어 둔다. (#186)
   // 실패해도 안에서 삼키고 처음 보는 것처럼 돈다.

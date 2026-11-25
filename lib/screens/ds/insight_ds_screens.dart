@@ -2639,7 +2639,7 @@ class _CostTiersCard extends StatelessWidget {
 ///   ┌ 사입 리스트 — 품목명/수량/단가 … + 항목 추가        ┐ _BudgetItemsCard
 ///   ┌ 예상 사입 예산  274,000원                           ┐ _BudgetTotalCard
 ///   ┌ 이번 사입 한도 [400,000원] ▇▇▇░ 남은 예산 126,000원 ┐ _BudgetCapCard
-///   [ 저장하고 사입 메모장으로 ]
+///   [ 사입 리스트 저장 ]
 /// ```
 ///
 /// ## 어디까지 되나
@@ -2828,18 +2828,34 @@ class _GuideBudgetDsScreenState extends State<GuideBudgetDsScreen> {
     return _list;
   }
 
+  /// 저장하는 동안 버튼을 돌린다. 두 번 눌러 두 건이 되는 걸 막는다.
+  bool _saving = false;
+
   Future<void> _save() async {
+    if (_saving) return;
     final list = _collect();
     if (list.items.isEmpty) {
-      showFnToast(context, '품목을 한 가지 이상 적어 주세요.',
+      showFnToast(context, '살 꽃을 한 가지 이상 적어 주세요.',
           type: FnToastType.warning);
       return;
     }
-    await PurchaseListService.instance.touch(list);
-    // 🔴 화면을 나갈 때는 모아 두지 않고 바로 올린다. 사장님 지시:
-    //    "화면을 나갈 때 저장해줘."
-    unawaited(PurchaseListService.instance.flush());
+
+    setState(() => _saving = true);
+    // 🔴 자동 저장(4초)을 기다리지 않고 **지금** 쓴다. 사장님 지시(#188):
+    //    "저장이 끝날 때까지 기다렸다가 이동".
+    final ok = await PurchaseListService.instance.saveNow(list);
     if (!mounted) return;
+    setState(() => _saving = false);
+
+    if (!ok) {
+      // 🔴 실패하면 **이동하지 않는다.** 예전에는 저장이 조용히 실패해도
+      //    넘어가서, 빈 목록을 보고서야 사라진 걸 알았다(#188 버그).
+      showFnToast(context, '저장하지 못했어요. 다시 눌러 주세요',
+          type: FnToastType.error);
+      return;
+    }
+
+    showFnToast(context, '저장했어요', type: FnToastType.success);
     _openSaved(list);
   }
 
@@ -2917,9 +2933,20 @@ class _GuideBudgetDsScreenState extends State<GuideBudgetDsScreen> {
             ),
             const SizedBox(height: FnDs.gapM),
             FnPrimaryButton(
-              label: '저장하고 사입 리스트로',
-              onTap: _save,
+              label: '사입 리스트 저장',
+              busy: _saving,
+              // 🔴 품목이 하나도 없으면 흐리게. 사장님 지시(#188).
+              //    눌리는데 아무 일도 안 나는 버튼이 제일 답답하다.
+              onTap: _filled == 0 ? null : _save,
             ),
+            if (_filled == 0) ...[
+              const SizedBox(height: FnDs.gapXs),
+              const Text(
+                '살 꽃을 한 가지 이상 적어 주세요',
+                textAlign: TextAlign.center,
+                style: FnDs.tsSub,
+              ),
+            ],
           ],
         ),
       ),
