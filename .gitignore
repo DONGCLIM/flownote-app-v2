@@ -37,3 +37,6 @@ functions/node_modules/
 
 # Firebase Hosting 배포 캐시 (로컬 산출물)
 .firebase/
+
+# 규칙 테스트 의존성 (npm install 로 받는다)
+rules_test/node_modules/
