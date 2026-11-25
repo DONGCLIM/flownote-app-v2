@@ -69,11 +69,23 @@ class GuestService extends ChangeNotifier {
   bool get isLoaded => _loaded;
   bool get agreedToTrial => _agreed;
 
+  /// 🔴 **테스트에서만** 게스트 상태를 흉내 내는 스위치. (#195)
+  ///
+  /// 테스트에는 Firebase 가 없어 [AuthService.currentUser] 가 늘 null 이다.
+  /// 그래서 테스트만으로는 게스트 갈래를 한 줄도 밟아 볼 수 없었다.
+  ///
+  /// 🔴 null 이면 **아무 일도 하지 않는다**. 실제 앱에서는 이 값을 건드리는
+  ///    곳이 없으므로 회원 흐름은 예전 그대로 Firebase 만 본다.
+  @visibleForTesting
+  static bool? debugIsGuest;
+
   /// 지금 게스트로 들어와 있는가.
   ///
   /// 🔴 `isAnonymous` 를 Firebase 가 직접 알려 준다. 우리가 따로 기억하면
   ///    가입한 뒤에도 게스트로 남아 있는 사고가 난다.
-  bool get isGuest => AuthService.instance.currentUser?.isAnonymous ?? false;
+  bool get isGuest =>
+      debugIsGuest ??
+      (AuthService.instance.currentUser?.isAnonymous ?? false);
 
   int get scansLeft => (scanMax - _scans).clamp(0, scanMax);
 

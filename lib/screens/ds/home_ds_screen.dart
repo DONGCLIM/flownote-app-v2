@@ -12,6 +12,8 @@ import '../../design/fn_home_tokens.dart';
 import '../../design/fn_tab_intent.dart';
 import '../../providers/receipt_provider.dart';
 import '../../services/subscription_service.dart';
+import '../../services/guest_service.dart';
+import '../../widgets/fn_signup_sheet.dart';
 import 'fn_data.dart';
 import '../../services/monthly_insight.dart';
 import '../../services/home_tips.dart';
@@ -888,8 +890,68 @@ class _HomeDsScreenState extends State<HomeDsScreen> {
     }
   }
 
+  /// 홈에서 화면을 여는 **단 하나의 문**. (#195)
+  ///
+  /// 홈의 모든 이동(총 지출·품목 비중·가이드 칩·인사이트 CTA…)이 여기를
+  /// 지난다. 그래서 게스트 잠금도 여기 한 곳에만 붙였다. 자리마다 붙이면
+  /// 새 화면을 이을 때 잠그는 걸 잊는다.
+  ///
+  /// 🔴 **게스트일 때만** 갈라진다. 회원은 아래 `Navigator.push` 로 바로
+  ///    가며, 코드가 바텀시트 쪽을 아예 지나지 않는다.
   void _push(Widget page) {
+    if (GuestService.instance.isGuest) {
+      final line = _guestLockLine(page);
+      if (line != null) {
+        unawaited(showFnSignUpSheet(context, feature: line));
+        return;
+      }
+    }
     Navigator.of(context).push(MaterialPageRoute(builder: (_) => page));
+  }
+
+  /// 게스트에게 잠긴 화면인가. 잠겼으면 **기능 한 줄 설명**을 준다.
+  ///
+  /// 🔴 null 을 주면 게스트도 그냥 연다. 지금은 잠글 것만 적어 뒀고, 목록에
+  ///    없는 화면(메모장 등)은 체험해 보셔야 가입할 마음이 들기 때문에
+  ///    일부러 열어 둔다.
+  ///
+  /// 🔴 캘린더는 이 문을 지나지 않는다. 홈이 아니라 아래 탭바에서 열려서
+  ///    `main_ds_screen.dart` 쪽에 따로 붙여야 한다. (아직 안 붙였다)
+  static String? _guestLockLine(Widget page) {
+    if (page is InsightsDsScreen) {
+      return '이번 달 지출·절약 포인트를 한 장으로 정리해 드려요';
+    }
+    if (page is ItemSpendDsScreen) {
+      return '어떤 꽃에 돈이 가장 많이 나갔는지 품목별로 보여 드려요';
+    }
+    if (page is SavedListsDsScreen) {
+      return '사입 리스트를 저장해 두고 시장에서 체크하며 쓸 수 있어요';
+    }
+    if (page is GuideCostDsScreen) {
+      return '매입가에 마진을 얹은 판매가를 바로 계산해 드려요';
+    }
+    if (page is GuideBudgetDsScreen) {
+      return '정한 예산 안에서 뭘 얼마나 살지 같이 맞춰 드려요';
+    }
+    if (page is GuideSeasonDsScreen) {
+      return '작년 이맘때와 올해 매입을 나란히 비교해 드려요';
+    }
+    if (page is PriceDsScreen) {
+      return '품목마다 시세가 오르는지 내리는지 보여 드려요';
+    }
+    if (page is CompareDsScreen) {
+      return '같은 꽃을 어느 거래처에서 싸게 샀는지 비교해 드려요';
+    }
+    if (page is DonutDsScreen) {
+      return '과세·면세 비중을 나눠 보여 드려요';
+    }
+    if (page is TrendDsScreen) {
+      return '달마다 지출이 어떻게 움직였는지 추이를 보여 드려요';
+    }
+    if (page is GuideDsScreen) {
+      return '사입을 도와주는 계산기와 비교표를 모아 뒀어요';
+    }
+    return null;
   }
 }
 

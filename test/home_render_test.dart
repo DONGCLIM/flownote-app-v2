@@ -10,6 +10,8 @@ import 'package:flow_note/screens/ds/insight_ds_screens.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flow_note/models/receipt_model.dart';
 import 'package:flow_note/screens/ds/fn_data.dart';
+import 'package:flow_note/services/guest_service.dart';
+import 'package:flow_note/widgets/fn_signup_sheet.dart';
 
 /// 회귀 방지 — 홈 화면 회색 버그(28-A)
 ///
@@ -120,6 +122,7 @@ void main() {
   });
 
   _k135();
+  _k195Guest();
 }
 
 
@@ -867,6 +870,109 @@ void _k135() {
       final doc = _read('docs/TODO_기능연결.md');
       expect(doc.contains('D01'), isTrue);
       expect(doc.contains('데이터 팁'), isTrue);
+    });
+  });
+}
+
+
+// ─────────────────────────────────────────────────────────────────────
+//  #195 — 게스트가 잠긴 화면을 열면 화면 대신 가입 안내 바텀시트
+//
+//  🔴 홈의 모든 이동은 `_push()` 한 곳을 지난다. 그래서 잠금도 거기
+//     한 곳에만 붙였다. 여기서는 **게스트일 때만** 갈라지는지, 회원은
+//     예전 그대로 화면이 열리는지를 본다.
+//
+//  🔴 테스트에는 Firebase 가 없어 `isAnonymous` 를 만들 수 없다.
+//     `GuestService.debugIsGuest` 로 게스트인 척한다. 실제 앱에서는
+//     이 값을 건드리는 곳이 없다.
+// ─────────────────────────────────────────────────────────────────────
+void _k195Guest() {
+  group('#195 게스트 잠금 — 잠긴 화면 대신 가입 안내', () {
+    tearDown(() => GuestService.debugIsGuest = null);
+
+    testWidgets('🔴 게스트가 총 지출 카드를 누르면 화면이 아니라 바텀시트가 뜬다',
+        (tester) async {
+      GuestService.debugIsGuest = true;
+      await _pumpHome(tester, items: _sample());
+      await tester.tap(find.text('500,000원'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+
+      expect(tester.takeException(), isNull);
+      // 잠긴 화면은 열리지 않았다.
+      expect(find.byType(TrendDsScreen), findsNothing);
+      // 대신 가입 안내가 떴다.
+      expect(find.text(kSignUpSheetTitle), findsOneWidget);
+    });
+
+    testWidgets('🔴 회원은 지금처럼 화면이 그대로 열린다', (tester) async {
+      GuestService.debugIsGuest = false;
+      await _pumpHome(tester, items: _sample());
+      await tester.tap(find.text('500,000원'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+
+      expect(tester.takeException(), isNull);
+      expect(find.byType(TrendDsScreen), findsOneWidget);
+      expect(find.text(kSignUpSheetTitle), findsNothing);
+    });
+
+    testWidgets('🔴 아무 설정도 안 하면(기본값) 회원 흐름이다', (tester) async {
+      // 실제 앱에서 `debugIsGuest` 는 늘 null 이다. 그때 코드가 게스트
+      // 갈래로 새면 가입한 분들이 전부 막힌다.
+      expect(GuestService.debugIsGuest, isNull);
+      await _pumpHome(tester, items: _sample());
+      await tester.tap(find.text('500,000원'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+
+      expect(find.byType(TrendDsScreen), findsOneWidget);
+    });
+
+    testWidgets('🔴 게스트가 품목 비중을 눌러도 바텀시트다', (tester) async {
+      GuestService.debugIsGuest = true;
+      await _pumpHome(tester, items: _sample());
+      await tester.tap(find.text('상세 분석 보기 >'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+
+      expect(find.byType(ItemSpendDsScreen), findsNothing);
+      expect(find.text(kSignUpSheetTitle), findsOneWidget);
+    });
+
+    testWidgets('🔴 바텀시트에 가입 두 갈래와 로그인 링크가 다 있다',
+        (tester) async {
+      GuestService.debugIsGuest = true;
+      await _pumpHome(tester, items: _sample());
+      await tester.tap(find.text('500,000원'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+
+      expect(find.text('카카오로 가입'), findsOneWidget);
+      expect(find.text('구글로 가입'), findsOneWidget);
+      expect(find.text('이미 가입하셨나요? 로그인'), findsOneWidget);
+      // 기능 한 줄 설명도 같이 보인다.
+      expect(find.textContaining('추이'), findsWidgets);
+    });
+
+    test('🔴 잠금은 `_push` 한 곳에만 붙어 있다', () {
+      final home = _read('lib/screens/ds/home_ds_screen.dart');
+      // 게스트 확인이 화면마다 흩어지면 새 화면을 이을 때 잊는다.
+      expect('GuestService.instance.isGuest'.allMatches(home).length, 1);
+      expect('showFnSignUpSheet'.allMatches(home).length, 1);
+    });
+
+    test('🔴 가입 버튼 세 개가 모두 기존 로그인 화면으로 간다', () {
+      final sheet = _read('lib/widgets/fn_signup_sheet.dart');
+      expect(sheet.contains('SplashDsScreen'), isTrue);
+      // ⑤단계 전에는 계정 연결(link)을 흉내 내지 않는다.
+      expect(sheet.contains('linkWithCredential'), isFalse);
+      expect(sheet.contains('showFnDsBottomSheet'), isTrue);
+    });
+
+    test('🔴 게스트 체험은 아직 꺼져 있다', () {
+      // 켜는 일은 ③④⑤ 가 다 끝난 날 사장님 지시로 한다.
+      expect(GuestService.enabled, isFalse);
     });
   });
 }
