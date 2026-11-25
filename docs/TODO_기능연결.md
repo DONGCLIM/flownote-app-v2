@@ -163,7 +163,7 @@ flutter test test/<그_화면>_test.dart     # 그 화면 것만
 | ① 보안 규칙 점검 | 익명 사용자 공용 쓰기 차단 | ✅ 완료 (`0d33d2d`, 배포됨) |
 | ② 첫 화면·게스트 계정 | `signInAnonymously` + `GuestService` | ✅ 완료 (`8a05f72`, **꺼둠**) |
 | ②-b 규칙 보정 | 게스트 사진 저장 허용 · PDF 카운터 제거 | ✅ 완료 (#193, 배포됨) |
-| ③ 제한·잠금 | 스캔 5장·PDF 저장 시 안내·잠긴 화면 바텀시트 | ⬜ **남음** |
+| ③ 제한·잠금 | 스캔 5장·잠긴 화면 바텀시트·캘린더 탭·학습 수집 제외 | 🟡 **대부분 끝남** (PDF 저장 안내만 남음) |
 | ④ 프로필·가입 유도 | 체험 배너·진행바·🔒 표시·남은 장수 | ⬜ **남음** |
 | ⑤ 가입 전환·Analytics | `linkWithCredential` + 이벤트 전송 | ⬜ **남음** |
 
@@ -187,12 +187,26 @@ PDF 는 사장님 지시대로 **세지 않는다.** 미리보기는 몇 번이�
 
 #### 🔴 ③ 에서 이어서 할 일 — 붙일 자리를 찾아 두었다
 
-| 할 일 | 붙일 자리 |
-|---|---|
-| PDF 저장·공유 → 가입 안내 | `settle_preview_ds_screen.dart` 의 `_openMethodSheet()` 앞 |
-| 잠긴 화면 → 가입 안내 | `home_ds_screen.dart` 의 `_push(Widget page)` (한 곳으로 모여 있다) |
-| 스캔 5장 한도·첫 스캔 안내 | `scan_ds_screen.dart` (저장 성공 지점에서 `GuestService.countScan()`) |
-| 가입 안내 바텀시트 | `showFnDsBottomSheet` (`fn_controls_ds.dart`) 로 새 공용 조각 하나 |
+| 할 일 | 붙일 자리 | 상태 |
+|---|---|---|
+| 가입 안내 바텀시트 | `lib/widgets/fn_signup_sheet.dart` (`showFnDsBottomSheet` 사용) | ✅ |
+| 잠긴 화면 → 가입 안내 | `home_ds_screen.dart` 의 `_push(Widget page)` | ✅ |
+| 캘린더 탭 → 가입 안내 | `main_ds_screen.dart` 의 `_onTab(String key)` | ✅ |
+| 스캔 5장 한도·첫 스캔 동의 | `scan_ds_screen.dart` 의 `_guestGate()` | ✅ |
+| 저장 성공 지점에서 +1 | `scan_review_ds_screen.dart` 의 `_commit()` 반복문 | ✅ |
+| 첫 스캔 성공 안내 | `scan_done_ds_screen.dart` 의 `initState()` | ✅ |
+| 학습 수집 제외 (게스트) | `training_data_service.dart` 의 `collectAllowed` | ✅ |
+| PDF 저장·공유 → 가입 안내 | `settle_preview_ds_screen.dart` 의 `_openMethodSheet()` 앞 | ⬜ **남음** |
+
+🔴 **캘린더는 홈의 `_push()` 를 지나지 않는다.** 아래 탭바에서 바로 열려서
+`main_ds_screen.dart` 쪽에 따로 붙였다. 새로 잠글 화면이 생기면 그 화면이
+어느 문을 지나는지부터 확인한다.
+
+🔴 **게스트 영수증은 학습 데이터로 보내지 않는다.** 이유는 보안이 아니라
+**동의**다 — 게스트는 가입 절차가 없어 학습 활용 동의를 받은 적이 없다.
+막는 일을 **앱이** 한다(`TrainingDataService.collectAllowed`). 규칙의
+`training_data` 와 `receipts/**` 는 건드리지 않았다. 그 두 줄이 #194 에서
+회원 영수증 저장을 막았던 자리다.
 
 `GuestService` 에 `canScan`·`canExportPdf`·`isFirstScan`·`scansLeft` 가
 이미 있다. 화면에서 그것만 보면 된다.

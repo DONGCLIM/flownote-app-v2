@@ -4,7 +4,10 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 
+import '../models/user_model.dart';
 import 'auth_service.dart';
+import 'legal_documents.dart';
+import 'user_repository.dart';
 
 /// 게스트 체험 모드. (#192)
 ///
@@ -65,6 +68,12 @@ class GuestService extends ChangeNotifier {
   /// 첫 스캔 전 안내에 동의했는가.
   bool _agreed = false;
 
+  /// 첫 스캔 성공 안내를 이미 보여 줬는가. (#195)
+  ///
+  /// 🔴 서버에 안 적는다. 한 번 더 보여도 큰일이 아니고, 적으면 스캔마다
+  ///    쓰기가 한 번씩 더 생긴다.
+  bool _doneNoticeShown = false;
+
   int get scans => _scans;
   bool get isLoaded => _loaded;
   bool get agreedToTrial => _agreed;
@@ -100,6 +109,18 @@ class GuestService extends ChangeNotifier {
 
   /// 체험에서 첫 영수증인가. 첫 스캔 안내를 한 번만 띄우는 데 쓴다.
   bool get isFirstScan => isGuest && _scans == 0;
+
+  /// 첫 스캔이 **성공한 직후** 한 번만 띄울 안내를 지금 보여야 하는가. (#195)
+  ///
+  /// 저장이 끝나 [countScan] 이 1 이 된 직후에만 true 다. 두 장째부터는
+  /// 뜨지 않는다.
+  bool get shouldShowFirstScanDone =>
+      isGuest && _scans == 1 && !_doneNoticeShown;
+
+  /// 위 안내를 보여 줬다고 적는다.
+  void markFirstScanDoneShown() {
+    _doneNoticeShown = true;
+  }
 
   // ── 게스트 계정 ──────────────────────────────────────────────
 
@@ -184,18 +205,43 @@ class GuestService extends ChangeNotifier {
     return true;
   }
 
-  /// 첫 스캔 전 안내에 동의했다고 적는다. (#192)
+  /// 첫 스캔 전 안내에 동의했다고 적는다. (#192 · #195)
   ///
-  /// 🔴 동의 이력은 `UserRepository.recordConsents` 가 `consent_log` 에
-  ///    남긴다. 여기서는 "다시 묻지 않기" 용 표시만 둔다.
+  /// 두 군데에 남긴다.
+  ///   1. `users/{uid}/usage/counters.trialAgreed` — "다시 묻지 않기" 표시
+  ///   2. `users/{uid}/consent_log` — **감사용 동의 이력** (개인정보보호법은
+  ///      동의 시점과 버전을 보관하라고 한다)
+  ///
+  /// 🔴 게스트일 때만 부른다. 회원은 가입할 때 이미 동의를 받았고 그
+  ///    이력도 남아 있다 — 여기서 또 적으면 이력이 두 번 쌓인다.
   Future<void> markTrialAgreed() async {
+    if (!isGuest) return;
     _agreed = true;
     notifyListeners();
+
     final ref = _usageRef();
-    if (ref == null) return;
+    if (ref != null) {
+      try {
+        await ref.set({'trialAgreed': true}, SetOptions(merge: true));
+      } catch (_) {/* 다음에 한 번 더 물어도 큰일은 아니다 */}
+    }
+
+    // 🔴 동의 이력. 실패해도 체험은 막지 않는다 — 인터넷이 없다고
+    //    영수증을 못 찍게 하는 건 과하다. 다음 동의 때 다시 쌓인다.
+    final uid = AuthService.instance.uid;
+    if (uid == null) return;
     try {
-      await ref.set({'trialAgreed': true}, SetOptions(merge: true));
-    } catch (_) {/* 다음에 한 번 더 물어도 큰일은 아니다 */}
+      await UserRepository.instance.recordConsents(
+        uid,
+        UserConsents(
+          privacy: ConsentRecord(
+            agreed: true,
+            version: LegalDocs.privacyVersion,
+            at: DateTime.now(),
+          ),
+        ),
+      );
+    } catch (_) {/* 위와 같다 */}
   }
 
   /// 가입이 끝났다. 체험 숫자를 치운다.
@@ -206,9 +252,14 @@ class GuestService extends ChangeNotifier {
   }
 
   @visibleForTesting
-  void setForTest({int scans = 0, bool agreed = false}) {
+  void setForTest({
+    int scans = 0,
+    bool agreed = false,
+    bool doneNoticeShown = false,
+  }) {
     _scans = scans;
     _agreed = agreed;
+    _doneNoticeShown = doneNoticeShown;
     _loaded = true;
   }
 }

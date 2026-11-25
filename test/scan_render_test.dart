@@ -7,7 +7,10 @@ import 'package:provider/provider.dart';
 import 'package:flow_note/models/receipt_model.dart';
 import 'package:flow_note/providers/receipt_provider.dart';
 import 'package:flow_note/screens/ds/scan_ds_screen.dart';
+import 'package:flow_note/services/guest_service.dart';
 import 'package:flow_note/services/subscription_service.dart';
+import 'package:flow_note/services/training_data_service.dart';
+import 'package:flow_note/widgets/fn_signup_sheet.dart';
 
 /// 🔴 #101 — 스캔 메인 화면을 사장님이 준 시안으로 갈아끼웠다.
 ///
@@ -305,5 +308,202 @@ void main() {
   test('스캔 한도 계산은 그대로다 (기능 유지)', () {
     // 화면 문구를 시안 하나로 통일했지만, 한도 정책은 손대지 않았다.
     expect(PlanPolicy.freeMonthlyScans, 100);
+  });
+
+  _k195GuestScan();
+}
+
+// ─────────────────────────────────────────────────────────────────────
+//  #195 게스트 체험 ③ — 스캔 한도 · 체험 안내 · 학습 수집 제외
+//
+//  🔴 테스트에는 Firebase 가 없어 `isAnonymous` 를 만들 수 없다.
+//     `GuestService.debugIsGuest` 로 게스트인 척하고, 쓴 장수는
+//     `setForTest` 로 넣는다. 실제 앱은 두 가지 다 건드리지 않는다.
+// ─────────────────────────────────────────────────────────────────────
+void _k195GuestScan() {
+  group('#195 게스트 스캔 한도', () {
+    tearDown(() {
+      GuestService.debugIsGuest = null;
+      GuestService.instance.setForTest();
+    });
+
+    testWidgets('🔴 게스트에게는 남은 체험 장수가 보인다', (t) async {
+      GuestService.debugIsGuest = true;
+      GuestService.instance.setForTest(scans: 2);
+      await t.pumpWidget(_wrap(const []));
+      await t.pumpAndSettle();
+
+      expect(t.takeException(), isNull);
+      expect(find.text('무료 체험 3장 남았어요'), findsOneWidget);
+      // 달 한도 문구는 게스트에게 뜻이 없다.
+      expect(find.textContaining('이번 달 무료 스캔'), findsNothing);
+    });
+
+    testWidgets('🔴 회원에게는 예전 문구 그대로다', (t) async {
+      GuestService.debugIsGuest = false;
+      await t.pumpWidget(_wrap(const []));
+      await t.pumpAndSettle();
+
+      expect(find.textContaining('이번 달 무료 스캔'), findsOneWidget);
+      expect(find.textContaining('무료 체험'), findsNothing);
+    });
+
+    testWidgets('🔴 아무 설정도 안 하면(기본값) 회원 문구다', (t) async {
+      // 실제 앱에서 `debugIsGuest` 는 늘 null 이다. 여기서 게스트 갈래로
+      // 새면 가입하신 분들 화면에 체험 문구가 뜬다.
+      expect(GuestService.debugIsGuest, isNull);
+      await t.pumpWidget(_wrap(const []));
+      await t.pumpAndSettle();
+      expect(find.textContaining('이번 달 무료 스캔'), findsOneWidget);
+    });
+
+    testWidgets('🔴 게스트가 5장을 다 쓰면 6번째는 스캔 대신 가입 안내다',
+        (t) async {
+      GuestService.debugIsGuest = true;
+      GuestService.instance.setForTest(scans: GuestService.scanMax);
+      await t.pumpWidget(_wrap(const []));
+      await t.pumpAndSettle();
+
+      expect(find.text('무료 체험 0장 남았어요'), findsOneWidget);
+
+      await t.tap(find.text('영수증 촬영하기'));
+      await t.pump();
+      await t.pump(const Duration(milliseconds: 500));
+
+      expect(t.takeException(), isNull);
+      expect(find.text(kSignUpSheetTitle), findsOneWidget);
+      // 촬영 시트(단일/연속)는 열리지 않았다.
+      expect(find.textContaining('연속 촬영'), findsNothing);
+    });
+
+    testWidgets('🔴 앨범에서 가져오기도 같이 막힌다', (t) async {
+      // 한쪽만 막으면 앨범으로 얼마든지 더 넣을 수 있다.
+      GuestService.debugIsGuest = true;
+      GuestService.instance.setForTest(scans: GuestService.scanMax);
+      await t.pumpWidget(_wrap(const []));
+      await t.pumpAndSettle();
+
+      // 🔴 테스트 화면(800x600)에서는 이 버튼이 스크롤 아래에 있다.
+      //    그냥 tap 하면 화면 밖을 눌러 아무 일도 안 일어난다.
+      await t.ensureVisible(find.text('앨범에서 가져오기'));
+      await t.pump();
+      await t.tap(find.text('앨범에서 가져오기'));
+      await t.pump();
+      await t.pump(const Duration(milliseconds: 500));
+
+      expect(find.text(kSignUpSheetTitle), findsOneWidget);
+    });
+
+    testWidgets('🔴 게스트 첫 장은 찍기 전에 보관 안내에 동의를 받는다',
+        (t) async {
+      GuestService.debugIsGuest = true;
+      GuestService.instance.setForTest(scans: 0);
+      await t.pumpWidget(_wrap(const []));
+      await t.pumpAndSettle();
+
+      await t.tap(find.text('영수증 촬영하기'));
+      await t.pump();
+      await t.pump(const Duration(milliseconds: 500));
+
+      expect(t.takeException(), isNull);
+      expect(find.text(kTrialConsentTitle), findsOneWidget);
+      expect(
+          find.text('체험으로 찍은 영수증은 가입하지 않으면 30일 뒤 삭제돼요'),
+          findsOneWidget);
+      expect(find.text('개인정보 처리방침 보기'), findsOneWidget);
+    });
+
+    testWidgets('🔴 이미 동의했으면 두 번 묻지 않는다', (t) async {
+      GuestService.debugIsGuest = true;
+      GuestService.instance.setForTest(scans: 1, agreed: true);
+      await t.pumpWidget(_wrap(const []));
+      await t.pumpAndSettle();
+
+      await t.tap(find.text('영수증 촬영하기'));
+      await t.pump();
+      await t.pump(const Duration(milliseconds: 500));
+
+      expect(find.text(kTrialConsentTitle), findsNothing);
+    });
+  });
+
+  group('#195 게스트 영수증은 학습 데이터로 보내지 않는다', () {
+    tearDown(() => GuestService.debugIsGuest = null);
+
+    test('🔴 게스트면 수집하지 않는다', () {
+      // 막는 이유는 보안이 아니라 **동의**다. 게스트는 가입 절차가 없어
+      // 학습 활용 동의를 받은 적이 없다.
+      GuestService.debugIsGuest = true;
+      expect(TrainingDataService.collectAllowed, isFalse);
+    });
+
+    test('🔴 회원은 지금처럼 수집한다', () {
+      GuestService.debugIsGuest = false;
+      expect(TrainingDataService.collectAllowed, isTrue);
+    });
+
+    test('🔴 기본값(실제 앱)은 수집하는 쪽이다', () {
+      // 판정이 흔들리면 회원 쪽으로 기운다. 게스트 한 명을 놓치는 것보다
+      // 회원 수집이 조용히 멈추는 게 훨씬 나쁘다.
+      expect(GuestService.debugIsGuest, isNull);
+      expect(TrainingDataService.collectAllowed, isTrue);
+    });
+
+    test('🔴 세 길목(문서·수정본·이미지)에 전부 걸려 있다', () {
+      final src =
+          io.File('lib/services/training_data_service.dart').readAsStringSync();
+      // 하나만 막으면 나머지로 샌다. `receipts/**` 업로드가 특히 그렇다.
+      expect('collectAllowed'.allMatches(src).length, greaterThanOrEqualTo(4));
+      final up = src.indexOf('Future<String?> _uploadImage');
+      expect(src.indexOf('collectAllowed', up), greaterThan(up));
+    });
+
+    test('🔴 보안 규칙은 건드리지 않았다 (#194 재발 방지)', () {
+      // 막는 일을 앱이 하므로 규칙을 고칠 이유가 없다. 이 두 줄이 바로
+      // #194 에서 **회원** 영수증 저장을 막았던 자리다.
+      final fs = io.File('firestore.rules').readAsStringSync();
+      final st = io.File('storage.rules').readAsStringSync();
+      expect(fs.substring(fs.indexOf('match /training_data/{docId}')),
+          contains('allow create: if isSignedIn();'));
+      expect(
+          st
+              .substring(st.indexOf('match /receipts/{allPaths=**}'))
+              .substring(0, 220),
+          contains('allow write: if isSignedIn()'));
+    });
+  });
+
+  group('#195 게스트 횟수는 저장 성공 지점에서만 센다', () {
+    test('🔴 저장이 끝난 뒤에 장당 한 번 올린다', () {
+      final src = io.File('lib/screens/ds/scan_review_ds_screen.dart')
+          .readAsStringSync();
+      // 세는 곳은 한 곳뿐이어야 한다. 여러 곳이면 두 번 세거나 빠진다.
+      expect('GuestService.instance.countScan()'.allMatches(src).length, 1);
+      // `addReceipt` 가 **끝난 뒤**라야 실패·다시 찍기가 안 세진다.
+      final add = src.indexOf('await provider.addReceipt(d.toReceipt());');
+      final count = src.indexOf('await GuestService.instance.countScan();');
+      expect(add, greaterThan(0));
+      expect(count, greaterThan(add));
+    });
+
+    test('🔴 회원은 횟수를 세지 않는다', () {
+      final src =
+          io.File('lib/services/guest_service.dart').readAsStringSync();
+      final body = src.substring(src.indexOf('Future<bool> countScan()'));
+      // 첫 줄에서 그냥 돌아간다.
+      expect(body.indexOf('if (!isGuest) return true;'),
+          lessThan(body.indexOf('_scans = _scans + 1;')));
+    });
+
+    test('🔴 한도를 넘으면 올리지 않는다', () {
+      final src =
+          io.File('lib/services/guest_service.dart').readAsStringSync();
+      final body = src.substring(src.indexOf('Future<bool> countScan()'));
+      expect(body, contains('if (_scans >= scanMax) return false;'));
+    });
+
+    test('🔴 체험은 아직 꺼져 있다', () {
+      expect(GuestService.enabled, isFalse);
+    });
   });
 }

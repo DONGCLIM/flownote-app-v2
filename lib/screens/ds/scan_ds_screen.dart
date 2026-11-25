@@ -6,7 +6,9 @@ import 'package:provider/provider.dart';
 import '../../design/fn_shell.dart';
 import '../../design/fn_home_tokens.dart';
 import '../../providers/receipt_provider.dart';
+import '../../services/guest_service.dart';
 import '../../services/subscription_service.dart';
+import '../../widgets/fn_signup_sheet.dart';
 import '../scan/scan_flow.dart';
 
 /// 스캔 화면 — #136 시안(PNG) 기준으로 톤앤톤/컬러를 다시 맞춘 버전.
@@ -39,14 +41,47 @@ class ScanDsScreenState extends State<ScanDsScreen> {
   /// MainScreen이 스캔 탭 재탭 시 호출
   Future<void> showCameraOptions() => _start();
 
+  /// 게스트가 찍어도 되는가. 찍으면 안 되면 안내를 띄우고 false. (#195)
+  ///
+  /// 🔴 **게스트일 때만** 갈라진다. 회원은 첫 줄에서 바로 true 가 되어
+  ///    예전과 완전히 똑같이 돈다.
+  ///
+  /// 두 가지를 본다.
+  ///   1. 체험 장수를 다 썼으면 → 가입 안내 바텀시트 (스캔은 시작 안 함)
+  ///   2. 첫 장이면 → 보관 안내에 동의를 받는다. 동의해야 넘어간다.
+  Future<bool> _guestGate() async {
+    final g = GuestService.instance;
+    if (!g.isGuest) return true;
+
+    if (g.scansLeft <= 0) {
+      await showFnSignUpSheet(
+        context,
+        feature: '체험 ${GuestService.scanMax}장을 다 쓰셨어요. '
+            '가입하시면 영수증을 계속 모을 수 있어요',
+      );
+      return false;
+    }
+
+    if (g.isFirstScan && !g.agreedToTrial) {
+      final ok = await showFnTrialConsentSheet(context);
+      if (!ok) return false;          // 쓸어 내려 닫았다 — 찍지 않는다
+      await g.markTrialAgreed();      // consent_log 에 이력이 남는다
+    }
+    return true;
+  }
+
   /// '영수증 촬영하기' → 시안 `CaptureSheet` (단일 촬영 / 연속 촬영)
   Future<void> _start() async {
+    if (!await _guestGate()) return;
+    if (!mounted) return;
     await ScanFlow.start(context);
     if (mounted) setState(() {});
   }
 
   /// '앨범에서 가져오기' → 시트 없이 곧바로 앨범 열기
   Future<void> _pickFromGallery() async {
+    if (!await _guestGate()) return;
+    if (!mounted) return;
     await ScanFlow.startFromGallery(context);
     if (mounted) setState(() {});
   }
@@ -64,7 +99,11 @@ class ScanDsScreenState extends State<ScanDsScreen> {
     // 스캔 횟수가 늘면 카드가 즉시 갱신되도록 직접 구독한다.
     return ListenableBuilder(
       listenable: SubscriptionService.instance,
-      builder: (context, _) => _body(context),
+      // 🔴 게스트 남은 장수가 줄면 윗줄이 바로 바뀌어야 한다.
+      builder: (context, _) => ListenableBuilder(
+        listenable: GuestService.instance,
+        builder: (context, _) => _body(context),
+      ),
     );
   }
 
@@ -125,8 +164,12 @@ class ScanDsScreenState extends State<ScanDsScreen> {
           //    예전에는 `sub.isPro` 로 'PRO · 스캔 무제한' 을 갈라 보여줬는데,
           //    `unlockEverything == true` 라서 늘 '무제한' 만 떴다.
           //    남은 횟수 계산(used/cap)과 한도 판단(reached)은 그대로 쓴다.
+          // 🔴 게스트에게는 달 한도가 뜻이 없다 — 체험 장수를 보여 준다(#195).
+          //    회원은 예전 문구 그대로다.
           Text(
-            '이번 달 무료 스캔 $used/$cap장 사용',
+            GuestService.instance.isGuest
+                ? '무료 체험 ${GuestService.instance.scansLeft}장 남았어요'
+                : '이번 달 무료 스캔 $used/$cap장 사용',
             textAlign: TextAlign.center,
             style: const TextStyle(
               fontFamily: 'Pretendard',

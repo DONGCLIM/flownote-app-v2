@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../design/fn_controls_ds.dart';
+import '../screens/ds/legal_doc_ds_screen.dart';
 import '../screens/ds/splash_ds_screen.dart';
 import '../theme/fn_ds.dart';
 import 'fn_inquiry_parts.dart';
@@ -109,6 +110,139 @@ class _SignUpSheetBody extends StatelessWidget {
               ),
             ),
           ),
+        ),
+      ],
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────
+// 첫 스캔 전 안내 · 첫 스캔 성공 안내 (#195)
+// ─────────────────────────────────────────────────────────────
+
+/// 첫 스캔 **전에 한 번** 띄우는 안내. 동의해야 스캔으로 넘어간다.
+const String kTrialConsentTitle = '체험으로 찍어 보기 전에';
+
+/// 첫 스캔이 **성공한 직후 한 번** 띄우는 안내. 그냥 닫을 수 있다.
+const String kFirstScanDoneTitle = '잘 읽혔나요?';
+
+/// 체험 영수증 보관 안내 + 개인정보 처리방침 링크.
+///
+/// 🔴 돌려주는 값은 **동의했는가**다. 시트를 쓸어 내려 닫으면 false 가
+///    되고, 부르는 쪽에서 스캔을 시작하지 않는다. 동의 없이 찍게 두면
+///    안내를 한 뜻이 없다.
+///
+/// 🔴 게스트일 때만 부른다. 회원은 가입할 때 이미 동의를 받았다.
+Future<bool> showFnTrialConsentSheet(BuildContext context) async {
+  final ok = await showFnDsBottomSheet<bool>(
+    context,
+    title: kTrialConsentTitle,
+    child: const _TrialConsentBody(),
+  );
+  return ok ?? false;
+}
+
+class _TrialConsentBody extends StatelessWidget {
+  const _TrialConsentBody();
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const Text(
+          '체험으로 찍은 영수증은 가입하지 않으면 30일 뒤 삭제돼요',
+          style: TextStyle(
+            fontFamily: FnDs.font,
+            fontSize: FnDs.fontM,
+            height: 1.45,
+            color: FnDs.body,
+          ),
+        ),
+        const SizedBox(height: FnDs.gapS),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) =>
+                    const LegalDocDsScreen(kind: LegalDocKind.privacy),
+              ),
+            ),
+            child: const Padding(
+              padding: EdgeInsets.symmetric(vertical: FnDs.gap2xs),
+              child: Text(
+                '개인정보 처리방침 보기',
+                style: TextStyle(
+                  fontFamily: FnDs.font,
+                  fontSize: FnDs.fontS,
+                  fontWeight: FontWeight.w600,
+                  color: FnDs.coral,
+                  decoration: TextDecoration.underline,
+                  decorationColor: FnDs.coral,
+                ),
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: FnDs.gapL),
+        FnPrimaryButton(
+          label: '확인하고 찍기',
+          // 🔴 `pop(true)` 여야 부르는 쪽이 스캔을 시작한다.
+          onTap: () => Navigator.of(context).pop(true),
+        ),
+      ],
+    );
+  }
+}
+
+/// 첫 스캔이 성공한 직후 한 번. 가입을 권하되 **닫을 수 있다.**
+///
+/// 🔴 여기서 길을 막으면 방금 잘 된 경험이 바로 광고로 바뀐다.
+///    닫기를 먼저 둔 이유다.
+Future<void> showFnFirstScanDoneSheet(BuildContext context) {
+  return showFnDsBottomSheet<void>(
+    context,
+    title: kFirstScanDoneTitle,
+    child: const _FirstScanDoneBody(),
+  );
+}
+
+class _FirstScanDoneBody extends StatelessWidget {
+  const _FirstScanDoneBody();
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const Text(
+          '가입하면 계속 저장돼요',
+          style: TextStyle(
+            fontFamily: FnDs.font,
+            fontSize: FnDs.fontM,
+            height: 1.45,
+            color: FnDs.body,
+          ),
+        ),
+        const SizedBox(height: FnDs.gapL),
+        FnPrimaryButton(
+          label: '가입하고 계속 쓰기',
+          onTap: () {
+            final outer = Navigator.of(context, rootNavigator: true);
+            Navigator.of(context).pop();
+            outer.push(MaterialPageRoute<void>(
+              builder: (_) => const SplashDsScreen(),
+            ));
+          },
+        ),
+        const SizedBox(height: FnDs.gapS),
+        FnOutlineButton(
+          label: '나중에',
+          onTap: () => Navigator.of(context).pop(),
         ),
       ],
     );

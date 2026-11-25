@@ -12,6 +12,7 @@ import '../../design/fn_controls_ds.dart';
 import '../../design/fn_sheet.dart';
 import '../../design/fn_feedback.dart';
 import '../../providers/receipt_provider.dart';
+import '../../services/guest_service.dart';
 import '../../services/subscription_service.dart';
 import '../../services/vendor_tax_service.dart';
 import '../../services/receipt_duplicate_service.dart';
@@ -215,6 +216,15 @@ class _ScanReviewDsScreenState extends State<ScanReviewDsScreen> {
       for (final d in list) {
         await provider.addReceipt(d.toReceipt());
         await SubscriptionService.instance.recordScan();
+        // 🔴 게스트 체험 횟수는 **여기서만** 올린다 (#195).
+        //
+        //    `addReceipt` 가 끝난 **뒤**라서, 인식 실패·다시 찍기·검토 중
+        //    나가기는 한 장도 세지 않는다. 연속 촬영은 이 반복문이 장당
+        //    한 번 도므로 장당 한 번씩 센다.
+        //
+        //    🔴 `countScan()` 은 게스트가 아니면 첫 줄에서 그냥 돌아간다.
+        //       회원에게는 아무 일도 일어나지 않는다.
+        await GuestService.instance.countScan();
       }
     });
     if (!mounted) return;

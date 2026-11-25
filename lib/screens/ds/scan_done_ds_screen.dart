@@ -4,6 +4,8 @@ import '../../design/fn_tokens.dart';
 import '../../design/fn_scan_tokens.dart';
 import '../../design/fn_shell.dart';
 import '../../design/fn_tab_intent.dart';
+import '../../services/guest_service.dart';
+import '../../widgets/fn_signup_sheet.dart';
 import '../scan/scan_draft.dart';
 import 'fn_data.dart';
 
@@ -52,6 +54,26 @@ class _ScanDoneDsScreenState extends State<ScanDoneDsScreen>
     vsync: this,
     duration: const Duration(milliseconds: 620),
   )..forward();
+
+  @override
+  void initState() {
+    super.initState();
+    // 🔴 게스트의 **첫 장이 저장된 직후** 한 번만 가입을 권한다 (#195).
+    //
+    //    `shouldShowFirstScanDone` 은 게스트이고 scans == 1 이고 아직
+    //    안 보여 줬을 때만 true 다. 회원은 늘 false 라 이 길을 타지 않는다.
+    //
+    //    축하 애니메이션(620ms)이 끝난 뒤에 띄운다. 겹쳐 올리면 방금
+    //    잘 된 기분을 가린다.
+    final g = GuestService.instance;
+    if (!g.shouldShowFirstScanDone) return;
+    g.markFirstScanDoneShown();
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      await Future<void>.delayed(const Duration(milliseconds: 700));
+      if (!mounted) return;
+      await showFnFirstScanDoneSheet(context);
+    });
+  }
 
   @override
   void dispose() {

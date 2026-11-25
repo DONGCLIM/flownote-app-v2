@@ -11,6 +11,8 @@ import 'package:flow_note/screens/ds/scan_confirm_list_ds_screen.dart';
 import 'package:flow_note/screens/ds/scan_done_ds_screen.dart';
 import 'package:flow_note/screens/ds/scan_processing_ds_screen.dart';
 import 'package:flow_note/screens/scan/scan_draft.dart';
+import 'package:flow_note/services/guest_service.dart';
+import 'package:flow_note/widgets/fn_signup_sheet.dart';
 
 /// 🔴 #161 — 사장님이 주신 스캔 4화면 시안을 코드로 고정한다.
 ///
@@ -353,6 +355,73 @@ void main() {
       // '매입 내역 보기' 는 내역(settle) 탭으로 가야 한다.
       expect(code.contains("_leaveTo('settle', null)"), isTrue,
           reason: '내역 보기가 엉뚱한 탭으로 간다');
+    });
+  });
+
+  // ──────────────────────────────────────────────────────────
+  //  #195 게스트 — 첫 스캔 성공 직후 한 번만 가입을 권한다
+  //
+  //  🔴 테스트에는 Firebase 가 없어 `isAnonymous` 를 만들 수 없다.
+  //     `GuestService.debugIsGuest` 로 게스트인 척한다.
+  // ──────────────────────────────────────────────────────────
+  group('#195 게스트 첫 스캔 성공 안내', () {
+    const summary = ScanSummary(
+        total: 1, success: 1, failed: 0, amount: 50000, itemCount: 3);
+
+    tearDown(() {
+      GuestService.debugIsGuest = null;
+      GuestService.instance.setForTest();
+    });
+
+    testWidgets('🔴 게스트의 첫 장이면 안내가 한 번 뜬다', (t) async {
+      GuestService.debugIsGuest = true;
+      GuestService.instance.setForTest(scans: 1);   // 방금 1장 저장됐다
+      await pump(t, const ScanDoneDsScreen(summary: summary));
+      await t.pump(const Duration(milliseconds: 900));
+      await t.pump(const Duration(milliseconds: 400));
+
+      expect(t.takeException(), isNull);
+      expect(find.text(kFirstScanDoneTitle), findsOneWidget);
+      expect(find.text('가입하면 계속 저장돼요'), findsOneWidget);
+      // 🔴 닫을 수 있어야 한다. 막으면 방금 잘 된 경험이 광고가 된다.
+      expect(find.text('나중에'), findsOneWidget);
+      await drain(t);
+    });
+
+    testWidgets('🔴 두 장째부터는 안 뜬다', (t) async {
+      GuestService.debugIsGuest = true;
+      GuestService.instance.setForTest(scans: 2);
+      await pump(t, const ScanDoneDsScreen(summary: summary));
+      await t.pump(const Duration(milliseconds: 900));
+      await t.pump(const Duration(milliseconds: 400));
+
+      expect(find.text(kFirstScanDoneTitle), findsNothing);
+      await drain(t);
+    });
+
+    testWidgets('🔴 회원에게는 뜨지 않는다', (t) async {
+      GuestService.debugIsGuest = false;
+      GuestService.instance.setForTest(scans: 1);
+      await pump(t, const ScanDoneDsScreen(summary: summary));
+      await t.pump(const Duration(milliseconds: 900));
+      await t.pump(const Duration(milliseconds: 400));
+
+      expect(find.text(kFirstScanDoneTitle), findsNothing);
+      // 1장이라 제목은 '저장 완료' 다 ('모두 저장 완료' 는 2장 이상).
+      expect(find.text('저장 완료'), findsWidgets);
+      await drain(t);
+    });
+
+    testWidgets('🔴 아무 설정도 안 하면(기본값) 뜨지 않는다', (t) async {
+      // 실제 앱에서 `debugIsGuest` 는 늘 null 이다.
+      expect(GuestService.debugIsGuest, isNull);
+      GuestService.instance.setForTest(scans: 1);
+      await pump(t, const ScanDoneDsScreen(summary: summary));
+      await t.pump(const Duration(milliseconds: 900));
+      await t.pump(const Duration(milliseconds: 400));
+
+      expect(find.text(kFirstScanDoneTitle), findsNothing);
+      await drain(t);
     });
   });
 }

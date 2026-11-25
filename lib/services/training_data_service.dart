@@ -6,6 +6,7 @@ import 'package:firebase_storage/firebase_storage.dart';
 import '../services/gemini_ocr_service.dart';
 import '../services/receipt_parser.dart';
 import 'auth_service.dart';
+import 'guest_service.dart';
 
 /// 학습 데이터 수집 서비스
 /// 저장하는 3가지:
@@ -44,6 +45,21 @@ class TrainingDataService {
 
   bool get isAvailable => _initialized && _db != null && _storage != null;
 
+  /// 이 영수증을 **학습 데이터로 모아도 되는가.** (#195)
+  ///
+  /// 🔴 게스트는 안 된다. 막는 이유가 보안이 아니라 **동의**다. 게스트는
+  ///    가입 절차가 없어서 **학습 활용 동의를 받은 적이 없다.** 동의 없이
+  ///    남의 영수증을 학습에 쓰면 안 된다.
+  ///
+  /// 🔴 막는 일을 **앱이 한다.** 보안 규칙의 `training_data` 와
+  ///    `receipts/**` 는 건드리지 않는다. 그 두 줄이 #194 에서 회원
+  ///    영수증 저장을 막았던 자리다 — 게스트 전용이 아니라 **회원이
+  ///    영수증을 찍을 때마다 지나는 길**이었다. 다시는 손대지 않는다.
+  ///
+  /// 🔴 판정이 흔들리면 **회원 쪽으로 기운다.** `isGuest` 가 false 면
+  ///    예전과 완전히 똑같이 돈다.
+  static bool get collectAllowed => !GuestService.instance.isGuest;
+
   // ────────────────────────────────────────
   // STEP 1: 스캔 직후 → 이미지 + AI결과 저장
   // 반환값: docId (나중에 사용자 수정본 저장에 사용)
@@ -54,6 +70,13 @@ class TrainingDataService {
     String? userId,                   // 미지정 시 로그인한 Firebase uid 사용
   }) async {
     if (!isAvailable) return null;
+
+    // 🔴 게스트 영수증은 학습 데이터로 보내지 않는다 (#195 — 동의가 없다).
+    //    `receipts/**` 이미지 업로드도 이 아래에 있으므로 같이 건너뛴다.
+    if (!collectAllowed) {
+      if (kDebugMode) debugPrint('[TrainingData] 게스트 — 학습 수집 건너뜀');
+      return null;
+    }
 
     try {
       final docId = _generateDocId();
@@ -97,6 +120,8 @@ class TrainingDataService {
     required ParsedReceipt userEdited, // 사용자 최종 수정본
   }) async {
     if (!isAvailable || docId.isEmpty) return;
+    // 🔴 수정본도 같은 이유로 보내지 않는다 (#195).
+    if (!collectAllowed) return;
 
     try {
       final labelMap = _parsedReceiptToMap(userEdited);
@@ -118,6 +143,9 @@ class TrainingDataService {
   // 이미지 Firebase Storage 업로드
   // ────────────────────────────────────────
   Future<String?> _uploadImage(String localPath, String docId) async {
+    // 🔴 `receipts/**` 학습 이미지. 부르는 곳이 늘어나도 게스트 사진이
+    //    새지 않도록 여기서 한 번 더 막는다 (#195).
+    if (!collectAllowed) return null;
     try {
       final file = File(localPath);
       if (!await file.exists()) return null;
