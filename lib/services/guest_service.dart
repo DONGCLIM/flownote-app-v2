@@ -35,6 +35,16 @@ class GuestService extends ChangeNotifier {
   GuestService._();
   static final GuestService instance = GuestService._();
 
+  /// 🔴 **게스트 체험을 아직 켜지 않았다.** (#192 — 2·5단계만 끝남)
+  ///
+  ///    ①②단계(보안 규칙·게스트 계정)는 됐지만 ③제한·잠금 ④프로필
+  ///    ⑤가입 전환이 아직 없다. 이대로 켜면 처음 오신 분이 **게스트로
+  ///    들어와 가입할 길이 없는 채로 갇힌다.** 지금 상태보다 나쁘다.
+  ///
+  ///    ③④⑤ 가 끝나는 날 이 값을 `true` 로 바꾸면 켜진다. 그 전까지는
+  ///    예전처럼 인트로 → 로그인으로 간다.
+  static const bool enabled = false;
+
   /// 체험 한도. **`firestore.rules` 의 `guestScanMax()`·`guestPdfMax()` 와
   /// 같은 값**이어야 한다. 한쪽만 바꾸면 앱은 통과시키는데 서버가 거부한다.
   static const int scanMax = 5;
@@ -80,6 +90,7 @@ class GuestService extends ChangeNotifier {
   /// 돌려주는 값은 **게스트로 들어갔는가**다. 이미 로그인돼 있거나
   /// Firebase 를 못 쓰면 false 를 주고 아무것도 하지 않는다.
   Future<bool> enterAsGuest() async {
+    if (!enabled) return false;           // 아직 안 켰다 (위 주석 참고)
     final auth = AuthService.instance;
     if (!auth.isAvailable) return false;
     if (auth.currentUser != null) return false;   // 이미 들어와 있다

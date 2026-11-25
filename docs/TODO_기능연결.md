@@ -134,6 +134,60 @@ flutter test test/<그_화면>_test.dart     # 그 화면 것만
 | `test/guide_render_test.dart` | 159 | 사입 가이드·시즌 비교·예산 검토 + 사입 메모장 22 + 저장된 사입 리스트 28 + 저장 버그·입력 칸 13 + 메모장 저장 흐름 17 + 시장 체크 16 + **클라우드 동기화 12** |
 | `test/cost_calc_render_test.dart` | 28 | 원가 계산기 |
 
+### 🔴 게스트 체험 모드 — 5단계 중 2단계만 끝남 (#192)
+
+> 🔴 **지금 꺼져 있다.** `GuestService.enabled = false`.
+> ③④⑤ 가 끝나는 날 그 한 줄을 `true` 로 바꾸면 켜진다.
+> 지금 켜면 처음 오신 분이 **게스트로 들어와 가입할 길이 없는 채로
+> 갇힌다.** 로그인 화면보다 나쁘다. 그래서 일부러 잠가 두었다.
+
+| 단계 | 한 일 | 상태 |
+|---|---|---|
+| ① 보안 규칙 점검 | 익명 사용자 공용 쓰기 차단 | ✅ 완료 (`0d33d2d`, 배포됨) |
+| ② 첫 화면·게스트 계정 | `signInAnonymously` + `GuestService` | ✅ 완료 (`8a05f72`, **꺼둠**) |
+| ③ 제한·잠금 | 스캔 5장·PDF 3회·잠긴 화면 바텀시트 | ⬜ **남음** |
+| ④ 프로필·가입 유도 | 체험 배너·진행바·🔒 표시·남은 장수 | ⬜ **남음** |
+| ⑤ 가입 전환·Analytics | `linkWithCredential` + 이벤트 전송 | ⬜ **남음** |
+
+#### ① 에서 찾은 "로그인만 하면 쓰기 가능" 이던 곳 (전부 막음)
+
+| 파일 | 경로 | 전 | 후 |
+|---|---|---|---|
+| firestore | `training_data/{docId}` | `isSignedIn()` | `isMember()` |
+| firestore | `inquiries/{docId}` create | `isSignedIn()` | `isMember()` |
+| storage | `receipts/{…}` write | `isSignedIn()` | `isMember()` |
+| storage | `training_data/{…}` write | `isSignedIn()` | `isMember()` |
+| storage | `inquiries/{uid}/{…}` write | uid 일치만 | uid 일치 + `isMember()` |
+
+`market/{docId}` 읽기는 **일부러 열어 두었다** — 홈에 시세 줄이 있는데
+막으면 체험 중에 빈 칸이 보인다. 쓰기는 여전히 전부 금지다.
+`users/{uid}` 아래는 게스트도 자기 것만 읽고 쓴다(체험 영수증).
+새 `users/{uid}/usage/{docId}` 규칙이 게스트의 횟수를 **1씩·한도까지만**
+올리도록 지킨다(스캔 5 · PDF 3). 앱의 `GuestService.scanMax/pdfMax` 와
+**같은 값**이어야 한다.
+
+#### ③④⑤ 에서 할 일 (사장님 지시 그대로)
+
+- ③ 스캔 5장(저장 성공분만)·PDF 3회·잠긴 화면 가입 안내 바텀시트
+  (한 줄 설명 + 카카오/구글 + "이미 가입하셨나요? 로그인"),
+  첫 스캔 전 30일 삭제 안내 + 개인정보 처리방침 + `consent_log` 기록
+- ④ 프로필 코랄 배너·"체험 중인 대표님"·진행바·🔒 "가입 후"·로그아웃 숨김
+- ⑤ `linkWithCredential`/`linkWithPopup` (구글·애플·이메일만),
+  `credential-already-in-use` 면 로그인만 + "옮기기는 곧",
+  카카오 버튼은 "지금은 구글로 가입해 주세요",
+  아이폰 게스트 설치 안내 문구, Analytics 실제 전송
+
+#### 2차·다음 (사장님 지시)
+
+- 2차: 카카오 가입 시 데이터 옮기기 **서버 함수**, 기존 회원 합치기,
+  30일 지난 게스트 데이터 삭제
+- 다음: **OCR 을 서버 함수로** 옮기기 (API 키 보호 + 정확한 횟수 세기).
+  지금 OCR 은 앱에서 `generativelanguage.googleapis.com` 를 직접 부른다.
+- 🔴 **Analytics 가 아직 진짜로 안 보낸다.** `firebase_analytics` 패키지가
+  `pubspec.yaml` 에 없다. `lib/services/fn_analytics.dart` 가 부르는 자리만
+  만들어 두고 디버그 로그만 남긴다. 패키지를 더하면 웹(gtag)·iOS·안드로이드
+  설정을 같이 손봐야 해서 미뤘다. `_log` 한 곳만 고치면 전부 살아난다.
+
 ### 다음에 할 일
 
 > 🔴 **사입 리스트 진행 상태**
