@@ -24,6 +24,7 @@ import '../../theme/fn_ds.dart';
 import '../../widgets/fn_inquiry_parts.dart';
 import 'fn_data.dart';
 import 'purchase_memo_ds_screen.dart';
+import 'saved_lists_ds_screen.dart';
 import 'season_ds_screen.dart';
 
 /// 시안 `AppH3`의 서브 화면들을 1:1로 옮긴 파일.
@@ -1034,7 +1035,6 @@ class GuideDsScreen extends StatelessWidget {
       highlight: true,
       page: 'budget',
     ),
-    // 저장된 사입 리스트는 아직 화면이 없다. 눌러도 안내만 띄운다. (5단계)
     _GuideRow(
       icon: Icons.fact_check_outlined,
       title: '저장된 사입 리스트',
@@ -1095,6 +1095,8 @@ class GuideDsScreen extends StatelessWidget {
       // 🔴 #185 에서 사입 메모장을 만들었다. 어느 리스트에 적을지는
       //    화면이 스스로 고른다(가장 최근 준비/사입 중 → 없으면 새로).
       'memo' => const PurchaseMemoDsScreen(),
+      // 🔴 #187 에서 저장된 사입 리스트 화면을 만들었다.
+      'saved' => const SavedListsDsScreen(),
       _ => null,
     };
     if (screen == null) {
@@ -2838,13 +2840,20 @@ class _GuideBudgetDsScreenState extends State<GuideBudgetDsScreen> {
     //    "화면을 나갈 때 저장해줘."
     unawaited(PurchaseListService.instance.flush());
     if (!mounted) return;
-    _openMemo(list);
+    _openSaved(list);
   }
 
-  /// 사입 메모장으로 넘어간다. (2단계에서 화면을 붙인다)
-  void _openMemo(PurchaseList list) {
+  /// 저장된 사입 리스트로 넘어간다. 방금 저장한 것이 펼쳐진 채 맨 위에 온다.
+  ///
+  /// 🔴 `pushReplacement` 다. 뒤로 가기를 눌렀을 때 방금 저장한 입력
+  ///    화면으로 돌아가면, 또 저장해서 같은 리스트가 둘이 된다.
+  ///
+  /// 🔴 사입 메모장 연동은 다음 작업이다. (사장님 지시 #187)
+  void _openSaved(PurchaseList list) {
     Navigator.of(context).pushReplacement(
-      MaterialPageRoute(builder: (_) => PurchaseMemoDsScreen(listId: list.id)),
+      MaterialPageRoute(
+        builder: (_) => SavedListsDsScreen(openId: list.id),
+      ),
     );
   }
 
@@ -2908,7 +2917,7 @@ class _GuideBudgetDsScreenState extends State<GuideBudgetDsScreen> {
             ),
             const SizedBox(height: FnDs.gapM),
             FnPrimaryButton(
-              label: '저장하고 사입 메모장으로',
+              label: '저장하고 사입 리스트로',
               onTap: _save,
             ),
           ],
@@ -3079,7 +3088,9 @@ class _BudgetItemsCard extends StatelessWidget {
               const Divider(height: 1, thickness: 1, color: FnDs.hair),
               const SizedBox(height: FnDs.gapM),
             ],
-            FnItemLineRow(
+            // 🔴 예산 검토만 큰 칸(높이 56·글자 L)을 쓴다. 원가 계산기는
+            //    `FnItemLineRow` 그대로다. (사장님 지시 #187)
+            FnBigItemLineRow(
               line: lines[i],
               book: book,
               // 줄이 하나뿐이면 지우지 못하게 한다. 빈 카드가 되면

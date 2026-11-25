@@ -121,6 +121,29 @@ class PurchaseListService extends ChangeNotifier {
     return null;
   }
 
+  /// 저장된 사입 리스트 화면 위쪽 요약. (#187)
+  ///
+  /// 🔴 평균을 **전체 건수**로 나누지 않는다. 메모만 적은 리스트는
+  ///    금액이 0 이라, 그걸 분모에 넣으면 평균이 확 내려간다.
+  static PurchaseSummary summarize(List<PurchaseList> lists) {
+    if (lists.isEmpty) return PurchaseSummary.zero;
+    var total = 0.0;
+    var priced = 0;
+    for (final e in lists) {
+      if (e.isMemoOnly) continue;
+      total += e.plannedTotal;
+      priced++;
+    }
+    return PurchaseSummary(
+      count: lists.length,
+      total: total,
+      average: priced == 0 ? 0 : total / priced,
+    );
+  }
+
+  /// 지금 저장된 것들의 요약.
+  PurchaseSummary get summary => summarize(all);
+
   // ── 쓰기 ────────────────────────────────────────────────────
 
   /// 새 리스트를 만든다. 아직 저장하지는 않는다.
@@ -283,6 +306,32 @@ class PurchaseListService extends ChangeNotifier {
     }
     return out;
   }
+}
+
+/// 저장된 사입 리스트 화면이 쓰는 요약. (#187)
+///
+/// 🔴 **예산을 적은 리스트만** 금액에 넣는다. 사장님 지시(#187):
+///    "예산 없는 메모 리스트는 금액 계산에서 제외". 메모만 적어 둔
+///    리스트까지 평균에 넣으면 1회 평균이 실제보다 낮게 나온다.
+@immutable
+class PurchaseSummary {
+  const PurchaseSummary({
+    required this.count,
+    required this.total,
+    required this.average,
+  });
+
+  /// 저장된 리스트 **전체** 건수. 메모 리스트도 센다.
+  final int count;
+
+  /// 예상 예산 합계. 품목이 있는 리스트만 더한다.
+  final double total;
+
+  /// 1회 평균 = 합계 ÷ **품목이 있는 리스트 수**.
+  final double average;
+
+  static const PurchaseSummary zero =
+      PurchaseSummary(count: 0, total: 0, average: 0);
 }
 
 /// 메모 한 줄 — 글과 체크 상태. (#185)

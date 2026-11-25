@@ -1,5 +1,7 @@
 import 'package:hive/hive.dart';
 
+import '../services/purchase_list_service.dart';
+
 part 'purchase_list_model.g.dart';
 
 /// 사입 리스트 하나.
@@ -90,6 +92,15 @@ class PurchaseList extends HiveObject {
 
   /// 아직 사지도, 포기하지도 않은 품목 수.
   int get pendingCount => items.where((e) => !e.done).length;
+
+  /// 품목이 하나도 없는 리스트인가. (메모만 적어 둔 것)
+  ///
+  /// 🔴 금액 칸을 비우고 "메모 리스트 · ○줄" 로 보여줄 때 쓴다.
+  bool get isMemoOnly => items.isEmpty;
+
+  /// 메모가 몇 줄인가. 빈 줄은 세지 않는다.
+  int get memoLineCount =>
+      MemoText.total(MemoText.parse(memo));
 
   /// 장바구니에 남은 예산 — 한도에서 **이미 쓴 돈**을 뺀다.
   double get liveRemaining => budgetCap - spentTotal;

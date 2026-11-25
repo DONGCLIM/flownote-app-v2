@@ -17,8 +17,8 @@
 |---|---|
 | 브랜치 | `genspark_ai_developer` |
 | 올리는 곳 | `origin` = `https://github.com/DONGCLIM/flownote-app-v2.git` (PR #1 → `main`) |
-| 최신 커밋 | **`2fb187e` 사입 메모장 탭·체크·저장** (확인은 `git log --oneline -1`) |
-| 웹에 올라간 것 | `2fb187e` 그대로 (2026-11-24 배포) |
+| 최신 커밋 | **`저장된 사입 리스트 + 예산 검토 개선`** (확인은 `git log --oneline -1`) |
+| 웹에 올라간 것 | 같은 커밋 (2026-11-25 배포) |
 | 남은 수정 | 없음. 작업 트리가 깨끗하다 |
 | 웹 주소 | https://flownote-404ef.web.app |
 | Firebase 프로젝트 | `flownote-404ef` (Blaze) |
@@ -40,7 +40,8 @@
 | `5860297` | 홈 카드 분리 + 영수증 연결 + 바로가기 표시 |
 | `88a47c0` | 품목별 지출 분석 |
 | `2fb187e` | 사입 메모장 탭·체크·저장 |
-| **(이번)** | **홈 팁 자동 변경 ← 지금 여기** |
+| `ee8fc7e` | 홈 팁 자동 변경 |
+| **(이번)** | **저장된 사입 리스트 + 예산 검토 개선 ← 지금 여기** |
 
 </details>
 
@@ -75,10 +76,13 @@ npx firebase deploy --only firestore:rules,storage --project flownote-404ef
 | **월별 인사이트 (🔴 기능 연결됨 #180·#181)** | `lib/screens/ds/insight_ds_screens.dart` | `InsightsDsScreen` |
 | **품목별 지출 분석 (🔴 기능 연결됨 #184)** | `lib/screens/ds/insight_ds_screens.dart` | `ItemSpendDsScreen` |
 | **사입 메모장 (🔴 기능 연결됨 #185)** | `lib/screens/ds/purchase_memo_ds_screen.dart` | `PurchaseMemoDsScreen` |
+| **저장된 사입 리스트 (🔴 기능 연결됨 #187)** | `lib/screens/ds/saved_lists_ds_screen.dart` | `SavedListsDsScreen` |
 | 공지·알림 목록 | `lib/screens/ds/notice_list_ds_screen.dart` | `NoticeListDsScreen` |
 
 딸린 조각: `lib/theme/fn_ds.dart`(디자인 기준), `lib/widgets/fn_inquiry_parts.dart`(공용 조각 9개),
-`lib/widgets/fn_purchase_parts.dart`(`FnPill`·`FnNamedField`·`FnItemLineRow` — 원가 계산기·예산 검토·월별 인사이트가 같이 쓴다),
+`lib/widgets/fn_purchase_parts.dart`(`FnPill`·`FnNamedField`·`FnItemLineRow` — 원가 계산기·예산 검토·월별 인사이트가 같이 쓴다.
+#187 에서 **예산 검토 전용**으로 `FnBigField`(높이 56·글자 L)·`FnStepperField`(－/＋)·`FnCommaFormatter`·`FnUnits`·`FnBigItemLineRow` 를 더했다.
+기존 조각은 원가 계산기가 쓰므로 손대지 않았다),
 `lib/services/inquiry_service.dart`, `lib/services/inquiry_picker.dart`,
 `lib/services/cost_calc.dart`(원가 셈), `lib/services/monthly_insight.dart`(월별 인사이트 셈),
 `lib/services/purchase_list_service.dart`(사입 리스트 저장),
@@ -123,7 +127,7 @@ flutter test test/<그_화면>_test.dart     # 그 화면 것만
 | `test/monthly_insight_test.dart` | 61 | 월별 인사이트 38 + **품목별 지출 분석 23** — 검산·셈 규칙·화면·소스 계약 |
 | `test/home_render_test.dart` | 54 | 홈 — 카드 분리·영수증 연결·0건 안내 + **날짜별 팁 25** |
 | `test/home_icons_render_test.dart` | 31 | 홈 아이콘·카드 색·탭바 |
-| `test/guide_render_test.dart` | 67 | 사입 가이드·시즌 비교·예산 검토 + **사입 메모장 22** |
+| `test/guide_render_test.dart` | 98 | 사입 가이드·시즌 비교·예산 검토 + 사입 메모장 22 + **저장된 사입 리스트 28** |
 | `test/cost_calc_render_test.dart` | 28 | 원가 계산기 |
 
 ### 다음에 할 일
@@ -136,7 +140,8 @@ flutter test test/<그_화면>_test.dart     # 그 화면 것만
 > | 2 | **사입 메모장 — 메모장 탭·체크·스케치 저장 완료** | ✅ 완료 (#185) |
 > | 3 | 자주 산 품목·길게 눌러 실제 가격 수정·"못 샀어요" | ⬜ 남음 |
 > | 4 | 인터넷 끊김 대응 (화면 꺼짐 방지는 앱 만들 때) | ⬜ 남음 |
-> | 5 | 저장된 사입 리스트 화면 | ⬜ 남음 |
+> | 5 | **저장된 사입 리스트 화면 + 예산 검토 입력칸 개선** | ✅ 완료 (#187) |
+> | 6 | 🔴 **사입 메모장 연동** — 저장된 리스트에서 메모장을 바로 열기 | ⬜ **다음 작업** |
 >
 > 2단계에서 한 것: 메모 | 스케치 **탭**, 줄마다 체크칸(○ ↔ 코랄 ✓ + 가운데줄),
 > 엔터로 줄 추가·빈 줄에서 지우기로 줄 삭제, 색 8개·굵기 3개 스케치(좌표 저장),
@@ -176,7 +181,9 @@ flutter test test/<그_화면>_test.dart     # 그 화면 것만
 2. **🔴 품목군 분류(절화 / 부자재 / 화분·식물 / 기타)를 사장님께 여쭌다.**
    월별 인사이트의 첫 달 리포트가 지금은 **품목 이름으로 짐작**하고 있다
    (`MonthlyInsight.groupOf()`). 이걸 정해야 거래처·부자재 카드도 만들 수 있다.
-3. **저장된 사입 리스트**는 아직 화면이 없다(누르면 안내만 뜬다). 사입 메모장은 #185 에서 만들었다.
+3. ✅ **저장된 사입 리스트**는 #187 에서 만들었다(`SavedListsDsScreen`).
+   🔴 **사입 메모장 연동은 다음 작업**이다 — 사장님이 #187 에서 미루셨다.
+   저장된 리스트 카드에서 그 리스트의 메모장을 바로 여는 길이 아직 없다.
 4. 🟡 **구글/iCloud 자동 백업 제외** — 아직 안 했다. 앱을 지워도 구글이 옛 영수증을
    되살릴 수 있는 길이 남아 있다(`AndroidManifest.xml` 에 `allowBackup` 미설정).
    APK 를 만들 때 함께 고쳐야 한다.
@@ -222,7 +229,7 @@ flutter test test/<그_화면>_test.dart     # 그 화면 것만
 
 | | 물어볼 것 | 지금 상태 |
 |---|---|---|
-| ④ | **저장된 사입 리스트** 화면을 만들까요? | 누르면 "곧 준비해서 알려드릴게요." 안내만 뜬다 |
+| ④ | ~~**저장된 사입 리스트** 화면을 만들까요?~~ | ✅ #187 에서 만들었다. 메모장 연동만 다음 작업으로 남았다 |
 | ⑤ | **사입 메모장** 화면을 만들까요? 만든다면 **부케 스케치**를 손그림으로 그릴까요, 사진을 붙일까요? | 위와 같다. 스케치 방식이 안 정해져 설계를 못 한다 |
 | ⑥ | **사입 한도(40만원)** 를 사장님이 직접 정하는 칸을 어디에 둘까요? (프로필 설정 / 가이드 화면 안 / 예산 검토 화면) | 코드에 40만원이 박혀 있다 |
 | ⑦ | **금액 표기**를 `27.4만원` 으로 둘까요, `274,000원`(`FnDs.won()`)으로 통일할까요? | 화면마다 다르다. 가이드는 `만원`, 다른 화면은 `원` |
@@ -418,8 +425,9 @@ flutter test test/<그_화면>_test.dart     # 그 화면 것만
 
 ### 아직 화면이 없는 메뉴
 
-- 🔴 **저장된 사입 리스트** — 누르면 "곧 준비해서 알려드릴게요." 안내만 뜬다.
-  (`GuideDsScreen._open` 의 `saved`)
+- ✅ **저장된 사입 리스트** — #187 에서 만들었다. (`saved` → `SavedListsDsScreen`)
+  요약(건수·합계·1회 평균)에서 **메모만 쓴 리스트는 금액 계산에서 뺀다.**
+  🔴 **메모장 연동은 다음 작업**이다.
 - ✅ **사입 메모장** — #185 에서 만들었다. (`memo` → `PurchaseMemoDsScreen`)
   스케치는 **손그림을 좌표로** 저장하는 쪽으로 정해졌다.
 

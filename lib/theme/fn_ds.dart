@@ -208,6 +208,15 @@ class FnDs {
   /// 입력창 좌우 안쪽 여백.
   static const double inputPadH = 14.0;
 
+  /// 큰 입력창 높이. 예산 검토의 품목·수량·단가 칸이 쓴다. (#187)
+  ///
+  /// 🔴 기본 [inputH] 를 키우지 않는다. 그 값은 문의·회원가입 등 서른
+  ///    군데가 같이 쓰는데, 거기까지 커지면 화면이 다 밀린다.
+  static const double inputBigH = 56.0;
+
+  /// 큰 입력창 글자. 사장님 지시(#187): "fn_ds 의 L 단계로".
+  static const double inputBigFont = fontL;
+
   /// 입력창 글자 / 안내 글자 색.
   static const double inputFont = fontM;
   static const Color inputHint = Color(0xFF7D7D7D);

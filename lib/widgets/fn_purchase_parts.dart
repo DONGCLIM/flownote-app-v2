@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../services/cost_calc.dart';
 import '../theme/fn_ds.dart';
@@ -423,5 +424,468 @@ class _FnItemLineRowState extends State<FnItemLineRow> {
             '${d.day.toString().padLeft(2, '0')} 기준';
     final u = unitLabel.isEmpty ? '' : ' · $unitLabel';
     return '직전 영수증 단가 기준$when$u';
+  }
+}
+
+/// 수량 칸 — `－ [ 20 ] 단 ＋`. (#187 예산 검토 전용)
+///
+/// 🔴 `FnNamedField` 를 안 쓰고 따로 만든 이유: 원가 계산기도 같은 조각을
+///    쓰는데, 거기까지 모양이 바뀌면 안 된다. 사장님 지시(#187):
+///    "다른 화면 디자인은 건드리지 마."
+class FnStepperField extends StatelessWidget {
+  const FnStepperField({
+    super.key,
+    required this.controller,
+    required this.unit,
+    required this.onChanged,
+  });
+
+  final TextEditingController controller;
+
+  /// 칸 오른쪽에 **고정으로** 붙는 단위 글자. 지워지지 않는다.
+  final String unit;
+  final VoidCallback onChanged;
+
+  /// 한 번 누를 때 얼마씩.
+  static const double step = 1;
+
+  void _bump(double by) {
+    final now = fnNum(controller.text);
+    final next = (now + by).clamp(0, 999999).toDouble();
+    controller.text = next == 0 ? '' : CostCalc.comma(next);
+    controller.selection =
+        TextSelection.collapsed(offset: controller.text.length);
+    onChanged();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text('수량', style: FnDs.tsSub),
+        const SizedBox(height: 6),
+        Row(
+          children: [
+            _StepButton(icon: Icons.remove_rounded, onTap: () => _bump(-step)),
+            const SizedBox(width: 6),
+            Expanded(
+              child: Container(
+                height: FnDs.inputBigH,
+                padding:
+                    const EdgeInsets.symmetric(horizontal: FnDs.inputPadH),
+                decoration: BoxDecoration(
+                  color: FnDs.card,
+                  borderRadius: BorderRadius.circular(FnDs.inputRadius),
+                  border:
+                      Border.all(color: FnDs.line, width: FnDs.inputBorderW),
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: controller,
+                        keyboardType: TextInputType.number,
+                        // 🔴 숫자만. 글자를 적으면 금액이 0 이 되는데
+                        //    사장님은 왜 0 인지 알 수 없다.
+                        inputFormatters: [FnDigitsFormatter()],
+                        style: const TextStyle(
+                          fontFamily: FnDs.font,
+                          fontSize: FnDs.inputBigFont,
+                          fontWeight: FontWeight.w600,
+                          color: FnDs.title,
+                        ),
+                        decoration: const InputDecoration(
+                          isDense: true,
+                          border: InputBorder.none,
+                          contentPadding: EdgeInsets.zero,
+                          hintText: '0',
+                          hintStyle: TextStyle(
+                            fontFamily: FnDs.font,
+                            fontSize: FnDs.inputBigFont,
+                            color: FnDs.inputHint,
+                          ),
+                        ),
+                      ),
+                    ),
+                    Text(
+                      unit.isEmpty ? FnUnits.fallback : unit,
+                      style: const TextStyle(
+                        fontFamily: FnDs.font,
+                        fontSize: FnDs.inputBigFont,
+                        color: FnDs.sub,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(width: 6),
+            _StepButton(icon: Icons.add_rounded, onTap: () => _bump(step)),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+/// － / ＋ 네모 버튼.
+class _StepButton extends StatelessWidget {
+  const _StepButton({required this.icon, required this.onTap});
+
+  final IconData icon;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: Container(
+        width: FnDs.inputBigH,
+        height: FnDs.inputBigH,
+        decoration: BoxDecoration(
+          color: FnDs.card,
+          borderRadius: BorderRadius.circular(FnDs.inputRadius),
+          border: Border.all(color: FnDs.line, width: FnDs.inputBorderW),
+        ),
+        child: Icon(icon, size: 18, color: FnDs.body),
+      ),
+    );
+  }
+}
+
+/// 숫자만 받는다.
+class FnDigitsFormatter extends TextInputFormatter {
+  @override
+  TextEditingValue formatEditUpdate(
+      TextEditingValue old, TextEditingValue now) {
+    final digits = now.text.replaceAll(RegExp(r'[^0-9]'), '');
+    if (digits == now.text) return now;
+    return TextEditingValue(
+      text: digits,
+      selection: TextSelection.collapsed(offset: digits.length),
+    );
+  }
+}
+
+/// 숫자만 받고 **세 자리마다 쉼표**를 넣는다. 단가 칸이 쓴다. (#187)
+class FnCommaFormatter extends TextInputFormatter {
+  @override
+  TextEditingValue formatEditUpdate(
+      TextEditingValue old, TextEditingValue now) {
+    final digits = now.text.replaceAll(RegExp(r'[^0-9]'), '');
+    if (digits.isEmpty) return const TextEditingValue();
+    final out = CostCalc.comma(double.parse(digits));
+    return TextEditingValue(
+      text: out,
+      selection: TextSelection.collapsed(offset: out.length),
+    );
+  }
+}
+
+/// 큰 입력칸 — 높이 56, 글자 L. 오른쪽에 고정 글자. (#187 예산 검토 전용)
+class FnBigField extends StatelessWidget {
+  const FnBigField({
+    super.key,
+    required this.label,
+    required this.controller,
+    this.hint = '',
+    this.suffix = '',
+    this.focusNode,
+    this.formatters,
+    this.numeric = false,
+  });
+
+  final String label;
+  final TextEditingController controller;
+  final String hint;
+
+  /// 칸 오른쪽에 **고정으로** 붙는 글자 (`원`). 지워지지 않는다.
+  final String suffix;
+  final FocusNode? focusNode;
+  final List<TextInputFormatter>? formatters;
+  final bool numeric;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label, style: FnDs.tsSub),
+        const SizedBox(height: 6),
+        Container(
+          height: FnDs.inputBigH,
+          padding: const EdgeInsets.symmetric(horizontal: FnDs.inputPadH),
+          decoration: BoxDecoration(
+            color: FnDs.card,
+            borderRadius: BorderRadius.circular(FnDs.inputRadius),
+            border: Border.all(color: FnDs.line, width: FnDs.inputBorderW),
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: controller,
+                  focusNode: focusNode,
+                  keyboardType:
+                      numeric ? TextInputType.number : TextInputType.text,
+                  inputFormatters: formatters,
+                  style: const TextStyle(
+                    fontFamily: FnDs.font,
+                    fontSize: FnDs.inputBigFont,
+                    fontWeight: FontWeight.w600,
+                    color: FnDs.title,
+                  ),
+                  decoration: InputDecoration(
+                    isDense: true,
+                    border: InputBorder.none,
+                    contentPadding: EdgeInsets.zero,
+                    hintText: hint,
+                    hintStyle: const TextStyle(
+                      fontFamily: FnDs.font,
+                      fontSize: FnDs.inputBigFont,
+                      color: FnDs.inputHint,
+                    ),
+                  ),
+                ),
+              ),
+              if (suffix.isNotEmpty)
+                Text(
+                  suffix,
+                  style: const TextStyle(
+                    fontFamily: FnDs.font,
+                    fontSize: FnDs.inputBigFont,
+                    color: FnDs.sub,
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// 수량 단위를 정하는 규칙. (#187)
+class FnUnits {
+  FnUnits._();
+
+  /// 영수증에 아무 기록이 없을 때 쓰는 기본 단위.
+  static const String fallback = '단';
+
+  /// 이 품목을 어떤 단위로 셀지.
+  ///
+  /// 🔴 영수증에 그 품목이 **다른 단위**(개·송이·롤)로 적혀 있으면 그걸
+  ///    따른다. 꽃집마다 세는 법이 달라서, 늘 `단` 으로 두면 화분을 사도
+  ///    `20단` 이 된다.
+  static String forItem(String name, PriceBook book) {
+    final e = book.lookup(name);
+    final u = e?.unit.trim() ?? '';
+    return u.isEmpty ? fallback : u;
+  }
+}
+
+/// 품목 한 줄 — **예산 검토 전용** 큰 입력칸. (#187)
+///
+/// 🔴 [FnItemLineRow] 를 고치지 않고 따로 만들었다. 그건 원가 계산기도
+///    쓰는데, 사장님 지시(#187)는 "다른 화면 디자인은 건드리지 마" 다.
+///    자동완성 고르는 동작은 같게 맞춰 두었다.
+class FnBigItemLineRow extends StatefulWidget {
+  const FnBigItemLineRow({
+    super.key,
+    required this.line,
+    required this.book,
+    required this.onRemove,
+    required this.onChanged,
+  });
+
+  final FnLineCtrl line;
+  final PriceBook book;
+
+  /// null 이면 지우기 버튼을 감춘다.
+  final VoidCallback? onRemove;
+  final VoidCallback onChanged;
+
+  @override
+  State<FnBigItemLineRow> createState() => _FnBigItemLineRowState();
+}
+
+class _FnBigItemLineRowState extends State<FnBigItemLineRow> {
+  bool _open = false;
+
+  @override
+  void initState() {
+    super.initState();
+    widget.line.name.addListener(_onType);
+    widget.line.nameFocus.addListener(_onFocus);
+  }
+
+  @override
+  void dispose() {
+    widget.line.name.removeListener(_onType);
+    widget.line.nameFocus.removeListener(_onFocus);
+    super.dispose();
+  }
+
+  void _onType() {
+    if (widget.line.fromReceipt &&
+        widget.book.lookup(widget.line.name.text) == null) {
+      widget.line.fromReceipt = false;
+      widget.line.basisDate = null;
+    }
+    if (mounted) setState(() => _open = widget.line.nameFocus.hasFocus);
+  }
+
+  void _onFocus() {
+    if (mounted) setState(() => _open = widget.line.nameFocus.hasFocus);
+  }
+
+  /// 자동완성에서 하나 골랐다.
+  void _pick(PriceBookEntry e) {
+    final l = widget.line;
+    l.name.text = e.name;
+    l.unit = e.unit.isEmpty ? FnUnits.fallback : e.unit;
+
+    if (e.mixedUnit) {
+      // 🔴 단·송이를 섞어 산 품목이다. 단가를 **채우지 않는다.**
+      //    사장님 지시(#187): "단위가 다른 영수증 단가는 섞어서 자동
+      //    채우지 말 것". 열 배 틀린 예산보다 빈칸이 낫다.
+      l.price.clear();
+      l.fromReceipt = false;
+      l.basisDate = null;
+    } else {
+      l.price.text = CostCalc.comma(e.unitPrice);
+      l.fromReceipt = true;
+      l.basisDate = e.date;
+    }
+    l.nameFocus.unfocus();
+    setState(() => _open = false);
+    widget.onChanged();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final l = widget.line;
+    final hits =
+        _open ? widget.book.suggest(l.name.text) : const <PriceBookEntry>[];
+    final unit = l.unit.isEmpty ? FnUnits.fallback : l.unit;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            Expanded(
+              child: FnBigField(
+                label: '품목명',
+                controller: l.name,
+                focusNode: l.nameFocus,
+                hint: '예) 장미(레드)',
+              ),
+            ),
+            if (widget.onRemove != null) ...[
+              const SizedBox(width: FnDs.gapXs),
+              GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: widget.onRemove,
+                child: const SizedBox(
+                  height: FnDs.inputBigH,
+                  width: 32,
+                  child: Icon(Icons.remove_circle_outline_rounded,
+                      size: 20, color: FnDs.sub),
+                ),
+              ),
+            ],
+          ],
+        ),
+        if (hits.isNotEmpty) ...[
+          const SizedBox(height: 6),
+          Container(
+            decoration: BoxDecoration(
+              color: FnDs.card,
+              borderRadius: BorderRadius.circular(FnDs.inputRadius),
+              border: Border.all(color: FnDs.line),
+            ),
+            child: Column(
+              children: [
+                for (final e in hits)
+                  GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: () => _pick(e),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: FnDs.inputPadH, vertical: 10),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              e.name,
+                              style: const TextStyle(
+                                fontFamily: FnDs.font,
+                                fontSize: FnDs.fontS,
+                                fontWeight: FontWeight.w600,
+                                color: FnDs.title,
+                              ),
+                            ),
+                          ),
+                          Text(
+                            // 단위가 섞인 품목은 단가를 안 채운다고 미리 알린다.
+                            e.mixedUnit ? '단위가 섞여 있어요' : e.label,
+                            style: FnDs.tsSub,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ],
+        const SizedBox(height: FnDs.gapS),
+        FnStepperField(
+          controller: l.qty,
+          unit: unit,
+          onChanged: widget.onChanged,
+        ),
+        const SizedBox(height: FnDs.gapS),
+        FnBigField(
+          label: '단가',
+          controller: l.price,
+          hint: '0',
+          suffix: '원',
+          numeric: true,
+          formatters: [FnCommaFormatter()],
+        ),
+        const SizedBox(height: 6),
+        Row(
+          children: [
+            Expanded(child: Text(_basisText(l, unit), style: FnDs.tsSub)),
+            Text(
+              CostCalc.won(l.amount),
+              style: const TextStyle(
+                fontFamily: FnDs.font,
+                fontSize: FnDs.fontS,
+                fontWeight: FontWeight.w700,
+                color: FnDs.title,
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  /// 어디서 온 단가인지 알려 준다. (#179 와 같은 문구)
+  String _basisText(FnLineCtrl l, String unit) {
+    final unitLabel = '1$unit 기준';
+    if (!l.fromReceipt) return '직접 입력 · $unitLabel';
+    final d = l.basisDate;
+    final when = d == null
+        ? ''
+        : ' · ${d.month.toString().padLeft(2, '0')}/'
+            '${d.day.toString().padLeft(2, '0')} 기준';
+    return '직전 영수증 단가 기준$when · $unitLabel';
   }
 }

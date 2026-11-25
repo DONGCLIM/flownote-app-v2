@@ -291,8 +291,10 @@ void main() {
     /// 화면 파일에서 원가 계산기 부분만 떼어 본다.
     String costPart() {
       final src = _read('lib/screens/ds/insight_ds_screens.dart');
+      // 🔴 '/// 예산 검토' 만 찾으면 FnGuideData 안의 주석(파일 앞쪽)이 먼저
+      //    걸려 범위가 뒤집힌다. 예산 검토 화면의 머리 주석을 통째로 쓴다. (#187)
       return src.substring(src.indexOf('/// 원가 계산기 — 사장님 시안'),
-          src.indexOf('/// 예산 검토'));
+          src.indexOf('/// 예산 검토 — 시장'));
     }
 
     test('🔴 통합 기준(FnDs)을 쓰고 옛 토큰을 섞지 않는다', () {

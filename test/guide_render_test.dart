@@ -7,9 +7,11 @@ import 'package:flow_note/models/purchase_list_model.dart';
 import 'package:flow_note/models/receipt_model.dart';
 import 'package:flow_note/screens/ds/insight_ds_screens.dart';
 import 'package:flow_note/screens/ds/purchase_memo_ds_screen.dart';
+import 'package:flow_note/screens/ds/saved_lists_ds_screen.dart';
 import 'package:flow_note/services/cost_calc.dart';
 import 'package:flow_note/services/purchase_list_service.dart';
 import 'package:flow_note/theme/fn_ds.dart';
+import 'package:flow_note/widgets/fn_purchase_parts.dart';
 
 String _read(String p) => File(p).readAsStringSync();
 
@@ -304,11 +306,14 @@ void main() {
       expect(find.text('이번 사입 한도'), findsOneWidget);
     });
 
-    testWidgets('🔴 하단 버튼이 "저장하고 사입 메모장으로" 다', (t) async {
+    testWidgets('🔴 하단 버튼이 "저장하고 사입 리스트로" 다 (#187)', (t) async {
       await pumpTallBudget(
           t, const GuideBudgetDsScreen(priceBook: PriceBook.empty, frequent: []));
+      // 🔴 #187 에서 글자와 가는 곳이 함께 바뀌었다. 이제 저장된 사입
+      //    리스트로 간다. (사입 메모장 연동은 다음 작업)
       expect(find.text('사입 메모장 열기'), findsNothing);
-      expect(find.text('저장하고 사입 메모장으로'), findsOneWidget);
+      expect(find.text('저장하고 사입 메모장으로'), findsNothing);
+      expect(find.text('저장하고 사입 리스트로'), findsOneWidget);
     });
 
     testWidgets('🔴 적으면 예상 예산과 남은 예산이 바로 바뀐다', (t) async {
@@ -857,12 +862,13 @@ void main() {
       expect(memoSrc().contains('FnPill('), isTrue);
     });
 
-    test('🔴 세 군데에서 들어올 수 있다 (예산 검토·가이드·홈 칩)', () {
-      final budget = _read('lib/screens/ds/insight_ds_screens.dart');
-      // 예산 검토 → 저장한 그 리스트로
-      expect(budget.contains('PurchaseMemoDsScreen(listId: list.id)'), isTrue);
-      // 가이드 목록 → 화면이 스스로 고른다
-      expect(budget.contains("'memo' => const PurchaseMemoDsScreen()"), isTrue);
+    test('🔴 두 군데에서 들어올 수 있다 (가이드 목록·홈 칩)', () {
+      // 🔴 #187 에서 **예산 검토는 빠졌다.** 저장 버튼이 이제 저장된 사입
+      //    리스트로 간다. 메모장과의 연동은 다음 작업이다(사장님 지시).
+      final guide = _read('lib/screens/ds/insight_ds_screens.dart');
+      expect(guide.contains("'memo' => const PurchaseMemoDsScreen()"), isTrue);
+      expect(guide.contains('PurchaseMemoDsScreen(listId: list.id)'), isFalse,
+          reason: '예산 검토가 아직 메모장으로 간다');
       // 홈 바로가기 칩
       final home = _read('lib/screens/ds/home_ds_screen.dart');
       expect(home.contains('const PurchaseMemoDsScreen()'), isTrue);
@@ -879,6 +885,487 @@ void main() {
     test('🔴 사입 리스트 진행 상태가 문서에 적혀 있다', () {
       final doc = _read('docs/TODO_기능연결.md');
       expect(doc.contains('메모장 탭·체크·스케치 저장 완료'), isTrue);
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════
+  // 저장된 사입 리스트 (#187)
+  // ═══════════════════════════════════════════════════════════════════
+
+  PurchaseItem pi(String name, double qty, double price, {String unit = '단'}) =>
+      PurchaseItem(name: name, qty: qty, unitPrice: price, unit: unit);
+
+  PurchaseList plist(
+    String id,
+    DateTime date, {
+    String purpose = '',
+    List<PurchaseItem>? items,
+    String memo = '',
+  }) =>
+      PurchaseList(
+        id: id,
+        date: date,
+        purpose: purpose,
+        items: items,
+        memo: memo,
+        createdAt: date,
+        updatedAt: date,
+      );
+
+  /// 🔴 사장님이 주신 검산값 그대로.
+  ///
+  /// ```
+  ///   07.24  장미 20단×8,000 + 거베라 15단×6,000 + 수국 5개×2,400
+  ///          = 160,000 + 90,000 + 12,000 = 262,000원
+  ///   07.17  소국 10단×2,500 + 유칼립투스 5단×3,500 = 42,500원
+  ///   07.11  장미 8단×8,000 + 안개 12단×2,800 + 포장지 2롤×6,400
+  ///          = 64,000 + 33,600 + 12,800 = 110,400원
+  ///   ─────────────────────────────────────────
+  ///   합계 414,900원 · 1회 평균 138,300원
+  /// ```
+  List<PurchaseList> saved() => [
+        plist('a', DateTime(2026, 7, 24), purpose: '주말 부케 3건 대비', items: [
+          pi('장미(레드)', 20, 8000),
+          pi('거베라', 15, 6000),
+          pi('수국', 5, 2400, unit: '개'),
+        ]),
+        plist('b', DateTime(2026, 7, 17), purpose: '개업 화환 2건', items: [
+          pi('소국', 10, 2500),
+          pi('유칼립투스', 5, 3500),
+        ]),
+        plist('c', DateTime(2026, 7, 11), purpose: '정기 매장 진열', items: [
+          pi('장미(레드)', 8, 8000),
+          pi('안개', 12, 2800),
+          pi('포장지', 2, 6400, unit: '롤'),
+        ]),
+      ];
+
+  group('저장된 사입 리스트 — 검산 (사장님이 주신 값)', () {
+    test('🔴 262,000 / 42,500 / 110,400 → 합계 414,900 · 평균 138,300', () {
+      final lists = saved();
+      expect(lists[0].plannedTotal, 262000);
+      expect(lists[1].plannedTotal, 42500);
+      expect(lists[2].plannedTotal, 110400);
+
+      final s = PurchaseListService.summarize(lists);
+      expect(s.count, 3);
+      expect(s.total, 414900);
+      expect(s.average, 138300);
+    });
+
+    test('🔴 메모 리스트가 하나 더 있어도 합계·평균은 그대로', () {
+      // 🔴 메모만 적은 리스트를 평균에 넣으면 138,300 → 103,725 가 된다.
+      //    사장님 지시(#187): "예산 없는 메모 리스트는 금액 계산에서 제외".
+      final lists = [
+        ...saved(),
+        plist('memo', DateTime(2026, 7, 20),
+            memo: '[ ] 화병 사오기\n[x] 리본 주문'),
+      ];
+      final s = PurchaseListService.summarize(lists);
+      // 건수는 넷이지만 금액은 셋만 센다.
+      expect(s.count, 4);
+      expect(s.total, 414900);
+      expect(s.average, 138300);
+    });
+
+    test('메모 리스트인지 알아본다', () {
+      final memo = plist('m', DateTime(2026, 7, 20),
+          memo: '[ ] 화병 사오기\n[x] 리본 주문\n[ ] ');
+      expect(memo.isMemoOnly, isTrue);
+      // 빈 줄은 세지 않는다.
+      expect(memo.memoLineCount, 2);
+      expect(saved().first.isMemoOnly, isFalse);
+    });
+
+    test('하나도 없으면 전부 0', () {
+      final s = PurchaseListService.summarize(const []);
+      expect(s.count, 0);
+      expect(s.total, 0);
+      expect(s.average, 0);
+    });
+
+    test('메모 리스트만 있으면 평균이 0 이다 (0 으로 안 나눈다)', () {
+      final s = PurchaseListService.summarize([
+        plist('m1', DateTime(2026, 7, 20), memo: '한 줄'),
+        plist('m2', DateTime(2026, 7, 21), memo: '두 줄'),
+      ]);
+      expect(s.count, 2);
+      expect(s.total, 0);
+      expect(s.average, 0);
+    });
+  });
+
+  group('저장된 사입 리스트 — 화면 (#187)', () {
+    testWidgets('🔴 시안대로 요약과 리스트가 보인다', (t) async {
+      await pumpTallBudget(t, SavedListsDsScreen(lists: saved()));
+
+      expect(find.text('저장된 사입 리스트'), findsOneWidget);
+      expect(find.text('날짜별 사입 리스트를 확인하고,\n같은 구성으로 새 리스트를 만들 수 있어요.'),
+          findsOneWidget);
+
+      expect(find.text('저장된 리스트'), findsOneWidget);
+      expect(find.text('3건'), findsOneWidget);
+      expect(find.text('합계'), findsOneWidget);
+      expect(find.text('414,900원'), findsOneWidget);
+      expect(find.text('1회 평균'), findsOneWidget);
+      expect(find.text('138,300원'), findsOneWidget);
+
+      // 날짜(요일) · 목적 · 품목 수 · 금액
+      expect(find.text('2026.07.24 (금)'), findsOneWidget);
+      expect(find.text('주말 부케 3건 대비 · 3개 품목'), findsOneWidget);
+      expect(find.text('262,000원'), findsOneWidget);
+      expect(find.text('2026.07.17 (금)'), findsOneWidget);
+      expect(find.text('42,500원'), findsOneWidget);
+      expect(find.text('2026.07.11 (토)'), findsOneWidget);
+      expect(find.text('110,400원'), findsOneWidget);
+    });
+
+    testWidgets('🔴 최신순으로 늘어놓는다', (t) async {
+      // 일부러 뒤섞어 넣어도 날짜 순으로 와야 한다.
+      final shuffled = [saved()[2], saved()[0], saved()[1]];
+      await pumpTallBudget(t, SavedListsDsScreen(lists: shuffled));
+
+      final ys = t
+          .widgetList<Text>(find.byType(Text))
+          .map((e) => e.data ?? '')
+          .where((e) => e.startsWith('2026.'))
+          .toList();
+      expect(ys, ['2026.07.24 (금)', '2026.07.17 (금)', '2026.07.11 (토)']);
+    });
+
+    testWidgets('🔴 펼치면 품목별 수량·단가·금액이 보인다', (t) async {
+      await pumpTallBudget(t, SavedListsDsScreen(lists: saved(), openId: 'a'));
+
+      expect(find.text('장미(레드)'), findsOneWidget);
+      expect(find.text('20단 · 8,000원'), findsOneWidget);
+      expect(find.text('160,000원'), findsOneWidget);
+      expect(find.text('거베라'), findsOneWidget);
+      expect(find.text('15단 · 6,000원'), findsOneWidget);
+      expect(find.text('90,000원'), findsOneWidget);
+      // 단위가 '개' 인 줄도 그대로 쓴다.
+      expect(find.text('5개 · 2,400원'), findsOneWidget);
+      expect(find.text('12,000원'), findsOneWidget);
+
+      expect(find.text('이 리스트로 새로 만들기'), findsOneWidget);
+      expect(find.text('삭제'), findsOneWidget);
+    });
+
+    testWidgets('🔴 접었다 폈다 할 수 있다', (t) async {
+      await pumpTallBudget(t, SavedListsDsScreen(lists: saved(), openId: 'a'));
+      expect(find.text('이 리스트로 새로 만들기'), findsOneWidget);
+
+      // 머리글을 누르면 접힌다.
+      await t.tap(find.text('2026.07.24 (금)'));
+      await t.pump(const Duration(milliseconds: 300));
+      expect(find.text('이 리스트로 새로 만들기'), findsNothing);
+      expect(find.text('20단 · 8,000원'), findsNothing);
+      // 금액은 접혀도 보인다.
+      expect(find.text('262,000원'), findsOneWidget);
+
+      await t.tap(find.text('2026.07.24 (금)'));
+      await t.pump(const Duration(milliseconds: 300));
+      expect(find.text('이 리스트로 새로 만들기'), findsOneWidget);
+    });
+
+    testWidgets('🔴 저장하고 온 리스트가 펼쳐진 채로 있다', (t) async {
+      // 가운데 것을 지목해도 그게 펼쳐져야 한다.
+      await pumpTallBudget(t, SavedListsDsScreen(lists: saved(), openId: 'b'));
+      expect(find.text('소국'), findsOneWidget);
+      expect(find.text('10단 · 2,500원'), findsOneWidget);
+      // 다른 것은 접혀 있다.
+      expect(find.text('20단 · 8,000원'), findsNothing);
+    });
+
+    testWidgets('🔴 메모 리스트는 "메모 리스트 · ○줄" 이고 금액 칸이 비어 있다', (t) async {
+      final lists = [
+        plist('memo', DateTime(2026, 7, 20), memo: '[ ] 화병\n[x] 리본'),
+        ...saved(),
+      ];
+      await pumpTallBudget(t, SavedListsDsScreen(lists: lists, openId: 'memo'));
+
+      expect(find.text('메모 리스트 · 2줄'), findsOneWidget);
+      expect(find.text('적어 둔 품목이 없어요. 메모만 남긴 리스트예요.'), findsOneWidget);
+      // 금액이 0원으로 적히면 안 된다. 비워야 한다.
+      expect(find.text('0원'), findsNothing);
+      // 합계·평균은 그대로.
+      expect(find.text('414,900원'), findsOneWidget);
+      expect(find.text('138,300원'), findsOneWidget);
+      expect(find.text('4건'), findsOneWidget);
+    });
+
+    testWidgets('🔴 삭제는 확인을 받고서 지운다', (t) async {
+      await pumpTallBudget(t, SavedListsDsScreen(lists: saved(), openId: 'a'));
+      expect(find.text('2026.07.24 (금)'), findsOneWidget);
+
+      await t.tap(find.text('삭제'));
+      await t.pump(const Duration(milliseconds: 300));
+      // 확인 창이 뜬다. 아직 안 지웠다.
+      expect(find.text('이 사입 리스트를 지울까요?'), findsOneWidget);
+      expect(find.text('2026.07.24 (금)'), findsOneWidget);
+
+      await t.tap(find.text('취소'));
+      await t.pump(const Duration(milliseconds: 400));
+      expect(find.text('2026.07.24 (금)'), findsOneWidget,
+          reason: '취소했는데 지워졌다');
+
+      await t.tap(find.text('삭제').first);
+      await t.pump(const Duration(milliseconds: 300));
+      await t.tap(find.text('삭제').last);
+      await t.pump(const Duration(milliseconds: 500));
+
+      expect(find.text('2026.07.24 (금)'), findsNothing);
+      // 요약도 같이 줄어든다. 414,900 - 262,000 = 152,900
+      expect(find.text('2건'), findsOneWidget);
+      expect(find.text('152,900원'), findsOneWidget);
+    });
+
+    testWidgets('🔴 저장된 게 없으면 안내와 버튼을 보여 준다', (t) async {
+      await pumpTallBudget(t, const SavedListsDsScreen(lists: []));
+      expect(find.text('아직 저장된 사입 리스트가 없어요.\n예산 검토에서 살 품목을 적으면 여기에 쌓여요.'),
+          findsOneWidget);
+      expect(find.text('예산 검토로 리스트 만들기'), findsOneWidget);
+      // 빈 요약 카드를 그리지 않는다.
+      expect(find.text('저장된 리스트'), findsNothing);
+    });
+
+    testWidgets('🔴 화면 좌우 여백이 기준(24)과 같다', (t) async {
+      await pumpTallBudget(t, SavedListsDsScreen(lists: saved()));
+      final list = t.widget<ListView>(find.byType(ListView).first);
+      expect(list.padding,
+          const EdgeInsets.fromLTRB(FnDs.pagePad, 14, FnDs.pagePad, FnDs.gapXl));
+    });
+  });
+
+  group('예산 검토 — 입력칸 개선 (#187)', () {
+    testWidgets('🔴 품목·수량·단가 칸이 높이 56 · 글자 L 이다', (t) async {
+      await pumpTallBudget(
+          t, const GuideBudgetDsScreen(priceBook: PriceBook.empty, frequent: []));
+
+      expect(FnDs.inputBigH, 56.0);
+      expect(FnDs.inputBigFont, FnDs.fontL);
+
+      // 큰 칸이 실제로 쓰였는지 — 56 짜리 상자가 있어야 한다.
+      final tall = t
+          .widgetList<Container>(find.byType(Container))
+          .where((e) => e.constraints?.maxHeight == FnDs.inputBigH);
+      expect(tall, isNotEmpty);
+
+      // 기본 입력칸(48)은 그대로다. 다른 화면이 같이 쓴다.
+      expect(FnDs.inputH, 48.0);
+    });
+
+    testWidgets('🔴 수량 칸 양옆에 － ＋ 가 있고 눌러서 바뀐다', (t) async {
+      await pumpTallBudget(
+          t, const GuideBudgetDsScreen(priceBook: PriceBook.empty, frequent: []));
+
+      expect(find.byIcon(Icons.add_rounded), findsWidgets);
+      expect(find.byIcon(Icons.remove_rounded), findsOneWidget);
+
+      await t.tap(find.byIcon(Icons.add_rounded).first);
+      await t.pump(const Duration(milliseconds: 200));
+      final qty = t.widget<TextField>(fieldFor('수량'));
+      expect(qty.controller!.text, '1');
+
+      await t.tap(find.byIcon(Icons.remove_rounded));
+      await t.pump(const Duration(milliseconds: 200));
+      // 0 이면 빈칸으로 둔다. `0단` 이 적혀 있으면 안 적은 건지 헷갈린다.
+      expect(t.widget<TextField>(fieldFor('수량')).controller!.text, '');
+
+      // 0 아래로는 안 내려간다.
+      await t.tap(find.byIcon(Icons.remove_rounded));
+      await t.pump(const Duration(milliseconds: 200));
+      expect(t.widget<TextField>(fieldFor('수량')).controller!.text, '');
+    });
+
+    testWidgets('🔴 수량 칸은 숫자만 받고 단위가 오른쪽에 고정이다', (t) async {
+      await pumpTallBudget(
+          t, const GuideBudgetDsScreen(priceBook: PriceBook.empty, frequent: []));
+
+      await t.enterText(fieldFor('수량'), '20단abc');
+      await t.pump(const Duration(milliseconds: 200));
+      expect(t.widget<TextField>(fieldFor('수량')).controller!.text, '20');
+
+      // 기본 단위는 '단'.
+      expect(FnUnits.fallback, '단');
+      expect(find.text('단'), findsWidgets);
+    });
+
+    testWidgets('🔴 단가 칸은 숫자만 받고 쉼표가 자동으로 붙는다', (t) async {
+      await pumpTallBudget(
+          t, const GuideBudgetDsScreen(priceBook: PriceBook.empty, frequent: []));
+
+      await t.enterText(fieldFor('단가'), '8000');
+      await t.pump(const Duration(milliseconds: 200));
+      expect(t.widget<TextField>(fieldFor('단가')).controller!.text, '8,000');
+
+      await t.enterText(fieldFor('단가'), '1234567원');
+      await t.pump(const Duration(milliseconds: 200));
+      expect(t.widget<TextField>(fieldFor('단가')).controller!.text, '1,234,567');
+
+      // '원' 은 칸 밖에 고정으로 붙어 있다.
+      expect(find.text('원'), findsWidgets);
+    });
+
+    testWidgets('🔴 영수증 단위가 "개" 면 수량 칸도 "개" 가 된다', (t) async {
+      final rs = [
+        ReceiptModel(
+          id: 'p',
+          date: DateTime(2026, 7, 20),
+          storeName: '화람원예',
+          rawOcrText: '',
+          createdAt: DateTime(2026, 7, 20),
+          totalAmount: 24000,
+          items: [
+            FlowerItem(name: '수국', quantity: 10, unitPrice: 2400, unit: '개'),
+          ],
+        ),
+      ];
+      final book = PriceBook.fromReceipts(rs);
+      expect(FnUnits.forItem('수국', book), '개');
+      // 영수증에 없는 품목은 기본값.
+      expect(FnUnits.forItem('장미', book), '단');
+
+      await pumpTallBudget(
+          t, GuideBudgetDsScreen(priceBook: book, frequent: const []));
+      await t.tap(fieldFor('품목명'));
+      await t.enterText(fieldFor('품목명'), '수국');
+      await t.pump(const Duration(milliseconds: 200));
+      await t.tap(find.text('수국').last);
+      await t.pump(const Duration(milliseconds: 300));
+
+      expect(find.text('개'), findsWidgets);
+      expect(t.widget<TextField>(fieldFor('단가')).controller!.text, '2,400');
+    });
+
+    testWidgets('🔴 단위가 섞인 품목은 단가를 자동으로 채우지 않는다', (t) async {
+      // 🔴 장미를 단(8,000)과 송이(800)로 둘 다 샀다. 어느 쪽인지 모르는
+      //    채로 채우면 예산이 열 배 틀어진다.
+      final rs = [
+        ReceiptModel(
+          id: 'a',
+          date: DateTime(2026, 7, 10),
+          storeName: '대한꽃도매',
+          rawOcrText: '',
+          createdAt: DateTime(2026, 7, 10),
+          totalAmount: 80000,
+          items: [
+            FlowerItem(name: '장미', quantity: 10, unitPrice: 8000, unit: '단'),
+          ],
+        ),
+        ReceiptModel(
+          id: 'b',
+          date: DateTime(2026, 7, 20),
+          storeName: '대한꽃도매',
+          rawOcrText: '',
+          createdAt: DateTime(2026, 7, 20),
+          totalAmount: 8000,
+          items: [
+            FlowerItem(name: '장미', quantity: 10, unitPrice: 800, unit: '송이'),
+          ],
+        ),
+      ];
+      final book = PriceBook.fromReceipts(rs);
+      expect(book.lookup('장미')!.mixedUnit, isTrue);
+
+      await pumpTallBudget(
+          t, GuideBudgetDsScreen(priceBook: book, frequent: const []));
+      await t.tap(fieldFor('품목명'));
+      await t.enterText(fieldFor('품목명'), '장미');
+      await t.pump(const Duration(milliseconds: 200));
+      expect(find.text('단위가 섞여 있어요'), findsOneWidget);
+
+      await t.tap(find.text('장미').last);
+      await t.pump(const Duration(milliseconds: 300));
+
+      // 이름은 채우되 단가는 비워 둔다.
+      expect(t.widget<TextField>(fieldFor('품목명')).controller!.text, '장미');
+      expect(t.widget<TextField>(fieldFor('단가')).controller!.text, '');
+    });
+
+    testWidgets('단위가 하나뿐이면 섞였다고 보지 않는다', (t) async {
+      final rs = [
+        ReceiptModel(
+          id: 'a',
+          date: DateTime(2026, 7, 10),
+          storeName: '대한꽃도매',
+          rawOcrText: '',
+          createdAt: DateTime(2026, 7, 10),
+          totalAmount: 80000,
+          items: [
+            FlowerItem(name: '장미', quantity: 10, unitPrice: 8000, unit: '단'),
+            FlowerItem(name: '장미', quantity: 5, unitPrice: 8200, unit: '단'),
+          ],
+        ),
+      ];
+      expect(PriceBook.fromReceipts(rs).lookup('장미')!.mixedUnit, isFalse);
+    });
+  });
+
+  group('저장된 사입 리스트 — 소스 계약 (#187)', () {
+    String savedSrc() => _read('lib/screens/ds/saved_lists_ds_screen.dart');
+
+    test('🔴 1단계 저장 구조를 그대로 쓴다 (새로 만들지 않았다)', () {
+      final src = savedSrc();
+      expect(src.contains('PurchaseListService'), isTrue);
+      expect(src.contains('PurchaseList'), isTrue);
+      expect(src.contains('Hive.openBox'), isFalse);
+      expect(src.contains('@HiveType'), isFalse);
+    });
+
+    test('🔴 셈을 화면에서 하지 않고 서비스에 모았다', () {
+      final src = savedSrc();
+      expect(src.contains('PurchaseListService.summarize('), isTrue);
+      // 화면에서 또 나누면 합계와 평균이 어긋난다.
+      expect(src.contains('/ lists.length'), isFalse);
+    });
+
+    test('🔴 예산 검토에서 저장하면 이 화면으로 온다', () {
+      final guide = _read('lib/screens/ds/insight_ds_screens.dart');
+      expect(guide.contains('SavedListsDsScreen(openId: list.id)'), isTrue);
+      // 가이드 목록의 '저장된 사입 리스트' 도 연결됐다.
+      expect(guide.contains("'saved' => const SavedListsDsScreen()"), isTrue);
+    });
+
+    test('🔴 "이 리스트로 새로 만들기" 는 날짜를 내일로, 단가를 다시 잡는다', () {
+      final src = savedSrc();
+      expect(src.contains('.duplicate('), isTrue);
+      expect(src.contains('book.lookup('), isTrue);
+      expect(src.contains('GuideBudgetDsScreen(initial: copy)'), isTrue);
+      // 단위가 섞인 품목은 건너뛴다.
+      expect(src.contains('if (e.mixedUnit) continue;'), isTrue);
+    });
+
+    test('🔴 삭제는 바로 하지 않고 확인을 받는다', () {
+      expect(savedSrc().contains('showFnAlert('), isTrue);
+    });
+
+    test('🔴 통합 기준(FnDs)을 쓰고 옛 토큰을 섞지 않는다', () {
+      final src = savedSrc();
+      expect(src.contains('FnDs.'), isTrue);
+      for (final old in ['FnColors.', 'FnHome.', 'FnScan.', 'FnProfile.']) {
+        expect(src.contains(old), isFalse, reason: '$old 가 남아 있다');
+      }
+    });
+
+    test('🔴 원가 계산기 입력칸은 건드리지 않았다', () {
+      // 🔴 큰 칸은 예산 검토만 쓴다. 사장님 지시(#187):
+      //    "다른 화면 디자인은 건드리지 마."
+      final guide = _read('lib/screens/ds/insight_ds_screens.dart');
+      final cost = guide.substring(
+        guide.indexOf('class GuideCostDsScreen'),
+        guide.indexOf('class GuideBudgetDsScreen'),
+      );
+      expect(cost.contains('FnBigItemLineRow'), isFalse);
+      expect(cost.contains('FnBigField'), isFalse);
+      // 예산 검토 쪽에는 들어가 있다.
+      final budget = guide.substring(guide.indexOf('class _BudgetItemsCard'));
+      expect(budget.contains('FnBigItemLineRow'), isTrue);
+    });
+
+    test('🔴 사입 메모장 연동은 다음 작업으로 문서에 적혀 있다', () {
+      final doc = _read('docs/TODO_기능연결.md');
+      expect(doc.contains('저장된 사입 리스트'), isTrue);
+      expect(doc.contains('메모장 연동'), isTrue);
     });
   });
 }

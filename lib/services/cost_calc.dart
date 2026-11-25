@@ -171,12 +171,20 @@ class PriceBookEntry {
     required this.unitPrice,
     required this.unit,
     required this.date,
+    this.mixedUnit = false,
   });
 
   final String name;
   final double unitPrice;
   final String unit;
   final DateTime date;
+
+  /// 같은 이름을 **서로 다른 단위**로 산 적이 있다. (#187)
+  ///
+  /// 🔴 `장미 1단 8,000원` 과 `장미 1송이 800원` 은 열 배 차이다. 어느
+  ///    쪽인지 모르는 채로 단가를 자동으로 채우면 예산이 열 배로 틀어진다.
+  ///    이 표시가 붙은 품목은 **단가를 채우지 않고** 직접 적게 둔다.
+  final bool mixedUnit;
 
   /// `8,000원 · 1단 기준`
   String get label =>
@@ -195,6 +203,18 @@ class PriceBook {
 
   /// 영수증 목록에서 만든다. 순서를 믿지 않고 날짜로 직접 고른다.
   factory PriceBook.fromReceipts(List<ReceiptModel> receipts) {
+    // 먼저 이름마다 어떤 단위로 샀는지 모은다. (#187)
+    final units = <String, Set<String>>{};
+    for (final r in receipts) {
+      for (final it in r.items) {
+        final name = it.name.trim();
+        if (name.isEmpty || it.unitPrice <= 0) continue;
+        final u = it.unit.trim();
+        if (u.isEmpty) continue;
+        units.putIfAbsent(name, () => <String>{}).add(u);
+      }
+    }
+
     final map = <String, PriceBookEntry>{};
     for (final r in receipts) {
       for (final it in r.items) {
@@ -209,6 +229,8 @@ class PriceBook {
           unitPrice: it.unitPrice,
           unit: it.unit.trim(),
           date: r.date,
+          // 🔴 단·송이를 섞어 산 품목은 단가를 자동으로 채우지 않는다.
+          mixedUnit: (units[name]?.length ?? 0) > 1,
         );
       }
     }
