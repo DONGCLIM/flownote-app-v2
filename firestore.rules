@@ -40,6 +40,7 @@ service cloud.firestore {
     // ── 사용자 개인정보 ──────────────────────────────────────
     //   users/{uid}                  회원 정보 + 사업자 정보 + 동의 이력
     //   users/{uid}/receipts/{id}    영수증 클라우드 백업
+    //   users/{uid}/purchase_lists/{id} 사입 리스트 PC↔폰 동기화 (#191)
     //   users/{uid}/consent_log/{id} 동의 이력 감사 로그 (append-only)
     //
     //   본인만 읽고 쓸 수 있다. 다른 사용자의 문서는 절대 접근 불가.
@@ -50,6 +51,18 @@ service cloud.firestore {
       allow delete: if isOwner(uid);   // 회원 탈퇴
 
       match /receipts/{receiptId} {
+        allow read, write: if isOwner(uid);
+      }
+
+      // 사입 리스트 PC↔폰 동기화 (#191)
+      //
+      // 🔴 아래 `{document=**}` 포괄 규칙으로도 통과하긴 했지만, 명시해
+      //    둔다. 포괄 규칙은 나중에 조일 때 제일 먼저 지워지는 자리라,
+      //    그때 사입 리스트까지 같이 막히면 원인을 찾기 어렵다.
+      //
+      // 🔴 본인 것만. 남의 uid 아래는 읽지도 쓰지도 못한다.
+      //    담기는 것: 날짜·목적·한도·품목(체크 포함)·메모·스케치 좌표.
+      match /purchase_lists/{listId} {
         allow read, write: if isOwner(uid);
       }
 

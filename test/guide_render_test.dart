@@ -1790,10 +1790,14 @@ void main() {
     });
   });
 
-  group('클라우드 동기화 — 다음 작업 (#189)', () {
-    test('🔴 "PC↔폰 동기화 확인 필요" 가 문서에 적혀 있다', () {
+  group('클라우드 동기화 — 문서 (#189 → #191 에서 끝냄)', () {
+    test('🔴 PC↔폰 동기화가 끝난 것으로 문서에 적혀 있다', () {
+      // 🔴 #189 에서는 "확인 필요" 로 미뤄 두었고, #191 에서 실제로 이었다.
       final doc = _read('docs/TODO_기능연결.md');
-      expect(doc.contains('PC↔폰 동기화 확인 필요'), isTrue);
+      expect(doc.contains('PC↔폰 클라우드 동기화'), isTrue);
+      expect(doc.contains('✅ 완료 (#191)'), isTrue);
+      // 사장님이 두 기기로 직접 확인하실 일은 남겨 둔다.
+      expect(doc.contains('남은 확인'), isTrue);
     });
   });
 
@@ -2021,6 +2025,131 @@ void main() {
     test('🔴 사입 리스트 진행 상태가 문서에 적혀 있다', () {
       final doc = _read('docs/TODO_기능연결.md');
       expect(doc.contains('시장 체크 연결'), isTrue);
+    });
+  });
+
+
+  // ────────────────────────────────────────────────────────────
+  // #191 — 사입 리스트 PC↔폰 클라우드 동기화
+  // ────────────────────────────────────────────────────────────
+
+  group('클라우드 동기화 — 누가 이기나 (#191)', () {
+    PurchaseList at(String id, DateTime updated, {String memo = ''}) =>
+        PurchaseList(
+          id: id,
+          date: DateTime(2026, 7, 24),
+          memo: memo,
+          createdAt: DateTime(2026, 7, 20),
+          updatedAt: updated,
+        );
+
+    test('🔴 폰에 없으면 받아 온다', () {
+      final remote = at('a', DateTime(2026, 7, 24, 10));
+      expect(PurchaseListService.remoteWins(null, remote), isTrue);
+    });
+
+    test('🔴 나중에 저장한 쪽이 이긴다 — 서버가 늦으면 서버', () {
+      final local = at('a', DateTime(2026, 7, 24, 10, 0));
+      final remote = at('a', DateTime(2026, 7, 24, 10, 5));
+      expect(PurchaseListService.remoteWins(local, remote), isTrue);
+    });
+
+    test('🔴 나중에 저장한 쪽이 이긴다 — 폰이 늦으면 폰', () {
+      final local = at('a', DateTime(2026, 7, 24, 10, 5));
+      final remote = at('a', DateTime(2026, 7, 24, 10, 0));
+      expect(PurchaseListService.remoteWins(local, remote), isFalse);
+    });
+
+    test('🔴 시각이 같으면 폰 것을 남긴다', () {
+      // 눈앞의 기기에서 방금 본 내용이 갑자기 바뀌면 고장으로 보인다.
+      final t = DateTime(2026, 7, 24, 10);
+      expect(PurchaseListService.remoteWins(at('a', t), at('a', t)), isFalse);
+    });
+  });
+
+  group('클라우드 동기화 — 소스 계약 (#191)', () {
+    String svcSrc() => _read('lib/services/purchase_list_service.dart');
+
+    test('🔴 내려받는 길이 실제로 불린다 (이게 빠져 있었다)', () {
+      // 🔴 전에는 `syncWithCloud()` 를 **아무도 안 불러서** PC 에서 적은
+      //    리스트가 폰에 영영 안 보였다. 올리기만 하고 내려받지 않았다.
+      final main = _read('lib/screens/ds/main_ds_screen.dart');
+      expect(main.contains('PurchaseListService.instance.syncWithCloud()'),
+          isTrue);
+      expect(main.contains("import '../../services/purchase_list_service.dart';"),
+          isTrue);
+    });
+
+    test('🔴 폰에만 있던 리스트도 올린다', () {
+      final src = svcSrc();
+      // 서버에서 못 본 id 는 올릴 것으로 표시하고 flush 한다.
+      expect(src.contains('for (final e in saved) {'), isTrue);
+      expect(src.contains('if (seen.contains(e.id)) continue;'), isTrue);
+      expect(src.contains('await flush();'), isTrue);
+    });
+
+    test('🔴 임시 작성분은 올리지 않는다', () {
+      final src = svcSrc();
+      // flush 안에서 건너뛴다.
+      expect(src.contains('if (isMemoDraft(id)) continue;'), isTrue);
+      // 내려받을 때도 임시 id 는 덮어쓰지 않는다.
+      expect(src.contains('if (isMemoDraft(r.id)) continue;'), isTrue);
+    });
+
+    test('🔴 Hive 가 진실의 원천이다 (인터넷이 없어도 돈다)', () {
+      final src = svcSrc();
+      // 내려받기 실패를 삼키고 폰 것으로 계속 간다.
+      expect(src.contains('} catch (_) {\n      // 인터넷이 없다. 폰 것만으로 돈다.'),
+          isTrue);
+      // 로그인 전에는 서버를 건드리지 않는다.
+      expect(src.contains('if (uid == null) return 0;'), isTrue);
+    });
+
+    test('🔴 입력할 때마다 올리지 않는다 (저장 버튼·나갈 때·체크할 때만)', () {
+      final src = svcSrc();
+      // touch 는 sync 를 켤 때만 서버 타이머를 건다.
+      expect(src.contains('if (sync) _scheduleSync();'), isTrue);
+
+      final memo = _read('lib/screens/ds/purchase_memo_ds_screen.dart');
+      // 체크할 때만 켠다.
+      expect('_autoSave(sync: true);'.allMatches(memo).length, 2,
+          reason: '품목 체크·메모 체크 두 군데여야 한다');
+      // 글자를 칠 때는 안 켠다.
+      expect(memo.contains('setState(() {});\n    _autoSave();'), isTrue);
+      // 나갈 때는 즉시 올린다.
+      expect(memo.contains('_autoSave(immediate: true);'), isTrue);
+    });
+
+    test('🔴 체크·메모·스케치 좌표가 함께 올라간다', () {
+      final repo = _read('lib/services/user_repository.dart');
+      final part = repo.substring(repo.indexOf('backupPurchaseList'));
+      for (final k in ["'checked'", "'missed'", "'memo'", "'strokes'",
+        "'points'", "'colorValue'", "'actualPrice'", "'updatedAt'"]) {
+        expect(part.contains(k), isTrue, reason: '$k 가 안 올라간다');
+      }
+      // 내려받을 때도 같은 것을 읽는다.
+      final back = repo.substring(repo.indexOf('restorePurchaseLists'));
+      for (final k in ["'checked'", "'memo'", "'strokes'", "'updatedAt'"]) {
+        expect(back.contains(k), isTrue, reason: '$k 를 안 읽는다');
+      }
+    });
+
+    test('🔴 보안 규칙에 사입 리스트가 명시돼 있다', () {
+      final rules = _read('firestore.rules');
+      expect(rules.contains('match /purchase_lists/{listId}'), isTrue);
+      // 본인만. 남의 uid 아래는 못 본다.
+      final part = rules.substring(rules.indexOf('match /purchase_lists'));
+      expect(part.startsWith(
+          'match /purchase_lists/{listId} {\n        allow read, write: if isOwner(uid);'),
+          isTrue);
+      // 누구나 읽게 열어 두면 안 된다.
+      expect(part.contains('allow read: if true'), isFalse);
+    });
+
+    test('🔴 Hive 저장은 그대로 둔다 (기기 저장이 먼저다)', () {
+      final src = svcSrc();
+      expect(src.contains('Hive.openBox<PurchaseList>'), isTrue);
+      expect(src.contains('await _box!.put(list.id, list);'), isTrue);
     });
   });
 

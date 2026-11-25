@@ -241,13 +241,23 @@ class PurchaseListService extends ChangeNotifier {
     );
   }
 
-  /// 폰에 바로 쓰고, 서버는 조금 뒤에 한 번만 올린다.
-  Future<void> touch(PurchaseList list, {bool notify = true}) async {
+  /// 폰에 바로 쓰고, 올릴 것으로 표시해 둔다.
+  ///
+  /// 🔴 [sync] 를 켤 때만 서버 올리기를 예약한다(#191). 사장님 지시:
+  ///    "저장 횟수 줄이기: 입력할 때마다 말고 저장 버튼·화면 나갈 때·
+  ///    체크할 때만". 예전에는 글자 하나마다 4초 타이머를 다시 걸어서,
+  ///    긴 메모를 적으면 타이머가 수백 번 섰다 없어졌다.
+  ///    표시(`_dirty`)는 늘 남기므로 나갈 때 [flush] 가 한 번에 올린다.
+  Future<void> touch(
+    PurchaseList list, {
+    bool notify = true,
+    bool sync = false,
+  }) async {
     if (!_ready) return;
     list.updatedAt = DateTime.now();
     await _box!.put(list.id, list);
     _dirty.add(list.id);
-    _scheduleSync();
+    if (sync) _scheduleSync();
     if (notify) notifyListeners();
   }
 
@@ -341,6 +351,10 @@ class PurchaseListService extends ChangeNotifier {
 
     final pending = _dirty.toList();
     for (final id in pending) {
+      // 🔴 아직 "저장" 을 안 누른 임시 메모장은 **올리지 않는다**(#191).
+      //    사장님 지시: "새 메모장 임시 작성분은 기기에만 두고 올리지 않기".
+      //    올려 버리면 PC 에서 열었을 때 적다 만 메모가 리스트에 뜬다.
+      if (isMemoDraft(id)) continue;
       final item = _box!.get(id);
       if (item == null) {
         _dirty.remove(id);
@@ -354,21 +368,66 @@ class PurchaseListService extends ChangeNotifier {
   /// 아직 서버에 못 올린 게 있는가. 화면에 "저장 안 됨" 을 보여줄 때 쓴다.
   bool get hasUnsynced => _dirty.isNotEmpty;
 
-  /// 기기를 바꾼 뒤 서버에서 내려받는다. 폰에 없는 것만 더한다.
-  Future<int> restoreFromCloud() async {
+  /// 어느 쪽을 남길지 고른다 — **나중에 저장한 쪽이 이긴다.** (#191)
+  ///
+  /// 🔴 사장님 지시(#191): "같은 리스트를 두 기기에서 고쳤으면 나중에
+  ///    저장한 쪽이 이김". 시각이 같으면 폰 것을 남긴다. 눈앞의 기기에서
+  ///    방금 본 내용이 갑자기 바뀌면 고장으로 보인다.
+  @visibleForTesting
+  static bool remoteWins(PurchaseList? local, PurchaseList remote) {
+    if (local == null) return true;
+    return remote.updatedAt.isAfter(local.updatedAt);
+  }
+
+  /// 클라우드와 맞춘다. 내려받고, 폰에만 있던 것은 올린다. (#191)
+  ///
+  /// ```
+  ///   서버에만 있다        → 폰에 넣는다          (다른 기기에서 적은 것)
+  ///   양쪽에 있다          → updatedAt 늦은 쪽    (나중에 저장한 쪽이 이김)
+  ///   폰에만 있다          → 서버에 올린다        (옛 리스트 챙기기)
+  ///   임시 작성분          → 건드리지 않는다      (기기에만 둔다)
+  /// ```
+  ///
+  /// 🔴 인터넷이 없으면 [UserRepository] 가 빈 목록을 주고, 올리기는
+  ///    조용히 실패해 `_dirty` 에 남는다. 앱은 폰 저장만으로 그대로 돈다.
+  ///
+  /// 돌려주는 값은 **새로 받아 온 건수**다.
+  Future<int> syncWithCloud() async {
     if (!_ready) return 0;
     final uid = _openedFor;
-    if (uid == null) return 0;
-    final remote = await UserRepository.instance.restorePurchaseLists(uid);
-    var added = 0;
-    for (final r in remote) {
-      if (_box!.containsKey(r.id)) continue;
-      await _box!.put(r.id, r);
-      added++;
+    if (uid == null) return 0;            // 로그인 전에는 폰에만 둔다
+
+    var pulled = 0;
+    final seen = <String>{};
+    try {
+      final remote = await UserRepository.instance.restorePurchaseLists(uid);
+      for (final r in remote) {
+        seen.add(r.id);
+        // 임시 작성분 id 와 겹치면 손대지 않는다. 적다 만 글이 날아간다.
+        if (isMemoDraft(r.id)) continue;
+        final local = _box!.get(r.id);
+        if (!remoteWins(local, r)) continue;
+        await _box!.put(r.id, r);
+        pulled++;
+      }
+    } catch (_) {
+      // 인터넷이 없다. 폰 것만으로 돈다.
     }
-    if (added > 0) notifyListeners();
-    return added;
+
+    // 🔴 폰에만 있던 리스트를 올린다(#191). 사장님 지시: "기존에 폰에만
+    //    있던 리스트도 처음 열 때 클라우드로 올라가게".
+    for (final e in saved) {
+      if (seen.contains(e.id)) continue;
+      _dirty.add(e.id);
+    }
+    await flush();
+
+    if (pulled > 0) notifyListeners();
+    return pulled;
   }
+
+  /// 예전 이름. 부르는 곳이 남아 있을 수 있어 남겨 둔다.
+  Future<int> restoreFromCloud() => syncWithCloud();
 
   // ── 자주 산 품목 ─────────────────────────────────────────────
 

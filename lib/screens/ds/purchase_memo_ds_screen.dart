@@ -180,13 +180,17 @@ class _PurchaseMemoDsScreenState extends State<PurchaseMemoDsScreen> {
   ///
   /// 🔴 버튼으로 하는 저장과 **다른 길**이다. 이건 조용히 모아 두는
   ///    것이고, 버튼은 `saveNow()` 로 끝날 때까지 기다린다.
-  void _autoSave({bool immediate = false}) {
+  void _autoSave({bool immediate = false, bool sync = false}) {
     final list = _collect();
     if (list == null) return;
     // `notify: false` — 이 화면은 스스로 그리고 있다. 알리면 목록 화면이
     // 글자마다 다시 그려져 느려진다.
-    unawaited(
-        PurchaseListService.instance.touch(list, notify: immediate));
+    //
+    // 🔴 `sync` 는 **체크할 때만** 켠다(#191). 글자 하나마다 서버 타이머를
+    //    다시 걸면 긴 메모를 적을 때 타이머가 수백 번 섰다 없어진다.
+    //    안 켜도 올릴 표시는 남으므로, 나갈 때 `flush()` 가 한 번에 올린다.
+    unawaited(PurchaseListService.instance
+        .touch(list, notify: immediate, sync: sync));
     if (immediate) unawaited(PurchaseListService.instance.flush());
   }
 
@@ -274,7 +278,8 @@ class _PurchaseMemoDsScreenState extends State<PurchaseMemoDsScreen> {
     final list = _items;
     if (i >= list.length) return;
     setState(() => list[i].checked = !list[i].checked);
-    _autoSave();
+    // 🔴 체크는 시장에서 누르는 것이라 바로 올린다. (사장님 지시 #191)
+    _autoSave(sync: true);
   }
 
   // ── 메모 탭 ──────────────────────────────────────────────────
@@ -310,7 +315,8 @@ class _PurchaseMemoDsScreenState extends State<PurchaseMemoDsScreen> {
   ///    산 것을 아래로 내리면 눈이 줄을 다시 찾아야 해서 시장에서 헷갈린다.
   void _toggle(int i) {
     setState(() => _rows[i].checked = !_rows[i].checked);
-    _autoSave();
+    // 🔴 체크는 바로 올린다. (사장님 지시 #191)
+    _autoSave(sync: true);
   }
 
   // ── 스케치 탭 ────────────────────────────────────────────────

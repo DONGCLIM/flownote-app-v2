@@ -7,6 +7,7 @@ import '../../design/fn_tab_intent.dart';
 import '../../widgets/lazy_tabs.dart';
 import '../../providers/receipt_provider.dart';
 import '../../services/notice_feed.dart';
+import '../../services/purchase_list_service.dart';
 import 'calendar_ds_screen.dart';
 import 'home_ds_screen.dart';
 import 'notice_list_ds_screen.dart';
@@ -64,12 +65,22 @@ class _MainDsScreenState extends State<MainDsScreen> {
     // 로그인 후 첫 진입에서 클라우드 동기화를 한 번 시도한다.
     //  1) 기기 변경 복원 — 클라우드에만 있는 영수증을 내려받는다
     //  2) 로컬 백업 — 아직 안 올라간 영수증을 밀어올린다
-    // 둘 다 실패해도 앱 동작에는 영향이 없다 (Hive 가 진실의 원천).
+    //  3) 사입 리스트 — 내려받고, 폰에만 있던 것은 올린다 (#191)
+    // 모두 실패해도 앱 동작에는 영향이 없다 (Hive 가 진실의 원천).
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       if (!mounted) return;
       final receipts = context.read<ReceiptProvider>();
       await receipts.restoreFromCloud();
       await receipts.pushAllToCloud();
+
+      // 🔴 #191 에서 이었다. 전에는 `syncWithCloud()` 를 **아무도 안 불러서**
+      //    PC 에서 적은 사입 리스트가 폰에 영영 안 보였다. 올리기만 하고
+      //    내려받지 않았던 것이다.
+      try {
+        await PurchaseListService.instance.syncWithCloud();
+      } catch (_) {
+        // 인터넷이 없다. 폰 저장만으로 그대로 돈다.
+      }
     });
 
     // 저장 완료 화면의 '캘린더 보기' 처럼, 깊은 화면에서 남긴
