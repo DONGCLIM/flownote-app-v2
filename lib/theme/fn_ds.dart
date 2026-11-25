@@ -208,18 +208,20 @@ class FnDs {
   /// 입력창 좌우 안쪽 여백.
   static const double inputPadH = 14.0;
 
-  /// 큰 입력창 높이. 예산 검토의 품목·수량·단가 칸이 쓴다. (#187)
-  ///
-  /// 🔴 기본 [inputH] 를 키우지 않는다. 그 값은 문의·회원가입 등 서른
-  ///    군데가 같이 쓰는데, 거기까지 커지면 화면이 다 밀린다.
-  static const double inputBigH = 56.0;
-
-  /// 큰 입력창 글자. 사장님 지시(#187): "fn_ds 의 L 단계로".
-  static const double inputBigFont = fontL;
-
   /// 입력창 글자 / 안내 글자 색.
   static const double inputFont = fontM;
   static const Color inputHint = Color(0xFF7D7D7D);
+
+  /// 예산 검토의 품목·수량·단가 칸 높이.
+  ///
+  /// 🔴 #187 에서 56 으로 키웠다가 #189 에서 **기본 [inputH] 로 되돌렸다.**
+  ///    사장님 지시(#189): "입력칸 높이 56 → 48 (fn_ds 입력창 기준)".
+  ///    이름을 남겨 둔 이유는 "여긴 예산 검토 칸" 이라고 가리키던 자리를
+  ///    그대로 두기 위해서다. 값은 이제 기본과 같다.
+  static const double inputBigH = inputH;
+
+  /// 예산 검토 입력칸 글자. 사장님 지시(#189): "글자 L → M 단계로".
+  static const double inputBigFont = inputFont;
 
   /// 입력창 테두리 두께.
   static const double inputBorderW = 1.0;

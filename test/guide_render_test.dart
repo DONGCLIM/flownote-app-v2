@@ -590,20 +590,26 @@ void main() {
   ///    열 수 없어서 서비스가 비어 있는데, 그때도 화면이 떠야 한다.
   ///    (리스트를 못 찾으면 스스로 내일 날짜로 만든다 — 사장님 지시 #185)
   group('사입 메모장 — 화면 (#185)', () {
+    /// 🔴 #189 에서 머리 카드(날짜·목적)가 생겨 글칸이 하나 늘었다.
+    ///    메모 줄 칸은 **맨 뒤**다. 목적 칸을 집으면 엉뚱한 곳에 적힌다.
+    Finder memoField() => find.byType(TextField).last;
+
     testWidgets('🔴 날짜·안내문·탭이 시안대로다', (t) async {
-      await pump(t, const PurchaseMemoDsScreen());
+      await pumpTall(t, const PurchaseMemoDsScreen());
       expect(find.text('사입 메모장'), findsOneWidget);
       expect(
           find.text('사입 갈 때 챙길 것과 주문 메모를 적고, 부케 모양이나 꽃 배치를 그려 기록해요.'),
           findsOneWidget);
       expect(find.text('메모'), findsOneWidget);
       expect(find.text('스케치'), findsOneWidget);
-      // 날짜는 `11/26(목) 사입` 꼴이다.
-      expect(find.textContaining(RegExp(r'^\d+/\d+\(.\) 사입$')), findsOneWidget);
+      // 🔴 #189 에서 `11/26(목) 사입` 한 줄 대신 예산 검토와 같은
+      //    날짜·목적 카드가 들어왔다. (사장님 지시)
+      expect(find.text('사입 날짜'), findsOneWidget);
+      expect(find.text('목적'), findsOneWidget);
     });
 
     testWidgets('🔴 기본은 메모 탭이고, 누르면 스케치 탭으로 바뀐다', (t) async {
-      await pump(t, const PurchaseMemoDsScreen());
+      await pumpTall(t, const PurchaseMemoDsScreen());
       // 메모 탭 — 글칸이 있고 색 고르개는 없다.
       expect(find.byType(TextField), findsWidgets);
       expect(find.text('지우기'), findsNothing);
@@ -618,8 +624,8 @@ void main() {
     });
 
     testWidgets('🔴 탭을 바꿔도 적은 글이 그대로 남는다', (t) async {
-      await pump(t, const PurchaseMemoDsScreen());
-      await t.enterText(find.byType(TextField).first, '금요일 웨딩 부케 3개');
+      await pumpTall(t, const PurchaseMemoDsScreen());
+      await t.enterText(memoField(), '금요일 웨딩 부케 3개');
       await t.pump(const Duration(milliseconds: 200));
 
       await t.tap(find.text('스케치'));
@@ -634,29 +640,29 @@ void main() {
     });
 
     testWidgets('🔴 글을 적으면 메모 탭에 "0/1" 처럼 개수가 붙는다', (t) async {
-      await pump(t, const PurchaseMemoDsScreen());
+      await pumpTall(t, const PurchaseMemoDsScreen());
       expect(find.text('메모'), findsOneWidget);
 
-      await t.enterText(find.byType(TextField).first, '소국 두 단');
+      await t.enterText(memoField(), '소국 두 단');
       await t.pump(const Duration(milliseconds: 200));
       expect(find.text('메모 0/1'), findsOneWidget);
     });
 
     testWidgets('🔴 체크하면 코랄 ✓ 가 되고 글자에 가운데줄이 그어진다', (t) async {
-      await pump(t, const PurchaseMemoDsScreen());
-      await t.enterText(find.byType(TextField).first, '소국 두 단');
+      await pumpTall(t, const PurchaseMemoDsScreen());
+      await t.enterText(memoField(), '소국 두 단');
       await t.pump(const Duration(milliseconds: 200));
 
       // 구매 전 — 체크 표시가 없다.
       expect(find.byIcon(Icons.check_rounded), findsNothing);
-      var field = t.widget<TextField>(find.byType(TextField).first);
+      var field = t.widget<TextField>(memoField());
       expect(field.style!.decoration, isNot(TextDecoration.lineThrough));
 
       await t.tap(find.bySemanticsLabel('구매 전'));
       await t.pump(const Duration(milliseconds: 300));
 
       expect(find.byIcon(Icons.check_rounded), findsOneWidget);
-      field = t.widget<TextField>(find.byType(TextField).first);
+      field = t.widget<TextField>(memoField());
       expect(field.style!.decoration, TextDecoration.lineThrough);
       expect(field.style!.color, FnDs.sub);
       expect(find.text('메모 1/1'), findsOneWidget);
@@ -669,38 +675,40 @@ void main() {
     });
 
     testWidgets('🔴 엔터를 치면 체크칸이 있는 새 줄이 생긴다', (t) async {
-      await pump(t, const PurchaseMemoDsScreen());
-      expect(find.byType(TextField), findsOneWidget);
+      await pumpTall(t, const PurchaseMemoDsScreen());
+      // 목적 칸 1 + 메모 줄 1. (#189 머리 카드)
+      expect(find.byType(TextField), findsNWidgets(2));
 
-      await t.enterText(find.byType(TextField).first, '첫 줄');
+      await t.enterText(memoField(), '첫 줄');
       await t.testTextInput.receiveAction(TextInputAction.next);
       await t.pump(const Duration(milliseconds: 300));
 
-      expect(find.byType(TextField), findsNWidgets(2));
+      expect(find.byType(TextField), findsNWidgets(3));
       // 체크칸도 두 개여야 한다. 체크칸 없는 줄이 생기면 안 된다.
       expect(find.bySemanticsLabel('구매 전'), findsNWidgets(2));
     });
 
     testWidgets('🔴 체크해도 줄 순서가 바뀌지 않는다', (t) async {
-      await pump(t, const PurchaseMemoDsScreen());
-      await t.enterText(find.byType(TextField).first, '가');
+      await pumpTall(t, const PurchaseMemoDsScreen());
+      await t.enterText(memoField(), '가');
       await t.testTextInput.receiveAction(TextInputAction.next);
       await t.pump(const Duration(milliseconds: 300));
-      await t.enterText(find.byType(TextField).last, '나');
+      await t.enterText(memoField(), '나');
       await t.pump(const Duration(milliseconds: 200));
 
       // 첫 줄을 체크한다.
       await t.tap(find.bySemanticsLabel('구매 전').first);
       await t.pump(const Duration(milliseconds: 300));
 
-      // 산 줄이 아래로 내려가면 안 된다. 첫 칸이 그대로 '가' 여야 한다.
-      final first = t.widget<TextField>(find.byType(TextField).first);
+      // 산 줄이 아래로 내려가면 안 된다. 첫 메모 칸이 '가' 여야 한다.
+      // (목적 칸 다음이 첫 메모 줄이다)
+      final first = t.widget<TextField>(find.byType(TextField).at(1));
       expect(first.controller!.text, '가');
       expect(first.style!.decoration, TextDecoration.lineThrough);
     });
 
     testWidgets('🔴 고른 탭의 카드가 화면 아래까지 꽉 찬다', (t) async {
-      await pump(t, const PurchaseMemoDsScreen());
+      await pumpTall(t, const PurchaseMemoDsScreen());
       // 🔴 `Expanded` 로 집지 않는다. FnShell 안에도 Expanded 가 있어서
       //    바깥 것이 먼저 잡히고, 그 안의 첫 Container 는 탭 칩이다.
       //    카드는 기준 꾸밈(모서리 18)으로 가린다.
@@ -726,7 +734,7 @@ void main() {
     });
 
     testWidgets('🔴 "그림 저장은 곧 추가돼요" 같은 미완성 안내가 없다', (t) async {
-      await pump(t, const PurchaseMemoDsScreen());
+      await pumpTall(t, const PurchaseMemoDsScreen());
       await t.tap(find.text('스케치'));
       await t.pump(const Duration(milliseconds: 300));
       expect(find.textContaining('곧 추가'), findsNothing);
@@ -735,7 +743,7 @@ void main() {
     });
 
     testWidgets('🔴 그림을 그리면 스케치 탭에 코랄 점이 붙는다', (t) async {
-      await pump(t, const PurchaseMemoDsScreen());
+      await pumpTall(t, const PurchaseMemoDsScreen());
       await t.tap(find.text('스케치'));
       await t.pump(const Duration(milliseconds: 300));
 
@@ -865,9 +873,9 @@ void main() {
       expect(memoSrc().contains('FnPill('), isTrue);
     });
 
-    test('🔴 두 군데에서 들어올 수 있다 (가이드 목록·홈 칩)', () {
-      // 🔴 #187 에서 **예산 검토는 빠졌다.** 저장 버튼이 이제 저장된 사입
-      //    리스트로 간다. 메모장과의 연동은 다음 작업이다(사장님 지시).
+    test('🔴 가이드 목록·홈 칩에서 들어올 수 있다', () {
+      // 🔴 #187 에서 **예산 검토는 빠졌다.** 저장 버튼이 저장된 사입
+      //    리스트로 간다. (#189 에서 저장된 리스트 → 메모장 길이 생겼다)
       final guide = _read('lib/screens/ds/insight_ds_screens.dart');
       expect(guide.contains("'memo' => const PurchaseMemoDsScreen()"), isTrue);
       expect(guide.contains('PurchaseMemoDsScreen(listId: list.id)'), isFalse,
@@ -879,9 +887,10 @@ void main() {
 
     test('🔴 리스트를 못 찾아도 적을 수 있다', () {
       final src = memoSrc();
-      // 가장 최근 준비/사입 중 → 없으면 새로 만든다.
-      expect(src.contains('svc.activeOne'), isTrue);
-      expect(src.contains('svc.draft()'), isTrue);
+      // 🔴 #189 에서 `svc.activeOne` 을 끊었다. 그건 예산 검토에서 저장해
+      //    둔 남의 리스트를 집어 와 메모를 덮어쓰던 길이다.
+      //    이제 자기만의 임시 작성분을 쓴다.
+      expect(src.contains('svc.memoDraft()'), isTrue);
       expect(src.contains('사입 리스트를 찾지 못했어요'), isFalse);
     });
 
@@ -1087,7 +1096,10 @@ void main() {
       await pumpTallBudget(t, SavedListsDsScreen(lists: lists, openId: 'memo'));
 
       expect(find.text('메모 리스트 · 2줄'), findsOneWidget);
-      expect(find.text('적어 둔 품목이 없어요. 메모만 남긴 리스트예요.'), findsOneWidget);
+      // 🔴 #189 에서 빈 안내 대신 **메모 줄 미리보기**를 보여 준다.
+      expect(find.text('화병'), findsOneWidget);
+      expect(find.text('리본'), findsOneWidget);
+      expect(find.text('메모장 열기'), findsOneWidget);
       // 금액이 0원으로 적히면 안 된다. 비워야 한다.
       expect(find.text('0원'), findsNothing);
       // 합계·평균은 그대로.
@@ -1145,44 +1157,38 @@ void main() {
   });
 
   group('예산 검토 — 입력칸 개선 (#187)', () {
-    testWidgets('🔴 품목·수량·단가 칸이 높이 56 · 글자 L 이다', (t) async {
+    testWidgets('🔴 품목·수량·단가 칸이 높이 48 · 글자 M 이다 (#189)', (t) async {
       await pumpTallBudget(
           t, const GuideBudgetDsScreen(priceBook: PriceBook.empty, frequent: []));
 
-      expect(FnDs.inputBigH, 56.0);
-      expect(FnDs.inputBigFont, FnDs.fontL);
+      // 🔴 #187 에서 56·L 로 키웠다가 #189 에서 기본값으로 되돌렸다.
+      expect(FnDs.inputBigH, 48.0);
+      expect(FnDs.inputBigFont, FnDs.fontM);
+      // 기본 입력칸과 **같은 값**이다. 둘이 어긋나면 화면마다 달라 보인다.
+      expect(FnDs.inputBigH, FnDs.inputH);
+      expect(FnDs.inputBigFont, FnDs.inputFont);
 
-      // 큰 칸이 실제로 쓰였는지 — 56 짜리 상자가 있어야 한다.
-      final tall = t
+      // 48 짜리 상자가 실제로 쓰였는지.
+      final boxes = t
           .widgetList<Container>(find.byType(Container))
           .where((e) => e.constraints?.maxHeight == FnDs.inputBigH);
-      expect(tall, isNotEmpty);
-
-      // 기본 입력칸(48)은 그대로다. 다른 화면이 같이 쓴다.
-      expect(FnDs.inputH, 48.0);
+      expect(boxes, isNotEmpty);
     });
 
-    testWidgets('🔴 수량 칸 양옆에 － ＋ 가 있고 눌러서 바뀐다', (t) async {
+    testWidgets('🔴 수량 칸에 － ＋ 버튼이 없다 (#189)', (t) async {
       await pumpTallBudget(
           t, const GuideBudgetDsScreen(priceBook: PriceBook.empty, frequent: []));
 
-      expect(find.byIcon(Icons.add_rounded), findsWidgets);
-      expect(find.byIcon(Icons.remove_rounded), findsOneWidget);
+      // 🔴 #188 에서 넣었다가 #189 에서 뺐다. 사장님 지시: "－ / ＋ 버튼은
+      //    빼기 (왼쪽에 빈 칸으로 보이는 문제도 같이 없어짐)".
+      expect(find.byIcon(Icons.remove_rounded), findsNothing);
+      // '항목 추가' 의 ＋ 는 남아 있어야 한다. 수량 옆의 ＋ 만 뺐다.
+      expect(find.text('항목 추가'), findsOneWidget);
 
-      await t.tap(find.byIcon(Icons.add_rounded).first);
+      // 수량은 칸에 직접 적는다.
+      await t.enterText(fieldFor('수량'), '20');
       await t.pump(const Duration(milliseconds: 200));
-      final qty = t.widget<TextField>(fieldFor('수량'));
-      expect(qty.controller!.text, '1');
-
-      await t.tap(find.byIcon(Icons.remove_rounded));
-      await t.pump(const Duration(milliseconds: 200));
-      // 0 이면 빈칸으로 둔다. `0단` 이 적혀 있으면 안 적은 건지 헷갈린다.
-      expect(t.widget<TextField>(fieldFor('수량')).controller!.text, '');
-
-      // 0 아래로는 안 내려간다.
-      await t.tap(find.byIcon(Icons.remove_rounded));
-      await t.pump(const Duration(milliseconds: 200));
-      expect(t.widget<TextField>(fieldFor('수량')).controller!.text, '');
+      expect(t.widget<TextField>(fieldFor('수량')).controller!.text, '20');
     });
 
     testWidgets('🔴 수량 칸은 숫자만 받고 단위가 오른쪽에 고정이다', (t) async {
@@ -1470,14 +1476,12 @@ void main() {
       }
     });
 
-    testWidgets('🔴 － 버튼이 보이고 수량 칸 왼쪽에 빈 칸이 없다', (t) async {
+    testWidgets('🔴 수량 칸 왼쪽에 빈 칸이 없다 (#189 － 뺀 뒤)', (t) async {
       await pumpTallBudget(
           t, const GuideBudgetDsScreen(priceBook: PriceBook.empty, frequent: []));
 
-      // － 아이콘이 가운데 놓여 실제로 보인다.
-      final minus = find.byIcon(Icons.remove_rounded);
-      expect(minus, findsOneWidget);
-      expect(t.getSize(minus).width, greaterThan(0));
+      // 버튼이 없으니 칸이 줄 왼쪽 끝에서 시작한다.
+      expect(find.byIcon(Icons.remove_rounded), findsNothing);
 
       // 숫자는 단위 쪽(오른쪽)에 붙는다. 왼쪽에 빈 칸을 남기지 않는다.
       expect(t.widget<TextField>(fieldFor('수량')).textAlign, TextAlign.right);
@@ -1532,18 +1536,258 @@ void main() {
       expect(find.byType(FnPill), findsWidgets);
     });
 
-    testWidgets('🔴 높이 56 · 글자 L 은 그대로 (원가 계산기는 48)', (t) async {
+    testWidgets('🔴 세 칸 글자가 모두 M 단계다 (#189)', (t) async {
       await pumpTallBudget(
           t, const GuideBudgetDsScreen(priceBook: PriceBook.empty, frequent: []));
-      expect(FnDs.inputBigH, 56.0);
-      expect(FnDs.inputBigFont, FnDs.fontL);
-      expect(FnDs.inputH, 48.0);
+      expect(FnDs.inputBigH, 48.0);
+      expect(FnDs.inputBigFont, FnDs.fontM);
 
       for (final label in ['품목명', '수량', '단가']) {
         expect(t.widget<TextField>(fieldFor(label)).style!.fontSize,
-            FnDs.inputBigFont,
+            FnDs.fontM,
             reason: label);
       }
+    });
+
+    testWidgets('🔴 수량과 단가 칸 너비가 똑같다 (#189)', (t) async {
+      await pumpTallBudget(
+          t, const GuideBudgetDsScreen(priceBook: PriceBook.empty, frequent: []));
+      final qty = t.getSize(fieldFor('수량'));
+      final price = t.getSize(fieldFor('단가'));
+      expect(qty.width, price.width, reason: '두 칸 너비가 다르다');
+    });
+
+    testWidgets('🔴 칸 하나에 테두리가 하나다 (세 칸 모두)', (t) async {
+      await pumpTallBudget(
+          t, const GuideBudgetDsScreen(priceBook: PriceBook.empty, frequent: []));
+      // 🔴 안쪽 TextField 는 선을 하나도 안 그린다. 바깥 상자만 그린다.
+      for (final label in ['품목명', '수량', '단가']) {
+        final d = t.widget<TextField>(fieldFor(label)).decoration!;
+        expect(d.border, InputBorder.none, reason: '$label border');
+        expect(d.enabledBorder, InputBorder.none, reason: '$label enabled');
+        expect(d.focusedBorder, InputBorder.none, reason: '$label focused');
+        expect(d.filled, isFalse, reason: '$label filled');
+      }
+      // 🔴 품목 줄 **안에서만** 센다. 48 은 이제 기본 입력칸 높이라
+      //    날짜·목적·한도 칸도 같은 값이다. 화면 전체를 세면 6 이 나온다.
+      final boxes = t
+          .widgetList<Container>(find.descendant(
+            of: find.byType(FnBigItemLineRow),
+            matching: find.byType(Container),
+          ))
+          .where((e) => e.constraints?.maxHeight == FnDs.inputBigH);
+      expect(boxes.length, 3, reason: '품목명·수량·단가 세 칸이어야 한다');
+    });
+  });
+
+
+  // ────────────────────────────────────────────────────────────
+  // #189 — 메모장 → 저장된 사입 리스트
+  // ────────────────────────────────────────────────────────────
+
+  group('사입 메모장 — 저장 흐름 (#189)', () {
+    String memoSrc2() => _read('lib/screens/ds/purchase_memo_ds_screen.dart');
+
+    test('🔴 남의 리스트에 덮어쓰던 길(activeOne)을 끊었다', () {
+      // 🔴 이게 버그였다. 가이드·칩으로 들어오면 `svc.activeOne`(아직 안
+      //    끝난 가장 최근 리스트)을 집어 와서, 예산 검토에서 저장해 둔
+      //    리스트에 메모가 덮어써졌다.
+      final src = memoSrc2();
+      expect(src.contains('svc.activeOne'), isFalse,
+          reason: '아직 남의 리스트를 집어 온다');
+      // 이제 자기만의 임시 작성분을 쓴다.
+      expect(src.contains('svc.memoDraft()'), isTrue);
+    });
+
+    test('🔴 임시 작성분은 앱을 꺼도 남는다 (새 저장 구조 아님)', () {
+      final svc = _read('lib/services/purchase_list_service.dart');
+      // 🔴 기다리지 않는다. id 는 init() 에서 미리 읽어 둔다.
+      expect(svc.contains('PurchaseList memoDraft()'), isTrue);
+      expect(svc.contains('fn_memo_draft_id'), isTrue);
+      expect(svc.contains('SharedPreferences'), isTrue);
+      // 🔴 담기는 곳은 1단계와 같은 상자다. 새 타입을 만들지 않았다.
+      expect(svc.contains('@HiveType'), isFalse);
+    });
+
+    test('🔴 저장 버튼은 예산 검토와 같은 saveNow() 를 쓴다', () {
+      final src = memoSrc2();
+      expect(src.contains('PurchaseListService.instance.saveNow(list)'), isTrue);
+      expect(src.contains("'저장했어요'"), isTrue);
+      expect(src.contains("'저장하지 못했어요. 다시 눌러 주세요'"), isTrue);
+      // 저장이 끝난 뒤에만 옮긴다.
+      expect(src.contains('SavedListsDsScreen(openId: list.id)'), isTrue);
+    });
+
+    test('🔴 저장이 끝나면 임시 작성분을 비운다', () {
+      final src = memoSrc2();
+      expect(src.contains('clearMemoDraft()'), isTrue);
+      final svc = _read('lib/services/purchase_list_service.dart');
+      expect(svc.contains('Future<void> clearMemoDraft()'), isTrue);
+      // 🔴 저장에 실패하면 지우면 안 된다. 적은 게 날아간다.
+      final fail = src.substring(
+          src.indexOf("'저장하지 못했어요"), src.indexOf("showFnToast(context, '저장했어요'"));
+      expect(fail.contains('clearMemoDraft'), isFalse,
+          reason: '실패했는데 임시 작성분을 지운다');
+    });
+
+    test('🔴 임시 작성분은 저장된 목록에 섞이지 않는다', () {
+      final svc = _read('lib/services/purchase_list_service.dart');
+      expect(svc.contains('List<PurchaseList> get saved'), isTrue);
+      expect(svc.contains('isMemoDraft('), isTrue);
+      // 화면은 `all` 이 아니라 `saved` 를 본다.
+      final saved = _read('lib/screens/ds/saved_lists_ds_screen.dart');
+      expect(saved.contains('PurchaseListService.instance.saved'), isTrue);
+      expect(saved.contains('PurchaseListService.instance.all'), isFalse);
+    });
+
+    testWidgets('🔴 새 메모장: 날짜·목적 칸과 "사입 리스트 저장" 버튼', (t) async {
+      await pumpTall(t, const PurchaseMemoDsScreen());
+      await t.pump(const Duration(milliseconds: 300));
+
+      // 예산 검토와 같은 모양의 머리 카드.
+      expect(find.text('사입 날짜'), findsOneWidget);
+      expect(find.text('목적'), findsOneWidget);
+      // 새 메모장이라 '사입 리스트 저장'.
+      expect(find.text('사입 리스트 저장'), findsOneWidget);
+      expect(find.text('저장'), findsNothing);
+    });
+
+    testWidgets('🔴 적은 게 없으면 버튼이 흐리고 안내가 뜬다', (t) async {
+      await pumpTall(t, const PurchaseMemoDsScreen());
+      await t.pump(const Duration(milliseconds: 300));
+
+      final btn = t.widget<FnPrimaryButton>(find.byType(FnPrimaryButton));
+      expect(btn.onTap, isNull, reason: '빈 메모장인데 눌린다');
+      expect(find.text('한 줄 이상 적거나 그려 주세요'), findsOneWidget);
+
+      // 한 줄 적으면 살아난다.
+      await t.enterText(find.byType(TextField).last, '금요일 웨딩 부케 3개');
+      await t.pump(const Duration(milliseconds: 300));
+      expect(t.widget<FnPrimaryButton>(find.byType(FnPrimaryButton)).onTap,
+          isNotNull);
+      expect(find.text('한 줄 이상 적거나 그려 주세요'), findsNothing);
+    });
+
+    testWidgets('🔴 저장된 리스트를 고칠 때는 버튼이 "저장" 이고 머문다', (t) async {
+      // listId 가 있으면 고치기 모드다.
+      await pumpTall(t, const PurchaseMemoDsScreen(listId: 'x'));
+      await t.pump(const Duration(milliseconds: 300));
+
+      expect(find.text('저장'), findsOneWidget);
+      expect(find.text('사입 리스트 저장'), findsNothing);
+
+      // 머무는 쪽은 소스로 본다 — 고치기 모드면 이동하지 않는다.
+      final src = memoSrc2();
+      expect(src.contains('if (_editing) {'), isTrue);
+    });
+
+    test('🔴 들어오는 곳 세 군데가 살아 있다 (가이드·홈 칩·저장된 리스트)', () {
+      final guide = _read('lib/screens/ds/insight_ds_screens.dart');
+      expect(guide.contains("'memo' => const PurchaseMemoDsScreen()"), isTrue);
+      final home = _read('lib/screens/ds/home_ds_screen.dart');
+      expect(home.contains('const PurchaseMemoDsScreen()'), isTrue);
+      // 🔴 #189 에서 더해진 길 — 저장된 리스트는 **그 리스트의** 메모장을 연다.
+      final saved = _read('lib/screens/ds/saved_lists_ds_screen.dart');
+      expect(saved.contains('PurchaseMemoDsScreen(listId: e.id)'), isTrue);
+    });
+  });
+
+  group('저장된 사입 리스트 — 메모 리스트 (#189)', () {
+    /// 메모만 적어 둔 리스트 하나.
+    PurchaseList memoList(String id, DateTime d, String memo) => PurchaseList(
+          id: id,
+          date: d,
+          memo: memo,
+          createdAt: d,
+          updatedAt: d,
+        );
+
+    testWidgets('🔴 접힌 줄은 "메모 리스트 · ○줄" 이고 금액 칸이 비었다', (t) async {
+      final memo = MemoText.encode(const [
+        MemoLine(text: '금요일 웨딩 부케 3개'),
+        MemoLine(text: '소국으로 대체', checked: true),
+      ]);
+      await pumpTallBudget(
+        t,
+        SavedListsDsScreen(
+          openId: 'none',
+          lists: [memoList('m', DateTime(2026, 7, 24), memo)],
+        ),
+      );
+
+      expect(find.text('메모 리스트 · 2줄'), findsOneWidget);
+      // 🔴 카드 머리에 금액을 적지 않는다. 0원이라고 쓰면 공짜로 샀다는
+      //    말이 된다. (요약 카드의 합계·평균 0원은 맞는 값이다 —
+      //    금액을 적은 리스트가 하나도 없으니까)
+      final head = find.descendant(
+        of: find.byType(ListView),
+        matching: find.text('0원'),
+      );
+      expect(t.widgetList(head).length, 2,
+          reason: '요약의 합계·평균 두 개뿐이어야 한다');
+      expect(find.text('1건'), findsOneWidget);
+    });
+
+    testWidgets('🔴 펼치면 메모 3줄 미리보기 + "메모장 열기"', (t) async {
+      final memo = MemoText.encode(const [
+        MemoLine(text: '한 줄'),
+        MemoLine(text: '두 줄', checked: true),
+        MemoLine(text: '세 줄'),
+        MemoLine(text: '네 줄'),
+        MemoLine(text: '다섯 줄'),
+      ]);
+      await pumpTallBudget(
+        t,
+        SavedListsDsScreen(
+          openId: 'm',
+          lists: [memoList('m', DateTime(2026, 7, 24), memo)],
+        ),
+      );
+
+      // 세 줄까지만 보여 준다.
+      expect(find.text('한 줄'), findsOneWidget);
+      expect(find.text('두 줄'), findsOneWidget);
+      expect(find.text('세 줄'), findsOneWidget);
+      expect(find.text('네 줄'), findsNothing);
+      // 나머지는 숫자로 알린다.
+      expect(find.text('외 2줄'), findsOneWidget);
+
+      expect(find.text('메모장 열기'), findsOneWidget);
+      // 메모 리스트에는 '이 리스트로 새로 만들기' 가 없다 (복사할 품목이 없다).
+      expect(find.text('이 리스트로 새로 만들기'), findsNothing);
+    });
+
+    testWidgets('🔴 품목이 있는 리스트는 그대로 품목 줄을 보여 준다', (t) async {
+      await pumpTallBudget(
+        t,
+        SavedListsDsScreen(openId: 'a', lists: [
+          plist('a', DateTime(2026, 7, 24), purpose: '주말 부케', items: [
+            pi('장미(레드)', 20, 8000),
+          ]),
+        ]),
+      );
+      expect(find.text('장미(레드)'), findsOneWidget);
+      expect(find.text('이 리스트로 새로 만들기'), findsOneWidget);
+      expect(find.text('메모장 열기'), findsNothing);
+    });
+
+    test('🔴 메모 리스트는 금액 계산에서 빠진다 (검산 그대로)', () {
+      // 메모 리스트를 섞어도 합계·평균이 안 바뀐다.
+      final lists = [
+        ...saved(),
+        memoList('m', DateTime(2026, 7, 20), '[ ] 한 줄'),
+      ];
+      final sum = PurchaseListService.summarize(lists);
+      expect(sum.count, 4);
+      expect(sum.total, 414900);
+      expect(sum.average, 138300);
+    });
+  });
+
+  group('클라우드 동기화 — 다음 작업 (#189)', () {
+    test('🔴 "PC↔폰 동기화 확인 필요" 가 문서에 적혀 있다', () {
+      final doc = _read('docs/TODO_기능연결.md');
+      expect(doc.contains('PC↔폰 동기화 확인 필요'), isTrue);
     });
   });
 

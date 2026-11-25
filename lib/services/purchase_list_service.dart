@@ -5,6 +5,7 @@ import 'package:crypto/crypto.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:hive_flutter/hive_flutter.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
 
 import '../models/purchase_list_model.dart';
@@ -62,6 +63,10 @@ class PurchaseListService extends ChangeNotifier {
   }
 
   Future<void> init() async {
+    // 🔴 임시 메모장 id 를 **여기서** 읽어 둔다(#189). 그래야 메모장 화면이
+    //    `initState` 에서 기다리지 않고 바로 펼칠 수 있다. 화면이 await 하면
+    //    한 박자 빈 화면이 보였다가 글이 튀어나와 깜빡인다.
+    await _loadDraftId();
     await _openFor(AuthService.instance.uid);
     _authSub?.cancel();
     _authSub = AuthService.instance.authStateChanges.listen((u) {
@@ -143,6 +148,81 @@ class PurchaseListService extends ChangeNotifier {
 
   /// 지금 저장된 것들의 요약.
   PurchaseSummary get summary => summarize(all);
+
+  /// 아직 저장하지 않은 **임시 메모장**의 id. (#189)
+  ///
+  /// 🔴 왜 따로 두나 — 예전에는 가이드·칩으로 메모장을 열면
+  ///    [activeOne](아직 안 끝난 리스트 중 가장 최근 것)을 집어 왔다.
+  ///    그래서 예산 검토에서 저장해 둔 **남의 리스트에 메모가 덮어써졌다.**
+  ///    이제 새 메모장은 자기만의 임시 리스트를 쓰고, 그 id 를 여기 적어
+  ///    둔다. 앱을 꺼도 남아 있어서 쓰던 메모가 그대로 돌아온다.
+  ///
+  /// 🔴 저장 구조를 새로 만들지 않았다. 담기는 곳은 1단계와 같은
+  ///    `PurchaseList` 상자다. 여기엔 **어느 것이 임시인지** 만 적어 둔다.
+  static const String _draftKey = 'fn_memo_draft_id';
+
+  String? _draftId;
+  bool _draftLoaded = false;
+
+  /// 쓰던 임시 메모장을 가져온다. 없으면 새로 만든다. (저장은 아직 안 한다)
+  ///
+  /// 🔴 **기다리지 않는다.** id 는 [init] 에서 이미 읽어 뒀다. 새로 만들
+  ///    때만 적어 두는데, 그건 뒤에서 조용히 한다. 메모장을 여는 순간
+  ///    바로 글이 보여야 해서다.
+  PurchaseList memoDraft() {
+    final id = _draftId;
+    if (id != null) {
+      final found = byId(id);
+      if (found != null) return found;
+    }
+    final made = draft();
+    _draftId = made.id;
+    unawaited(_writeDraftId(made.id));
+    return made;
+  }
+
+  /// 이 리스트가 아직 저장 안 한 임시 메모장인가.
+  bool isMemoDraft(String id) => _draftId == id;
+
+  /// 임시 메모장을 **진짜 리스트로 굳힌다.** 저장이 끝나면 부른다.
+  ///
+  /// 🔴 굳힌 뒤에는 임시 표시를 지운다. 그래야 다음에 메모장을 열면
+  ///    빈 메모장·빈 스케치로 시작한다. 사장님 지시(#189).
+  Future<void> clearMemoDraft() async {
+    _draftId = null;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(_draftKey);
+    } catch (_) {/* 못 지워도 다음에 덮어쓴다 */}
+  }
+
+  Future<void> _loadDraftId() async {
+    if (_draftLoaded) return;
+    _draftLoaded = true;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final v = prefs.getString(_draftKey);
+      if (v != null && v.isNotEmpty) _draftId = v;
+    } catch (_) {/* 처음 쓰는 폰 */}
+  }
+
+  Future<void> _writeDraftId(String id) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_draftKey, id);
+    } catch (_) {/* 못 적어도 이번 화면에서는 돌아간다 */}
+  }
+
+  /// 저장된 목록 — **임시 메모장은 뺀다.** (#189)
+  ///
+  /// 🔴 저장된 사입 리스트 화면은 이걸 본다. 아직 "저장" 을 안 누른
+  ///    임시 작성분이 목록에 섞이면, 사장님은 저장한 적도 없는 빈
+  ///    리스트가 왜 있는지 알 수 없다.
+  List<PurchaseList> get saved =>
+      List<PurchaseList>.unmodifiable(all.where((e) => !isMemoDraft(e.id)));
+
+  /// 저장된 것만으로 센 요약.
+  PurchaseSummary get savedSummary => summarize(saved);
 
   // ── 쓰기 ────────────────────────────────────────────────────
 

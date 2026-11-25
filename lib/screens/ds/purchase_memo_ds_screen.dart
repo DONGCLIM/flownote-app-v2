@@ -8,42 +8,55 @@ import '../../design/fn_shell.dart';
 import '../../models/purchase_list_model.dart';
 import '../../services/purchase_list_service.dart';
 import '../../theme/fn_ds.dart';
+import '../../widgets/fn_inquiry_parts.dart';
 import '../../widgets/fn_purchase_parts.dart';
+import 'saved_lists_ds_screen.dart';
 
-/// 사입 메모장 — 시장에서 쓰는 화면. (시안 #185)
+/// 사입 메모장 — 시장에서 쓰는 화면. (시안 #185 / 저장 #189)
 ///
-/// ## 배치 (시안의 두 카드를 탭으로 나눴다)
+/// ## 배치
 ///
 /// ```
 ///   [←] 사입 메모장
-///   11/26(목) 사입
 ///   사입 갈 때 챙길 것과 주문 메모를 적고, 부케 모양이나 꽃 배치를
 ///   그려 기록해요.
-///   ( 메모 3/5 )( 스케치 • )                       _MemoTabs
+///   ┌ 사입 날짜 [2026.07.24 (금)]   목적 [주말 부케 3건 대비] ┐  _MemoHeadCard
+///   ( 메모 3/5 )( 스케치 • )                        _MemoTabs
 ///   ┌─────────────────────────────── 화면 아래까지 ┐
 ///   │ ○ 금요일 웨딩 부케 3개 — 화이트 위주          │  메모 탭
 ///   │ ✓ 장미(레드) 단가 오르면 소국으로 대체        │  (산 줄은 가운데줄)
 ///   └───────────────────────────────────────────┘
-///   ┌ ● ● ● ● ● ● ● ●              지우기         ┐  스케치 탭
-///   │ (얇게)(보통)(굵게)                           │
-///   │                                             │
-///   └ 꽃 배치나 부케 모양을 손으로 그려 기록해두세요 ┘
+///   [ 사입 리스트 저장 ]                            (새 메모장)
+///   [ 저장 ]                                        (저장된 리스트를 고칠 때)
 /// ```
+///
+/// ## 두 가지 모드 (#189)
+///
+/// | 들어온 곳 | [listId] | 담기는 곳 | 하단 버튼 | 누른 뒤 |
+/// |---|---|---|---|---|
+/// | 가이드·바로가기 칩 | 없음 | **임시 작성분** | `사입 리스트 저장` | 저장된 사입 리스트로 이동 |
+/// | 저장된 사입 리스트 | 있음 | 그 리스트 | `저장` | 화면에 머무름 |
+///
+/// 🔴 **#189 에서 고친 것** — 예전에는 가이드·칩으로 들어오면
+///    `activeOne`(아직 안 끝난 가장 최근 리스트)을 집어 왔다. 그래서
+///    예산 검토에서 저장해 둔 **남의 리스트에 메모가 덮어써졌다.**
+///    이제 새 메모장은 자기만의 임시 작성분(`memoDraft()`)에 적고,
+///    "사입 리스트 저장" 을 눌러야 저장된 사입 리스트에 올라간다.
 ///
 /// 🔴 저장 구조를 새로 만들지 않았다. 사장님 지시(#185): "1단계에서 만든
 ///    PurchaseList 와 purchase_list_service.dart 를 그대로 써줘."
 ///    체크 상태는 [MemoText] 가 글 앞에 `[x] ` 를 붙여 `memo` 한 칸에 담는다.
 ///
-/// 🔴 저장은 1단계와 같다. 글자를 칠 때마다 서버에 올리지 않고
-///    `touch()`(폰 즉시 + 서버 4초 모아서) → 나갈 때 `flush()`(즉시).
+/// 🔴 쓰는 중에는 `touch()`(폰 즉시 + 서버 4초 모아서) 로 자동 저장한다.
+///    앱을 꺼도 임시 작성분이 그대로 남는다. 버튼을 누를 때만
+///    예산 검토와 **같은** `saveNow()` 를 쓴다.
 class PurchaseMemoDsScreen extends StatefulWidget {
   const PurchaseMemoDsScreen({super.key, this.listId});
 
   /// 어느 사입 리스트를 펼칠지.
   ///
-  /// 🔴 비워 두면 스스로 고른다. 사장님 지시(#185):
-  ///    예산 검토에서 오면 그 리스트, 가이드·칩에서 오면 가장 최근
-  ///    "준비/사입 중" 리스트, 그마저 없으면 내일 날짜로 새로 만든다.
+  /// 🔴 비워 두면 **임시 작성분**을 연다(새 메모장). 저장된 사입 리스트에서
+  ///    열면 그 리스트의 id 가 들어온다. 둘은 섞이지 않는다. (#189)
   final String? listId;
 
   @override
@@ -51,15 +64,22 @@ class PurchaseMemoDsScreen extends StatefulWidget {
 }
 
 class _PurchaseMemoDsScreenState extends State<PurchaseMemoDsScreen> {
-  static const _dow = ['월', '화', '수', '목', '금', '토', '일'];
-
   /// 메모 0 · 스케치 1.
   int _tab = 0;
 
   PurchaseList? _list;
 
+  /// 저장하는 중. 두 번 눌러 두 건이 되는 걸 막는다.
+  bool _saving = false;
+
+  /// 저장된 리스트를 고치는 중인가. (false = 새 메모장)
+  bool get _editing => widget.listId != null;
+
   /// 메모 줄들. 글칸 하나와 체크 하나가 한 줄을 이룬다.
   final List<_MemoRow> _rows = [];
+
+  final _purpose = TextEditingController();
+  DateTime _date = DateTime.now();
 
   /// 스케치.
   final List<SketchStroke> _strokes = [];
@@ -71,26 +91,37 @@ class _PurchaseMemoDsScreenState extends State<PurchaseMemoDsScreen> {
   void initState() {
     super.initState();
     _list = _resolveList();
+    _date = _list?.date ?? DateTime.now();
+    _purpose.text = _list?.purpose ?? '';
     _loadMemo();
     _strokes.addAll(_list?.strokes.map((e) => e.copy()) ?? const []);
+    _purpose.addListener(_onTyped);
   }
 
-  /// 어느 리스트에 적을지 고른다.
+  /// 어디에 적을지 고른다.
+  ///
+  /// 🔴 기다리지 않는다. 임시 메모장 id 는 `PurchaseListService.init()` 이
+  ///    앱 시작 때 이미 읽어 뒀다. 여기서 await 하면 한 박자 빈 화면이
+  ///    보였다가 글이 튀어나와 깜빡인다.
   ///
   /// 🔴 못 고르는 경우를 남기지 않는다. 메모장은 시장에서 급히 여는
   ///    화면이라, "리스트를 찾지 못했어요" 를 띄우면 아무것도 못 적는다.
   PurchaseList? _resolveList() {
-    final svc = PurchaseListService.instance;
-    final given = widget.listId;
-    if (given != null) {
-      final found = svc.byId(given);
-      if (found != null) return found;
+    try {
+      final svc = PurchaseListService.instance;
+      final given = widget.listId;
+      if (given != null) {
+        final found = svc.byId(given);
+        if (found != null) return found;
+      }
+      // 🔴 `activeOne` 을 쓰지 않는다(#189). 그건 예산 검토에서 저장해
+      //    둔 **남의 리스트**를 집어 와 메모를 덮어쓰던 길이다.
+      //    새 메모장은 자기만의 임시 작성분에 적는다.
+      return svc.memoDraft();
+    } catch (_) {
+      // 상자를 못 열었다. 적을 수는 있게 두고, 저장할 때 알린다.
+      return null;
     }
-    // 가이드·바로가기 칩으로 들어왔다. 아직 안 끝난 리스트를 이어 쓴다.
-    final active = svc.activeOne;
-    if (active != null) return active;
-    // 그것도 없으면 내일 날짜로 새로 만든다. 저장은 첫 수정 때 한다.
-    return svc.draft();
   }
 
   void _loadMemo() {
@@ -107,7 +138,11 @@ class _PurchaseMemoDsScreenState extends State<PurchaseMemoDsScreen> {
   void dispose() {
     // 🔴 화면을 나가기 전에 **지금 적힌 것**을 담고 즉시 올린다.
     //    `save()` 를 안 부르면 마지막으로 친 글자가 사라진다.
-    _save(immediate: true);
+    //    새 메모장이면 임시 작성분으로 남아, 다음에 열 때 돌아온다.
+    _autoSave(immediate: true);
+    _purpose
+      ..removeListener(_onTyped)
+      ..dispose();
     for (final r in _rows) {
       r.dispose();
     }
@@ -115,25 +150,101 @@ class _PurchaseMemoDsScreenState extends State<PurchaseMemoDsScreen> {
   }
 
   void _onTyped() {
-    // 탭 옆의 `3/5` 가 같이 바뀌어야 해서 다시 그린다.
+    // 탭 옆의 `3/5` 와 하단 버튼이 같이 바뀌어야 해서 다시 그린다.
     setState(() {});
-    _save();
+    _autoSave();
   }
 
-  /// 적은 것을 리스트에 담는다.
-  ///
-  /// [immediate] 면 서버까지 바로 올린다(화면을 나갈 때).
-  void _save({bool immediate = false}) {
+  /// 적힌 것을 리스트 객체에 담는다. (저장은 하지 않는다)
+  PurchaseList? _collect() {
     final list = _list;
-    if (list == null) return;
+    if (list == null) return null;
     list
+      ..date = _date
+      ..purpose = _purpose.text.trim()
       ..memo = MemoText.encode([for (final r in _rows) r.snapshot])
       ..strokes = _strokes.map((e) => e.copy()).toList();
+    return list;
+  }
+
+  /// 쓰는 중 자동 저장. [immediate] 면 서버까지 바로 올린다(나갈 때).
+  ///
+  /// 🔴 버튼으로 하는 저장과 **다른 길**이다. 이건 조용히 모아 두는
+  ///    것이고, 버튼은 `saveNow()` 로 끝날 때까지 기다린다.
+  void _autoSave({bool immediate = false}) {
+    final list = _collect();
+    if (list == null) return;
     // `notify: false` — 이 화면은 스스로 그리고 있다. 알리면 목록 화면이
     // 글자마다 다시 그려져 느려진다.
     unawaited(
         PurchaseListService.instance.touch(list, notify: immediate));
     if (immediate) unawaited(PurchaseListService.instance.flush());
+  }
+
+  /// 적은 게 하나라도 있는가. 메모 줄도 스케치도 없으면 저장할 게 없다.
+  bool get _hasContent {
+    final written =
+        _rows.any((r) => r.ctrl.text.trim().isNotEmpty);
+    return written || _strokes.isNotEmpty;
+  }
+
+  /// 하단 버튼을 눌렀다.
+  ///
+  /// 🔴 예산 검토와 **같은** `saveNow()` 를 쓴다. 사장님 지시(#189):
+  ///    "예산 검토의 saveNow() 를 그대로 재사용."
+  Future<void> _saveButton() async {
+    if (_saving) return;
+    final list = _collect();
+    if (list == null || !_hasContent) {
+      showFnToast(context, '한 줄 이상 적거나 그려 주세요',
+          type: FnToastType.warning);
+      return;
+    }
+
+    setState(() => _saving = true);
+    final ok = await PurchaseListService.instance.saveNow(list);
+    if (!mounted) return;
+    setState(() => _saving = false);
+
+    if (!ok) {
+      // 🔴 실패하면 임시 작성분을 **그대로 둔다.** 지우면 적은 게 날아간다.
+      showFnToast(context, '저장하지 못했어요. 다시 눌러 주세요',
+          type: FnToastType.error);
+      return;
+    }
+
+    showFnToast(context, '저장했어요', type: FnToastType.success);
+
+    if (_editing) {
+      // 저장된 리스트를 고치던 중이다. 화면에 머문다. (사장님 지시 #189)
+      return;
+    }
+
+    // 🔴 새 메모장이었다. 임시 표시를 지워서, 다음에 열면 **빈 메모장**으로
+    //    시작하게 한다. 안 지우면 방금 저장한 글이 또 떠서, 저장이 안 된
+    //    줄 알고 한 번 더 누르게 된다.
+    await PurchaseListService.instance.clearMemoDraft();
+    if (!mounted) return;
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute(
+        builder: (_) => SavedListsDsScreen(openId: list.id),
+      ),
+    );
+  }
+
+  Future<void> _pickDate() async {
+    final now = DateTime.now();
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _date,
+      firstDate: DateTime(now.year - 1),
+      lastDate: DateTime(now.year + 2),
+      locale: const Locale('ko'),
+    );
+    if (picked != null && mounted) {
+      setState(() => _date = picked);
+      _autoSave();
+    }
   }
 
   // ── 메모 탭 ──────────────────────────────────────────────────
@@ -146,7 +257,7 @@ class _PurchaseMemoDsScreenState extends State<PurchaseMemoDsScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) row.focus.requestFocus();
     });
-    _save();
+    _autoSave();
   }
 
   /// 빈 줄에서 지우기를 눌렀다. 그 줄을 없애고 윗줄 끝으로 간다.
@@ -161,7 +272,7 @@ class _PurchaseMemoDsScreenState extends State<PurchaseMemoDsScreen> {
       prev.ctrl.selection =
           TextSelection.collapsed(offset: prev.ctrl.text.length);
     }
-    _save();
+    _autoSave();
   }
 
   /// 🔴 체크해도 줄 순서는 **그대로 둔다.** 사장님 지시(#185):
@@ -169,7 +280,7 @@ class _PurchaseMemoDsScreenState extends State<PurchaseMemoDsScreen> {
   ///    산 것을 아래로 내리면 눈이 줄을 다시 찾아야 해서 시장에서 헷갈린다.
   void _toggle(int i) {
     setState(() => _rows[i].checked = !_rows[i].checked);
-    _save();
+    _autoSave();
   }
 
   // ── 스케치 탭 ────────────────────────────────────────────────
@@ -191,31 +302,27 @@ class _PurchaseMemoDsScreenState extends State<PurchaseMemoDsScreen> {
 
   void _strokeEnd() {
     _drawing = null;
-    _save();
+    _autoSave();
   }
 
   void _clearSketch() {
     if (_strokes.isEmpty) return;
     setState(_strokes.clear);
-    _save();
+    _autoSave();
   }
 
   // ── 그리기 ───────────────────────────────────────────────────
 
-  String get _dateLabel {
-    final d = _list?.date ?? DateTime.now();
-    return '${d.month}/${d.day}(${_dow[d.weekday - 1]}) 사입';
-  }
-
   @override
   Widget build(BuildContext context) {
     final counter = MemoText.counter([for (final r in _rows) r.snapshot]);
+    final ready = _hasContent;
 
     return FnShell(
       navTitle: '사입 메모장',
       bg: FnDs.bg,
       onBack: () {
-        _save(immediate: true);
+        _autoSave(immediate: true);
         Navigator.of(context).pop();
       },
       child: ColoredBox(
@@ -226,20 +333,17 @@ class _PurchaseMemoDsScreenState extends State<PurchaseMemoDsScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Text(
-                _dateLabel,
-                style: const TextStyle(
-                  fontFamily: FnDs.font,
-                  fontSize: FnDs.fontL,
-                  fontWeight: FontWeight.w700,
-                  color: FnDs.title,
-                ),
-              ),
-              const SizedBox(height: 6),
               const Text(
                 '사입 갈 때 챙길 것과 주문 메모를 적고, 부케 모양이나 꽃 배치를 '
                 '그려 기록해요.',
                 style: FnDs.tsSub,
+              ),
+              const SizedBox(height: FnDs.gapS),
+              // 🔴 예산 검토와 **같은 모양**의 날짜·목적 칸. (사장님 지시 #189)
+              _MemoHeadCard(
+                date: _date,
+                purpose: _purpose,
+                onPickDate: _pickDate,
               ),
               const SizedBox(height: FnDs.gapS),
               _MemoTabs(
@@ -258,6 +362,22 @@ class _PurchaseMemoDsScreenState extends State<PurchaseMemoDsScreen> {
               Expanded(
                 child: _tab == 0 ? _memoCard() : _sketchCard(),
               ),
+              const SizedBox(height: FnDs.gapS),
+              FnPrimaryButton(
+                // 저장된 리스트를 고치는 중이면 그냥 '저장'.
+                label: _editing ? '저장' : '사입 리스트 저장',
+                busy: _saving,
+                // 🔴 적은 게 없으면 흐리게. 사장님 지시(#189).
+                onTap: ready ? () => unawaited(_saveButton()) : null,
+              ),
+              if (!ready) ...[
+                const SizedBox(height: FnDs.gapXs),
+                const Text(
+                  '한 줄 이상 적거나 그려 주세요',
+                  textAlign: TextAlign.center,
+                  style: FnDs.tsSub,
+                ),
+              ],
             ],
           ),
         ),
@@ -349,6 +469,82 @@ class _PurchaseMemoDsScreenState extends State<PurchaseMemoDsScreen> {
           const Text(
             '꽃 배치나 부케 모양을 손으로 그려 기록해두세요.',
             style: FnDs.tsSub,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 날짜 + 목적. 예산 검토의 `_BudgetHeadCard` 와 **같은 모양**이다. (#189)
+///
+/// 🔴 복사해 둔 이유 — 예산 검토 쪽은 `insight_ds_screens.dart` 안의
+///    `private` 위젯이라 밖에서 못 쓴다. 그 파일을 건드리면 다른 화면까지
+///    흔들려서(사장님 지시: "다른 화면은 건드리지 마") 여기에 같은 값으로
+///    맞춰 두었다. 고칠 때는 두 곳을 같이 본다.
+class _MemoHeadCard extends StatelessWidget {
+  const _MemoHeadCard({
+    required this.date,
+    required this.purpose,
+    required this.onPickDate,
+  });
+
+  final DateTime date;
+  final TextEditingController purpose;
+  final VoidCallback onPickDate;
+
+  static const _dow = ['월', '화', '수', '목', '금', '토', '일'];
+
+  String get _label =>
+      '${date.year}.${date.month.toString().padLeft(2, '0')}.'
+      '${date.day.toString().padLeft(2, '0')} '
+      '(${_dow[date.weekday - 1]})';
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(FnDs.cardPad),
+      decoration: FnDs.cardDeco(),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('사입 날짜', style: FnDs.tsSub),
+          const SizedBox(height: 6),
+          GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: onPickDate,
+            child: Container(
+              height: FnDs.inputH,
+              padding: const EdgeInsets.symmetric(horizontal: FnDs.inputPadH),
+              decoration: BoxDecoration(
+                color: FnDs.card,
+                borderRadius: BorderRadius.circular(FnDs.inputRadius),
+                border: Border.all(color: FnDs.line, width: FnDs.inputBorderW),
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      _label,
+                      style: const TextStyle(
+                        fontFamily: FnDs.font,
+                        fontSize: FnDs.inputFont,
+                        color: FnDs.title,
+                      ),
+                    ),
+                  ),
+                  const Icon(Icons.calendar_today_outlined,
+                      size: 16, color: FnDs.sub),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: FnDs.gapS),
+          FnNamedField(
+            label: '목적',
+            controller: purpose,
+            hint: '예) 주말 부케 3건 대비',
           ),
         ],
       ),

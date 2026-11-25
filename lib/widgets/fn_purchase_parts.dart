@@ -455,16 +455,18 @@ class _FnItemLineRowState extends State<FnItemLineRow> {
   }
 }
 
-/// 수량 칸 — `－ [ 20단 ] ＋`. (#187 예산 검토 전용 / #188 한 줄 배치)
+/// 수량 칸 — `[ 20  단 ]`. (#187 예산 검토 전용 / #189 － ＋ 뺌)
 ///
 /// 🔴 `FnNamedField` 를 안 쓰고 따로 만든 이유: 원가 계산기도 같은 조각을
 ///    쓰는데, 거기까지 모양이 바뀌면 안 된다. 사장님 지시(#187):
 ///    "다른 화면 디자인은 건드리지 마."
 ///
-/// 🔴 단가 칸과 **나란히** 놓인다(#188). 390 폭에서 반씩 나눠 쓰므로
-///    버튼은 [stepW] 로 좁히고, 칸 안 여백도 [_padH] 로 줄였다.
-///    숫자는 단위 바로 왼쪽에 붙여 쓴다 — 사장님 지시(#188):
-///    "수량 칸 왼쪽 빈 칸 없애기".
+/// 🔴 #188 에서 양옆에 두었던 `－` `＋` 버튼을 #189 에서 뺐다. 사장님 지시:
+///    "수량의 － / ＋ 버튼은 빼기 (지금 왼쪽에 빈 칸으로 보이는 문제도 같이
+///    없어짐)". 이제 칸 하나에 숫자만 적고 단위는 오른쪽에 고정이다.
+///
+/// 🔴 단가 칸과 **똑같은** [FnBigField] 를 쓴다. 따로 그리면 테두리 두께나
+///    여백이 미묘하게 달라져서, 나란히 놓았을 때 어긋나 보인다.
 class FnStepperField extends StatelessWidget {
   const FnStepperField({
     super.key,
@@ -477,119 +479,21 @@ class FnStepperField extends StatelessWidget {
 
   /// 칸 오른쪽에 **고정으로** 붙는 단위 글자. 지워지지 않는다.
   final String unit;
+
+  /// 값이 바뀌면 알린다. 컨트롤러 리스너가 이미 잡지만, 쓰는 쪽이
+  /// 늘 같은 모양으로 넘길 수 있게 받아 둔다.
   final VoidCallback onChanged;
 
-  /// 한 번 누를 때 얼마씩.
-  static const double step = 1;
-
-  /// － / ＋ 버튼 가로. 세로는 칸과 같은 [FnDs.inputBigH] 다.
-  static const double stepW = 34;
-
-  /// 버튼과 칸 사이.
-  static const double _gap = 4;
-
-  /// 칸 안 좌우 여백. 기본 14 는 반쪽 폭에서 숫자 자리를 다 먹는다.
-  static const double _padH = 6;
-
-  void _bump(double by) {
-    final now = fnNum(controller.text);
-    final next = (now + by).clamp(0, 999999).toDouble();
-    controller.text = next == 0 ? '' : CostCalc.comma(next);
-    controller.selection =
-        TextSelection.collapsed(offset: controller.text.length);
-    onChanged();
-  }
-
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Text('수량', style: FnDs.tsSub),
-        const SizedBox(height: 6),
-        Row(
-          children: [
-            _StepButton(icon: Icons.remove_rounded, onTap: () => _bump(-step)),
-            const SizedBox(width: _gap),
-            Expanded(
-              child: Container(
-                height: FnDs.inputBigH,
-                padding: const EdgeInsets.symmetric(horizontal: _padH),
-                decoration: BoxDecoration(
-                  color: FnDs.card,
-                  borderRadius: BorderRadius.circular(FnDs.inputRadius),
-                  border:
-                      Border.all(color: FnDs.line, width: FnDs.inputBorderW),
-                ),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: TextField(
-                        controller: controller,
-                        keyboardType: TextInputType.number,
-                        // 🔴 숫자만. 글자를 적으면 금액이 0 이 되는데
-                        //    사장님은 왜 0 인지 알 수 없다.
-                        inputFormatters: [FnDigitsFormatter()],
-                        // 단위 바로 왼쪽에 붙인다. 왼쪽에 빈 칸을 남기지 않는다.
-                        textAlign: TextAlign.right,
-                        style: const TextStyle(
-                          fontFamily: FnDs.font,
-                          fontSize: FnDs.inputBigFont,
-                          fontWeight: FontWeight.w600,
-                          color: FnDs.title,
-                        ),
-                        decoration: fnBareInput(hint: '0'),
-                      ),
-                    ),
-                    const SizedBox(width: 2),
-                    Text(
-                      unit.isEmpty ? FnUnits.fallback : unit,
-                      style: const TextStyle(
-                        fontFamily: FnDs.font,
-                        fontSize: FnDs.inputBigFont,
-                        color: FnDs.sub,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            const SizedBox(width: _gap),
-            _StepButton(icon: Icons.add_rounded, onTap: () => _bump(step)),
-          ],
-        ),
-      ],
-    );
-  }
-}
-
-/// － / ＋ 네모 버튼.
-///
-/// 🔴 `alignment` 를 꼭 준다(#188). 안 주면 56 짜리 꽉 찬 제약이
-///    아이콘에 그대로 내려가 `－` 글리프가 구석으로 밀려 안 보였다.
-class _StepButton extends StatelessWidget {
-  const _StepButton({required this.icon, required this.onTap});
-
-  final IconData icon;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: onTap,
-      child: Container(
-        width: FnStepperField.stepW,
-        height: FnDs.inputBigH,
-        alignment: Alignment.center,
-        decoration: BoxDecoration(
-          color: FnDs.card,
-          borderRadius: BorderRadius.circular(FnDs.inputRadius),
-          border: Border.all(color: FnDs.line, width: FnDs.inputBorderW),
-        ),
-        // 가는 회색 선이면 안 보인다. 글자색으로 또렷하게.
-        child: Icon(icon, size: 20, color: FnDs.title),
-      ),
+    return FnBigField(
+      label: '수량',
+      controller: controller,
+      hint: '0',
+      suffix: unit.isEmpty ? FnUnits.fallback : unit,
+      numeric: true,
+      alignRight: true,
+      formatters: [FnDigitsFormatter()],
     );
   }
 }
@@ -892,7 +796,9 @@ class _FnBigItemLineRowState extends State<FnBigItemLineRow> {
           ),
         ],
         const SizedBox(height: FnDs.gapS),
-        // 2줄 — 수량과 단가를 **나란히**. 사장님 지시(#188): "처음 시안처럼".
+        // 2줄 — 수량과 단가를 **같은 너비로** 나란히.
+        //    사장님 지시(#188 "처음 시안처럼" · #189 "같은 너비로").
+        //    Expanded 둘 다 flex 1 이라 정확히 반씩 나눠 쓴다.
         Row(
           crossAxisAlignment: CrossAxisAlignment.end,
           children: [
@@ -912,7 +818,6 @@ class _FnBigItemLineRowState extends State<FnBigItemLineRow> {
                 suffix: '원',
                 numeric: true,
                 alignRight: true,
-                padH: 10,
                 formatters: [FnCommaFormatter()],
               ),
             ),

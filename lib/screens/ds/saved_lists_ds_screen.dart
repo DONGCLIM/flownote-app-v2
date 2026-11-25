@@ -82,7 +82,9 @@ class _SavedListsDsScreenState extends State<SavedListsDsScreen> {
     final all = given ??
         (() {
           try {
-            return PurchaseListService.instance.all;
+            // 🔴 `all` 이 아니라 `saved` 다(#189). 아직 저장을 안 누른
+            //    임시 메모장이 목록에 섞이면 안 된다.
+            return PurchaseListService.instance.saved;
           } catch (_) {
             return const <PurchaseList>[];
           }
@@ -138,6 +140,20 @@ class _SavedListsDsScreenState extends State<SavedListsDsScreen> {
     Navigator.of(context).push(
       MaterialPageRoute(builder: (_) => GuideBudgetDsScreen(initial: copy)),
     );
+  }
+
+  /// 이 리스트의 메모장을 연다. (#189)
+  ///
+  /// 🔴 `listId` 를 꼭 넘긴다. 안 넘기면 **새 메모장(임시 작성분)** 이
+  ///    열려서, 저장된 리스트의 메모가 안 보인다.
+  Future<void> _openMemo(PurchaseList e) async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => PurchaseMemoDsScreen(listId: e.id),
+      ),
+    );
+    // 고치고 돌아오면 줄 수가 달라져 있다.
+    if (mounted) setState(() {});
   }
 
   PriceBook _book() {
@@ -196,6 +212,7 @@ class _SavedListsDsScreenState extends State<SavedListsDsScreen> {
                   }),
                   onReuse: () => _reuse(e),
                   onDelete: () => unawaited(_delete(e)),
+                  onMemo: () => _openMemo(e),
                 ),
               ],
             ],
@@ -264,6 +281,7 @@ class _SavedListCard extends StatelessWidget {
     required this.onToggle,
     required this.onReuse,
     required this.onDelete,
+    required this.onMemo,
   });
 
   final PurchaseList list;
@@ -272,6 +290,20 @@ class _SavedListCard extends StatelessWidget {
   final VoidCallback onToggle;
   final VoidCallback onReuse;
   final VoidCallback onDelete;
+
+  /// 이 리스트의 메모장을 연다. (#189)
+  final VoidCallback onMemo;
+
+  /// 펼쳤을 때 보여 줄 메모 미리보기. 글이 있는 줄만 **세 줄까지**.
+  ///
+  /// 🔴 전부 보여 주지 않는 이유: 카드가 길어지면 아래 리스트가 안 보인다.
+  ///    자세히 보려면 '메모장 열기' 를 누른다. (사장님 지시 #189)
+  List<MemoLine> get _memoPreview {
+    final lines = MemoText.parse(list.memo)
+        .where((e) => e.text.trim().isNotEmpty)
+        .toList();
+    return lines.length <= 3 ? lines : lines.sublist(0, 3);
+  }
 
   /// 둘째 줄. `주말 부케 3건 대비 · 3개 품목` / `메모 리스트 · 2줄`
   String get _sub {
@@ -341,16 +373,33 @@ class _SavedListCard extends StatelessWidget {
             const SizedBox(height: FnDs.gapS),
             const Divider(height: 1, thickness: 1, color: FnDs.hair),
             const SizedBox(height: FnDs.gapS),
-            if (list.isMemoOnly)
-              const Text('적어 둔 품목이 없어요. 메모만 남긴 리스트예요.',
-                  style: FnDs.tsSub)
-            else
+            if (list.isMemoOnly) ...[
+              // 🔴 메모로 만든 리스트. 품목 대신 메모 줄을 보여 준다. (#189)
+              if (_memoPreview.isEmpty)
+                const Text('적어 둔 품목이 없어요. 메모만 남긴 리스트예요.',
+                    style: FnDs.tsSub)
+              else
+                for (var i = 0; i < _memoPreview.length; i++) ...[
+                  if (i > 0) const SizedBox(height: 6),
+                  _SavedMemoRow(line: _memoPreview[i]),
+                ],
+              if (list.memoLineCount > _memoPreview.length) ...[
+                const SizedBox(height: 6),
+                Text(
+                  '외 ${list.memoLineCount - _memoPreview.length}줄',
+                  style: FnDs.tsSub,
+                ),
+              ],
+              const SizedBox(height: FnDs.gapM),
+              FnOutlineButton(label: '메모장 열기', onTap: onMemo),
+            ] else ...[
               for (var i = 0; i < list.items.length; i++) ...[
                 if (i > 0) const SizedBox(height: FnDs.gapS),
                 _SavedItemRow(item: list.items[i]),
               ],
-            const SizedBox(height: FnDs.gapM),
-            FnOutlineButton(label: '이 리스트로 새로 만들기', onTap: onReuse),
+              const SizedBox(height: FnDs.gapM),
+              FnOutlineButton(label: '이 리스트로 새로 만들기', onTap: onReuse),
+            ],
             const SizedBox(height: FnDs.gapXs),
             Center(
               child: GestureDetector(
@@ -419,6 +468,48 @@ class _SavedItemRow extends StatelessWidget {
             fontSize: FnDs.fontS,
             fontWeight: FontWeight.w700,
             color: FnDs.title,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// 펼친 카드 안의 메모 한 줄. 산 줄은 가운데줄을 긋는다. (#189)
+class _SavedMemoRow extends StatelessWidget {
+  const _SavedMemoRow({required this.line});
+
+  final MemoLine line;
+
+  @override
+  Widget build(BuildContext context) {
+    final done = line.checked;
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(top: 3),
+          child: Icon(
+            done
+                ? Icons.check_circle_rounded
+                : Icons.radio_button_unchecked_rounded,
+            size: 15,
+            color: done ? FnDs.coral : FnDs.line,
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            line.text,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontFamily: FnDs.font,
+              fontSize: FnDs.fontS,
+              color: done ? FnDs.sub : FnDs.body,
+              decoration: done ? TextDecoration.lineThrough : null,
+              decorationColor: FnDs.sub,
+            ),
           ),
         ),
       ],
