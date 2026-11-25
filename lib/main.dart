@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:provider/provider.dart';
@@ -20,6 +22,8 @@ import 'services/notification_service.dart';
 import 'services/training_data_service.dart';
 import 'services/flower_name_service.dart';
 import 'services/home_tips.dart';
+import 'services/fn_analytics.dart';
+import 'services/guest_service.dart';
 import 'services/purchase_list_service.dart';
 import 'services/vendor_tax_service.dart';
 import 'services/subscription_service.dart';
@@ -255,12 +259,18 @@ class FlowNoteApp extends StatelessWidget {
 /// ```
 ///   1) 스플래시 (IntroSplash 위젯)  — 1.4초, **매번** 보인다
 ///   2) 로그인됨   -> MainDsScreen
-///   3) 비로그인   -> IntroDsScreen (1~3번) -> SplashDsScreen(로그인)
+///   3) 비로그인   -> 게스트로 들어간다 -> MainDsScreen      (#192)
+///   4) 게스트도 안 되면 -> IntroDsScreen -> SplashDsScreen(로그인)
 /// ```
 ///
-/// 사장님 지시대로 인트로는 **일회성이 아니다.** 앱을 열 때마다
-/// 보이고, `건너뛰기` 나 `시작하기` 를 누르면 로그인으로 넘어간다.
-/// (저장해 두고 건너뛰는 코드를 일부러 넣지 않았다)
+/// 🔴 #192 에서 **게스트 체험**이 들어왔다. 전에는 앱이 뭘 해 주는지
+///    보기도 전에 가입을 해야 했다. 이제 로그인 없이 바로 홈으로 가고,
+///    영수증 5장까지 찍어 본 뒤 마음에 들면 가입한다.
+///    로그인 화면은 "이미 가입하셨나요? 로그인" 으로만 연다.
+///
+/// 🔴 4) 는 Firebase 콘솔에서 익명 로그인이 꺼져 있거나 인터넷이 없을
+///    때다. 그때는 예전처럼 인트로 → 로그인으로 간다. 게스트가 안 된다고
+///    앱이 멈추면 안 된다.
 class _AppEntry extends StatefulWidget {
   const _AppEntry();
 
@@ -275,6 +285,13 @@ class _AppEntryState extends State<_AppEntry> {
   /// 인트로를 지나왔나. (이번 실행 동안만 기억한다 — 저장하지 않는다)
   bool _introDone = false;
 
+  /// 게스트로 들어가 보는 중인가. (#192)
+  bool _guestTrying = false;
+
+  /// 게스트 시도를 이미 했나. 한 번만 한다 — 실패했는데 계속 다시
+  /// 시도하면 로그인 화면이 영영 안 보인다.
+  bool _guestTried = false;
+
   @override
   void initState() {
     super.initState();
@@ -283,6 +300,29 @@ class _AppEntryState extends State<_AppEntry> {
     Future<void>.delayed(const Duration(milliseconds: 1400), () {
       if (mounted) setState(() => _splashDone = true);
     });
+  }
+
+  /// 로그인 안 돼 있으면 게스트로 들어간다. (#192)
+  ///
+  /// 🔴 `build` 안에서 부르지만 **딱 한 번만** 돈다(`_guestTried`).
+  ///    익명 로그인이 꺼져 있으면 실패하는데, 그때마다 다시 시도하면
+  ///    로그인 화면으로 넘어가질 못한다.
+  Future<void> _tryGuest() async {
+    if (_guestTried) return;
+    _guestTried = true;
+    setState(() => _guestTrying = true);
+    var ok = false;
+    try {
+      ok = await GuestService.instance.enterAsGuest();
+    } catch (_) {
+      ok = false;
+    }
+    if (!mounted) return;
+    setState(() => _guestTrying = false);
+    if (ok) {
+      // 첫 방문을 남긴다. 화면은 바뀌지 않는다.
+      unawaited(FnAnalytics.guestStart());
+    }
   }
 
   @override
@@ -295,9 +335,24 @@ class _AppEntryState extends State<_AppEntry> {
       return const Scaffold(body: IntroSplash());
     }
 
+    // 🔴 스플래시가 끝났는데 로그인이 안 돼 있다 → 게스트로 들어간다.
+    //    `addPostFrameCallback` 으로 미루는 이유: build 안에서 바로
+    //    `setState` 를 부르면 Flutter 가 거부한다.
+    if (!auth.isLoggedIn && !_guestTried) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) unawaited(_tryGuest());
+      });
+    }
+
     if (auth.isLoggedIn) return const MainDsScreen();
 
-    // 로그인 **앞**에 인트로를 끼운다. 매번 보인다.
+    // 🔴 게스트로 들어가 보는 중이다(#192). 스플래시를 유지해서
+    //    로그인 화면이 한 번 번쩍이는 것을 막는다.
+    if (_guestTrying) {
+      return const Scaffold(body: IntroSplash());
+    }
+
+    // 게스트도 안 됐다. 예전 길(인트로 → 로그인)로 간다.
     if (!_introDone) {
       return IntroDsScreen(
         onDone: () => setState(() => _introDone = true),
