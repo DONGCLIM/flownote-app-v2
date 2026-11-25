@@ -20,6 +20,19 @@ service firebase.storage {
       return isSignedIn() && request.auth.uid == uid;
     }
 
+    // 게스트(익명) 로그인인가. (#192)
+    //
+    // 🔴 익명 로그인도 `request.auth != null` 이라, "로그인했으면 통과"
+    //    규칙은 게스트도 전부 통과시킨다. 공용 폴더는 막아야 한다.
+    function isAnon() {
+      return isSignedIn()
+             && request.auth.token.firebase.sign_in_provider == 'anonymous';
+    }
+
+    function isMember() {
+      return isSignedIn() && !isAnon();
+    }
+
     // 관리자 한 명.
     //
     // 🔴 `inquiry_service.dart` 의 `adminEmail`, `firestore.rules` 의
@@ -37,8 +50,11 @@ service firebase.storage {
     //
     //   - 쓰기: 로그인 사용자, 10MB 이하 이미지만
     //   - 읽기: 업로드 직후 getDownloadURL() 을 호출하므로 로그인 사용자에게 허용
+    //   🔴 게스트는 못 올린다(#192). 익명 계정은 얼마든지 새로 만들 수
+    //      있어서, 열어 두면 공용 폴더가 쓰레기로 찬다. 게스트가 찍은
+    //      영수증은 `users/{uid}/` 아래 자기 폴더에만 담긴다.
     match /receipts/{allPaths=**} {
-      allow write: if isSignedIn()
+      allow write: if isMember()
                    && request.resource.size < 10 * 1024 * 1024
                    && request.resource.contentType.matches('image/.*');
       allow read: if isSignedIn();
@@ -46,15 +62,17 @@ service firebase.storage {
 
     // 과거 경로 호환 (혹시 training_data/ 로 올라간 파일이 있을 경우)
     match /training_data/{allPaths=**} {
-      allow write: if isSignedIn()
+      allow write: if isMember()
                    && request.resource.size < 10 * 1024 * 1024
                    && request.resource.contentType.matches('image/.*');
       allow read: if isSignedIn();
     }
 
     // ── 사용자별 영수증 이미지 백업 ──────────────────────────
+    //   🔴 게스트도 **자기 폴더**에는 쓸 수 있다(#192). 체험으로 찍은
+    //      영수증이 여기 담긴다. 남의 uid 아래는 여전히 못 본다.
     match /users/{uid}/{allPaths=**} {
-      allow read, write: if request.auth != null && request.auth.uid == uid;
+      allow read, write: if isOwnerUid(uid);
     }
 
     // ── 문의 첨부 사진 ───────────────────────────────────────
@@ -69,9 +87,12 @@ service firebase.storage {
     //     🔴 관리자가 못 읽으면 답변할 때 첨부 사진이 깨져 보인다.
     //     🔴 다른 사람은 링크를 알아도 열리지 않는다.
     //   - 삭제: 본인(글을 지울 때) 또는 관리자.
+    //   🔴 게스트는 못 올린다(#192). 문의 글 자체를 `firestore.rules` 에서
+    //      막았으므로 첨부도 같이 막는다. 한쪽만 열어 두면 주인 없는
+    //      사진이 쌓인다.
     match /inquiries/{uid}/{allPaths=**} {
-      allow write: if request.auth != null
-                   && request.auth.uid == uid
+      allow write: if isOwnerUid(uid)
+                   && isMember()
                    && request.resource.size < 5 * 1024 * 1024
                    && request.resource.contentType.matches('image/.*');
       allow read: if isOwnerUid(uid) || isAdmin();
