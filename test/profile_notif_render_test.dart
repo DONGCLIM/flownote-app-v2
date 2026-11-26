@@ -23,14 +23,19 @@
 //    - 로그아웃이 화면 아래 글자 버튼이었다
 //    - '알림 설정' 은 '준비 중이에요' 스낵바였다
 
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 
+import 'package:flow_note/design/fn_controls_ds.dart';
 import 'package:flow_note/providers/auth_provider.dart';
 import 'package:flow_note/screens/ds/profile_ds_screen.dart';
 import 'package:flow_note/screens/ds/notification_settings_ds_screen.dart';
+import 'package:flow_note/services/guest_service.dart';
 import 'package:flow_note/services/notification_prefs.dart';
+import 'package:flow_note/widgets/fn_signup_sheet.dart';
 
 Future<void> _pumpProfile(
   WidgetTester t, {
@@ -279,6 +284,141 @@ void main() {
       await _pumpNotif(t, size: const Size(320, 800));
       expect(t.takeException(), isNull);
       expect(find.text('영수증 처리 알림'), findsOneWidget);
+    });
+  });
+
+  _k195GuestProfile();
+}
+
+// ─────────────────────────────────────────────────────────────────────
+//  #195 게스트 프로필 (④단계)
+//
+//  🔴 회원 본문(`_memberBody`)과 **갈래가 입구에서 나뉜다.** 위의
+//     '#141 프로필 화면' 묶음이 회원 화면을 그대로 지키고, 여기서는
+//     게스트 화면만 본다. 두 묶음이 같이 통과해야 한다.
+//
+//  🔴 테스트에는 Firebase 가 없어 `isAnonymous` 를 만들 수 없다.
+//     `GuestService.debugIsGuest` 로 게스트인 척한다.
+// ─────────────────────────────────────────────────────────────────────
+void _k195GuestProfile() {
+  group('#195 게스트 프로필', () {
+    tearDown(() {
+      GuestService.debugIsGuest = null;
+      GuestService.instance.setForTest();
+    });
+
+    Future<void> pumpGuest(WidgetTester t, {int scans = 2}) async {
+      GuestService.debugIsGuest = true;
+      GuestService.instance.setForTest(scans: scans);
+      await _pumpProfile(t);
+    }
+
+    testWidgets('🔴 상단 배너가 체험 안내로 바뀐다', (t) async {
+      await pumpGuest(t);
+      expect(t.takeException(), isNull);
+
+      final badge = find.text('영수증 5장 무료 체험 중');
+      expect(badge, findsOneWidget);
+      // 배너 모양(코랄 알약)은 회원 것과 같은 조각을 쓴다.
+      expect(_bgOf(badge), contains(const Color(0xFFFF6D78)));
+      // 회원 배너 문구는 뜨지 않는다.
+      expect(find.text('대표님, 한달 무료 플랜을 이용해보세요!'), findsNothing);
+    });
+
+    testWidgets('🔴 이름 자리와 부제가 체험용 문구다', (t) async {
+      await pumpGuest(t);
+      expect(find.text('체험 중인 대표님'), findsOneWidget);
+      expect(find.text('가입하면 상호명·사업자 정보를 등록할 수 있어요'),
+          findsOneWidget);
+      // 회원용 안내 문구는 뜨지 않는다.
+      expect(find.text('상호명을 입력해 주세요'), findsNothing);
+      expect(find.text('사업자 정보를 입력하면 여기에 보여요'), findsNothing);
+    });
+
+    testWidgets('🔴 체험 카드에 진행바와 가입 두 갈래·로그인이 있다', (t) async {
+      await pumpGuest(t, scans: 3);
+      expect(find.text('영수증 3/5장 사용'), findsOneWidget);
+      expect(find.byType(FnProgressBar), findsOneWidget);
+      expect(find.text('카카오로 3초 가입'), findsOneWidget);
+      expect(find.text('구글로 가입'), findsOneWidget);
+      expect(find.text('이미 가입하셨나요? 로그인'), findsOneWidget);
+    });
+
+    testWidgets('🔴 잠긴 줄은 지우지 않고 🔒 가입 후 를 붙인다', (t) async {
+      await pumpGuest(t);
+      // 줄 자체는 그대로 있다 — 가입하면 뭐가 생기는지 보여야 한다.
+      for (final s in ['사업자 정보 수정', '알림 설정', '제안 및 피드백']) {
+        expect(find.text(s), findsOneWidget, reason: s);
+      }
+      expect(find.text('🔒 가입 후'), findsWidgets);
+    });
+
+    testWidgets('🔴 잠긴 줄을 누르면 가입 안내 바텀시트다', (t) async {
+      await pumpGuest(t);
+      await t.tap(find.text('사업자 정보 수정'));
+      await t.pump();
+      await t.pump(const Duration(milliseconds: 500));
+
+      expect(t.takeException(), isNull);
+      expect(find.text(kSignUpSheetTitle), findsOneWidget);
+    });
+
+    testWidgets('🔴 로그아웃과 회원 탈퇴는 숨긴다', (t) async {
+      await pumpGuest(t);
+      // 체험 중에 로그아웃하면 찍어 둔 영수증으로 돌아올 길이 없다.
+      expect(find.text('로그아웃'), findsNothing);
+      expect(find.text('회원 탈퇴'), findsNothing);
+    });
+
+    testWidgets('🔴 공지사항·이용약관은 열어 둔다', (t) async {
+      await pumpGuest(t);
+      expect(find.text('공지사항'), findsOneWidget);
+      expect(find.text('이용약관 및 개인정보 처리방침'), findsOneWidget);
+      // 이 둘에는 자물쇠를 달지 않는다.
+      await t.tap(find.text('공지사항'));
+      await t.pump();
+      await t.pump(const Duration(milliseconds: 500));
+      expect(find.text(kSignUpSheetTitle), findsNothing);
+    });
+
+    testWidgets('🔴 아무 설정도 안 하면(기본값) 회원 프로필 그대로다',
+        (t) async {
+      // 실제 앱에서 `debugIsGuest` 는 늘 null 이다. 여기서 게스트 갈래로
+      // 새면 가입하신 분들 프로필이 통째로 바뀐다.
+      expect(GuestService.debugIsGuest, isNull);
+      await _pumpProfile(t);
+
+      expect(find.text('대표님, 한달 무료 플랜을 이용해보세요!'), findsOneWidget);
+      expect(find.text('로그아웃'), findsOneWidget);
+      expect(find.text('회원 탈퇴'), findsOneWidget);
+      expect(find.text('🔒 가입 후'), findsNothing);
+      expect(find.text('체험 중인 대표님'), findsNothing);
+    });
+
+    testWidgets('🔴 좁은 화면(320)에서도 넘치지 않는다', (t) async {
+      GuestService.debugIsGuest = true;
+      GuestService.instance.setForTest(scans: 5);
+      await _pumpProfile(t, size: const Size(320, 1400));
+      expect(t.takeException(), isNull);
+      expect(find.text('영수증 5/5장 사용'), findsOneWidget);
+    });
+
+    test('🔴 회원 본문과 갈래가 입구에서 한 번만 나뉜다', () {
+      final src =
+          File('lib/screens/ds/profile_ds_screen.dart').readAsStringSync();
+      // 게스트 확인이 회원 본문 안으로 들어가면 조건 하나만 어긋나도
+      // 가입하신 분들 화면이 같이 바뀐다.
+      expect('GuestService.instance.isGuest'.allMatches(src).length, 1);
+      final gate = src.indexOf('GuestService.instance.isGuest');
+      final member = src.indexOf('Widget _memberBody(BuildContext context)');
+      expect(gate, lessThan(member), reason: '갈래가 회원 본문보다 뒤에 있다');
+      // 회원 본문에는 게스트 분기가 하나도 없어야 한다.
+      final guest = src.indexOf('Widget _guestBody(BuildContext context)');
+      expect(src.substring(member, guest), isNot(contains('GuestService')));
+    });
+
+    test('🔴 체험은 아직 꺼져 있다', () {
+      expect(GuestService.enabled, isFalse);
     });
   });
 }

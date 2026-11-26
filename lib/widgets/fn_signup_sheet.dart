@@ -28,6 +28,17 @@ import 'fn_inquiry_parts.dart';
 ///    이 파일을 지나지 않는다.
 const String kSignUpSheetTitle = '가입하면 쓸 수 있어요';
 
+/// 가입·로그인 버튼이 **모두** 가는 곳. (#195)
+///
+/// 🔴 지금은 카카오·구글·로그인 셋 다 같은 화면으로 간다. 버튼마다 다른
+///    길을 뚫어 두면 ⑤단계(계정 연결)에서 전부 다시 뜯어야 한다. 바꿀
+///    때도 이 한 곳만 고치면 된다.
+void fnOpenSignIn(BuildContext context) {
+  Navigator.of(context, rootNavigator: true).push(
+    MaterialPageRoute<void>(builder: (_) => const SplashDsScreen()),
+  );
+}
+
 /// 가입 안내 바텀시트를 띄운다.
 ///
 /// [feature] 는 **기능 한 줄 설명**이다. 예: '지난달과 이번 달 지출을
@@ -58,11 +69,9 @@ class _SignUpSheetBody extends StatelessWidget {
   ///    바깥 라우트에 쌓아야 한다. 그래서 바깥 것을 **닫기 전에** 미리
   ///    받아 둔다.
   void _toSignIn(BuildContext context) {
-    final outer = Navigator.of(context, rootNavigator: true);
+    final outer = context;
     Navigator.of(context).pop();
-    outer.push(MaterialPageRoute<void>(
-      builder: (_) => const SplashDsScreen(),
-    ));
+    fnOpenSignIn(outer);
   }
 
   @override
@@ -232,11 +241,8 @@ class _FirstScanDoneBody extends StatelessWidget {
         FnPrimaryButton(
           label: '가입하고 계속 쓰기',
           onTap: () {
-            final outer = Navigator.of(context, rootNavigator: true);
             Navigator.of(context).pop();
-            outer.push(MaterialPageRoute<void>(
-              builder: (_) => const SplashDsScreen(),
-            ));
+            fnOpenSignIn(context);
           },
         ),
         const SizedBox(height: FnDs.gapS),

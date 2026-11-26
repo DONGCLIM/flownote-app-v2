@@ -164,7 +164,7 @@ flutter test test/<그_화면>_test.dart     # 그 화면 것만
 | ② 첫 화면·게스트 계정 | `signInAnonymously` + `GuestService` | ✅ 완료 (`8a05f72`, **꺼둠**) |
 | ②-b 규칙 보정 | 게스트 사진 저장 허용 · PDF 카운터 제거 | ✅ 완료 (#193, 배포됨) |
 | ③ 제한·잠금 | 스캔 5장·잠긴 화면·캘린더 탭·PDF 저장·학습 수집 제외 | ✅ 완료 (**꺼둠**) |
-| ④ 프로필·가입 유도 | 체험 배너·진행바·🔒 표시·남은 장수 | ⬜ **남음** |
+| ④ 프로필·가입 유도 | 체험 배너·진행바·🔒 표시·남은 장수 | ✅ 완료 (**꺼둠**) |
 | ⑤ 가입 전환·Analytics | `linkWithCredential` + 이벤트 전송 | ⬜ **남음** |
 
 #### ②-b 에서 확인하고 고친 것 (#193)
@@ -197,6 +197,18 @@ PDF 는 사장님 지시대로 **세지 않는다.** 미리보기는 몇 번이�
 | 첫 스캔 성공 안내 | `scan_done_ds_screen.dart` 의 `initState()` | ✅ |
 | 학습 수집 제외 (게스트) | `training_data_service.dart` 의 `collectAllowed` | ✅ |
 | PDF 저장·공유 → 가입 안내 | `settle_preview_ds_screen.dart` 의 `_openMethodSheet()` 앞 | ✅ |
+| 게스트 프로필 (④) | `profile_ds_screen.dart` 의 `_guestBody()` | ✅ |
+
+🔴 **프로필은 갈래를 `build()` 입구에서 딱 한 번 나눈다.**
+게스트는 `_guestBody()`, 회원은 `_memberBody()` — 회원 본문에는
+`GuestService` 가 한 글자도 없다. 같은 함수 안에 `if (게스트)` 를 여러 군데
+끼워 넣으면 조건 하나만 어긋나도 가입하신 분들 화면이 같이 바뀐다.
+공용 조각(`_ProfileHeader`·`_Section`·`_Row`)에 더한 `badgeText`·
+`lockedLabels`·`locked` 는 **기본값이 지금 모습**이라 회원 쪽은 그대로다.
+
+🔴 **게스트 프로필에서 로그아웃과 회원 탈퇴는 숨긴다.** 체험 중에 로그아웃하면
+찍어 둔 영수증으로 돌아올 길이 없어지고, '회원 탈퇴' 는 계정이 있어야 뜻이 있다.
+공지사항·이용약관·바탕화면 설치는 계정이 없어도 되므로 열어 둔다.
 
 🔴 **캘린더는 홈의 `_push()` 를 지나지 않는다.** 아래 탭바에서 바로 열려서
 `main_ds_screen.dart` 쪽에 따로 붙였다. 새로 잠글 화면이 생기면 그 화면이

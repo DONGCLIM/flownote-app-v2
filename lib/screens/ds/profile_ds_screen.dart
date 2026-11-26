@@ -1,11 +1,17 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../design/fn_controls_ds.dart';
 import '../../design/fn_profile_tokens.dart';
 import '../../design/fn_sheet.dart';
 import '../../providers/auth_provider.dart';
+import '../../services/guest_service.dart';
 import '../../services/pwa_install.dart';
 import '../../services/subscription_service.dart';
+import '../../widgets/fn_inquiry_parts.dart';
+import '../../widgets/fn_signup_sheet.dart';
 import 'add_to_home_sheet.dart';
 import 'auth_ds_screens.dart';
 import 'inquiry_list_ds_screen.dart';
@@ -56,6 +62,23 @@ class ProfileDsScreen extends StatefulWidget {
 class _ProfileDsScreenState extends State<ProfileDsScreen> {
   @override
   Widget build(BuildContext context) {
+    // 🔴 게스트는 **아예 다른 본문**을 그린다 (#195 — ④단계).
+    //
+    //    회원 본문(_memberBody) 은 한 글자도 건드리지 않았다. 같은 함수
+    //    안에서 `if (게스트)` 를 수십 군데 끼워 넣으면, 조건 하나만
+    //    어긋나도 가입하신 분들 화면이 같이 바뀐다. 갈래를 입구에서
+    //    딱 한 번 나누면 회원 쪽은 지나갈 길이 없다.
+    if (GuestService.instance.isGuest) {
+      return ListenableBuilder(
+        listenable: GuestService.instance,
+        builder: (context, _) => _guestBody(context),
+      );
+    }
+    return _memberBody(context);
+  }
+
+  /// 가입하신 분의 프로필. **예전 그대로다.**
+  Widget _memberBody(BuildContext context) {
     final auth = context.watch<AuthProvider>();
     final u = auth.currentUser;
 
@@ -203,6 +226,91 @@ class _ProfileDsScreenState extends State<ProfileDsScreen> {
     );
   }
 
+  /// 체험 중인 분의 프로필. (#195)
+  ///
+  /// 기존 화면 구조(배너 · 아바타 · 이름 · 섹션 카드)를 그대로 쓰고
+  /// 내용만 바꾼다. 다른 모양을 새로 만들면 가입한 뒤 화면이 확 달라져
+  /// 낯설어진다.
+  ///
+  /// 🔴 잠근 줄을 **지우지 않고** 🔒 '가입 후' 로 남겨 둔다. 지워 버리면
+  ///    가입하면 뭐가 생기는지 보이지 않는다.
+  Widget _guestBody(BuildContext context) {
+    final g = GuestService.instance;
+
+    void lockedTap() => unawaited(showFnSignUpSheet(
+          context,
+          feature: '가입하시면 이 기능을 쓰실 수 있어요',
+        ));
+
+    return ColoredBox(
+      color: FnProfile.bg,
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(FnProfile.pad, 0, FnProfile.pad, 24),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const SizedBox(height: 27),
+            _ProfileHeader(
+              shopName: '체험 중인 대표님',
+              ownerLine: '가입하면 상호명·사업자 정보를 등록할 수 있어요',
+              // 🔴 아바타 편집 배지도 잠긴다. 누르면 사업자 정보 입력
+              //    화면이 열리는데, 게스트는 저장할 곳이 없다.
+              onEdit: lockedTap,
+              showPlanBadge: true,
+              badgeText: '영수증 ${GuestService.scanMax}장 무료 체험 중',
+            ),
+
+            // ── 체험 진행 + 가입 ──
+            const SizedBox(height: 22),
+            _GuestTrialCard(used: g.scans, max: GuestService.scanMax),
+
+            // ── 계정/서비스 관리 ──
+            const SizedBox(height: 24),
+            _Section(
+              title: '계정/서비스 관리',
+              items: [
+                ('사업자 정보 수정', lockedTap),
+                if (SubscriptionService.showPaywallEntry)
+                  ('구독 관리', lockedTap),
+                ('알림 설정', lockedTap),
+                // 바탕화면 설치는 계정이 없어도 된다 — 열어 둔다.
+                if (pwaState().shouldGuide)
+                  ('바탕화면에 설치하기', () => AddToHomeSheet.open(context)),
+                // 🔴 로그아웃은 넣지 않는다. 체험 중에 누르면 찍어 둔
+                //    영수증으로 돌아올 길이 없어진다.
+              ],
+              // 🔒 '가입 후' 꼬리표를 붙일 줄.
+              lockedLabels: const {'사업자 정보 수정', '구독 관리', '알림 설정'},
+            ),
+
+            // ── 고객 지원 및 안내 ──
+            const SizedBox(height: 26),
+            _Section(
+              title: '고객 지원 및 안내',
+              items: [
+                (
+                  '공지사항',
+                  () => Navigator.of(context).push(
+                        MaterialPageRoute(
+                            builder: (_) => const NoticeListDsScreen()),
+                      ),
+                ),
+                // 🔴 문의는 잠근다. 게스트는 답변을 받을 곳이 없다.
+                ('제안 및 피드백', lockedTap),
+                ('이용약관 및 개인정보 처리방침', () => _openLegal(context)),
+              ],
+              lockedLabels: const {'제안 및 피드백'},
+            ),
+
+            // 🔴 마케팅 수신 동의와 회원 탈퇴는 **계정이 있어야** 뜻이 있다.
+            //    게스트에게 '회원 탈퇴' 를 보여 주면 누르는 순간 체험 계정을
+            //    지우려 든다. 가입하면 둘 다 제자리에 나타난다.
+          ],
+        ),
+      ),
+    );
+  }
+
   /// 시안은 약관과 처리방침을 한 줄로 합쳐 놨다. 두 문서 모두 열 수
   /// 있어야 하므로 고르는 시트를 띄운다.
   static Future<void> _openLegal(BuildContext context) async {
@@ -248,7 +356,12 @@ class _ProfileHeader extends StatelessWidget {
     required this.ownerLine,
     required this.onEdit,
     required this.showPlanBadge,
+    this.badgeText = _defaultBadge,
   });
+
+  /// 🔴 기본값이 지금 쓰던 문구다. 회원 쪽은 이 값을 넘기지 않으므로
+  ///    한 픽셀도 달라지지 않는다.
+  static const String _defaultBadge = '대표님, 한달 무료 플랜을 이용해보세요!';
 
   /// 상호명. 없으면 안내 문구가 들어온다.
   final String shopName;
@@ -260,6 +373,9 @@ class _ProfileHeader extends StatelessWidget {
 
   /// 무료 플랜 안내 배지를 보일지. 이미 결제한 분께는 보이지 않는다.
   final bool showPlanBadge;
+
+  /// 배지 문구. 체험 중이면 남은 체험을 알려 준다.
+  final String badgeText;
 
   @override
   Widget build(BuildContext context) {
@@ -277,9 +393,9 @@ class _ProfileHeader extends StatelessWidget {
                 borderRadius:
                     BorderRadius.circular(FnProfile.planBadgeH / 2),
               ),
-              child: const Text(
-                '대표님, 한달 무료 플랜을 이용해보세요!',
-                style: TextStyle(
+              child: Text(
+                badgeText,
+                style: const TextStyle(
                   fontFamily: 'Pretendard',
                   fontSize: FnProfile.planBadgeFont,
                   fontWeight: FontWeight.w700,
@@ -361,10 +477,19 @@ class _ProfileHeader extends StatelessWidget {
 
 /// 시안 섹션 — 제목 + 흰 카드 안의 줄 목록.
 class _Section extends StatelessWidget {
-  const _Section({required this.title, required this.items});
+  const _Section({
+    required this.title,
+    required this.items,
+    this.lockedLabels = const <String>{},
+  });
 
   final String title;
   final List<(String, VoidCallback)> items;
+
+  /// 🔒 '가입 후' 꼬리표를 붙일 줄의 이름. (#195)
+  ///
+  /// 🔴 비어 있으면 아무 일도 하지 않는다 — 회원 화면은 그대로다.
+  final Set<String> lockedLabels;
 
   @override
   Widget build(BuildContext context) {
@@ -403,7 +528,11 @@ class _Section extends StatelessWidget {
                     child: Divider(
                         height: 1, thickness: 1, color: FnProfile.hair),
                   ),
-                _Row(label: items[i].$1, onTap: items[i].$2),
+                _Row(
+                  label: items[i].$1,
+                  onTap: items[i].$2,
+                  locked: lockedLabels.contains(items[i].$1),
+                ),
               ],
             ],
           ),
@@ -415,10 +544,17 @@ class _Section extends StatelessWidget {
 
 /// 카드 안의 한 줄. 시안 높이 52.3dp.
 class _Row extends StatelessWidget {
-  const _Row({required this.label, required this.onTap});
+  const _Row({
+    required this.label,
+    required this.onTap,
+    this.locked = false,
+  });
 
   final String label;
   final VoidCallback onTap;
+
+  /// 🔒 '가입 후' 꼬리표를 붙인다. 🔴 false 면 예전 모양 그대로다.
+  final bool locked;
 
   @override
   Widget build(BuildContext context) {
@@ -444,6 +580,10 @@ class _Row extends StatelessWidget {
                   ),
                 ),
               ),
+              if (locked) ...[
+                const SizedBox(width: 8),
+                const _LockedTag(),
+              ],
               const SizedBox(width: 8),
               // 시안 화살표: 가는 선, 높이 11dp, #999999
               const Icon(Icons.chevron_right_rounded,
@@ -451,6 +591,111 @@ class _Row extends StatelessWidget {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// 🔒 '가입 후' 꼬리표. (#195)
+///
+/// 줄을 지우지 않고 꼬리표만 붙인다. 지우면 가입하면 뭐가 생기는지
+/// 보이지 않는다.
+class _LockedTag extends StatelessWidget {
+  const _LockedTag();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFF1EE),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: const Text(
+        '🔒 가입 후',
+        style: TextStyle(
+          fontFamily: 'Pretendard',
+          fontSize: 11,
+          fontWeight: FontWeight.w700,
+          color: FnProfile.coral,
+        ),
+      ),
+    );
+  }
+}
+
+/// 체험 진행 + 가입 카드. 게스트에게만 보인다. (#195)
+///
+/// 🔴 가입 버튼 둘과 로그인 링크가 **모두 같은 곳**으로 간다. 체험 계정을
+///    그대로 들고 가입하는 계정 연결은 ⑤단계 일이다. 지금 버튼마다 다른
+///    길을 뚫어 두면 그때 전부 다시 뜯어야 한다.
+class _GuestTrialCard extends StatelessWidget {
+  const _GuestTrialCard({required this.used, required this.max});
+
+  final int used;
+  final int max;
+
+  @override
+  Widget build(BuildContext context) {
+    final capped = used.clamp(0, max);
+    return Container(
+      padding: const EdgeInsets.fromLTRB(FnProfile.rowPadH, 18, 18, 18),
+      decoration: BoxDecoration(
+        color: FnProfile.card,
+        borderRadius: BorderRadius.circular(FnProfile.cardRadius),
+        boxShadow: FnProfile.cardShadow,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            '영수증 $capped/$max장 사용',
+            style: const TextStyle(
+              fontFamily: 'Pretendard',
+              fontSize: FnProfile.rowFont,
+              fontWeight: FontWeight.w700,
+              color: FnProfile.ink,
+            ),
+          ),
+          const SizedBox(height: 10),
+          FnProgressBar(
+            value: max == 0 ? 0 : capped / max * 100,
+            height: 8,
+            color: FnProfile.coral,
+          ),
+          const SizedBox(height: 18),
+          FnPrimaryButton(
+            label: '카카오로 3초 가입',
+            onTap: () => fnOpenSignIn(context),
+          ),
+          const SizedBox(height: 10),
+          FnOutlineButton(
+            label: '구글로 가입',
+            onTap: () => fnOpenSignIn(context),
+          ),
+          const SizedBox(height: 14),
+          Center(
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () => fnOpenSignIn(context),
+              child: const Padding(
+                padding: EdgeInsets.symmetric(vertical: 4),
+                child: Text(
+                  '이미 가입하셨나요? 로그인',
+                  style: TextStyle(
+                    fontFamily: 'Pretendard',
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w600,
+                    color: FnProfile.sub,
+                    decoration: TextDecoration.underline,
+                    decorationColor: FnProfile.sub,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
