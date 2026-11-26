@@ -17,6 +17,8 @@
 //    - '형식(PDF/엑셀)' 선택이 없었다
 //    - 버튼 문구가 `선택한 N개월 내보내기` 였다
 
+import 'dart:io' as io;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
@@ -25,6 +27,8 @@ import 'package:flow_note/models/receipt_model.dart';
 import 'package:flow_note/providers/auth_provider.dart';
 import 'package:flow_note/screens/ds/fn_data.dart';
 import 'package:flow_note/screens/ds/settle_preview_ds_screen.dart';
+import 'package:flow_note/services/guest_service.dart';
+import 'package:flow_note/widgets/fn_signup_sheet.dart';
 
 const _vendor = FnVendor(
   id: '대한꽃도매',
@@ -262,5 +266,107 @@ void main() {
   testWidgets('좁은 화면(320)에서도 오버플로가 없다', (t) async {
     await _pump(t, size: const Size(320, 1200));
     expect(t.takeException(), isNull);
+  });
+
+  _k195GuestPdf();
+}
+
+// ─────────────────────────────────────────────────────────────────────
+//  #195 게스트 — PDF 미리보기는 되고, 저장·공유만 막는다
+//
+//  🔴 미리보기까지 막으면 뭘 받게 되는지 못 보고 가입을 권하게 된다.
+//     막는 건 **저장·공유를 누르는 순간**뿐이다.
+//
+//  🔴 테스트에는 Firebase 가 없어 `isAnonymous` 를 만들 수 없다.
+//     `GuestService.debugIsGuest` 로 게스트인 척한다.
+// ─────────────────────────────────────────────────────────────────────
+void _k195GuestPdf() {
+  group('#195 게스트 PDF 저장 잠금', () {
+    tearDown(() => GuestService.debugIsGuest = null);
+
+    testWidgets('🔴 게스트도 정산서 미리보기 화면은 그대로 본다', (t) async {
+      GuestService.debugIsGuest = true;
+      await _pump(t);
+
+      expect(t.takeException(), isNull);
+      // 달 선택·형식·합계·버튼이 모두 예전처럼 보인다.
+      expect(find.text('형식'), findsOneWidget);
+      expect(find.text('PDF'), findsOneWidget);
+      expect(find.text('내보내기'), findsOneWidget);
+      // 가입 안내가 미리 떠 있지는 않다.
+      expect(find.text(kSignUpSheetTitle), findsNothing);
+    });
+
+    testWidgets('🔴 게스트가 내보내기를 누르면 문서 종류 대신 가입 안내다',
+        (t) async {
+      GuestService.debugIsGuest = true;
+      await _pump(t);
+
+      await t.tap(find.text('내보내기'));
+      await t.pump();
+      await t.pump(const Duration(milliseconds: 500));
+
+      expect(t.takeException(), isNull);
+      expect(find.text(kSignUpSheetTitle), findsOneWidget);
+      expect(find.text('가입하면 바로 저장돼요. 찍은 영수증도 그대로 남아요'),
+          findsOneWidget);
+      // 🔴 문서 종류 시트는 열리지 않았다 — 저장으로 가는 길이 끊겼다.
+      expect(find.text('어떤 문서로 내보낼까요?'), findsNothing);
+      expect(find.text('세금계산서 발행 요청서'), findsNothing);
+    });
+
+    testWidgets('🔴 회원은 지금처럼 문서 종류 시트가 열린다', (t) async {
+      GuestService.debugIsGuest = false;
+      await _pump(t);
+
+      await t.tap(find.text('내보내기'));
+      await t.pump();
+      await t.pump(const Duration(milliseconds: 500));
+
+      expect(t.takeException(), isNull);
+      expect(find.text('어떤 문서로 내보낼까요?'), findsOneWidget);
+      expect(find.text('세금계산서 발행 요청서'), findsOneWidget);
+      expect(find.text('매입 내역서'), findsOneWidget);
+      expect(find.text(kSignUpSheetTitle), findsNothing);
+    });
+
+    testWidgets('🔴 아무 설정도 안 하면(기본값) 회원 흐름이다', (t) async {
+      // 실제 앱에서 `debugIsGuest` 는 늘 null 이다. 여기서 게스트 갈래로
+      // 새면 가입하신 분들이 정산서를 못 받는다.
+      expect(GuestService.debugIsGuest, isNull);
+      await _pump(t);
+
+      await t.tap(find.text('내보내기'));
+      await t.pump();
+      await t.pump(const Duration(milliseconds: 500));
+
+      expect(find.text('어떤 문서로 내보낼까요?'), findsOneWidget);
+    });
+
+    test('🔴 잠금은 `_openMethodSheet` 한 곳에만 붙어 있다', () {
+      final src = io.File('lib/screens/ds/settle_preview_ds_screen.dart')
+          .readAsStringSync();
+      expect('GuestService.instance.canExportPdf'.allMatches(src).length, 1);
+      expect('showFnSignUpSheet'.allMatches(src).length, 1);
+      // 문서 종류 시트를 **열기 전에** 막아야 한다.
+      final guard = src.indexOf('GuestService.instance.canExportPdf');
+      final sheet = src.indexOf("title: '어떤 문서로 내보낼까요?'", guard);
+      expect(guard, greaterThan(0));
+      expect(guard, lessThan(sheet));
+    });
+
+    test('🔴 미리보기 화면 자체에는 잠금을 걸지 않았다', () {
+      final src = io.File('lib/screens/ds/settle_preview_ds_screen.dart')
+          .readAsStringSync();
+      // 게스트 확인이 build 안으로 들어가면 화면이 통째로 가려진다.
+      final b = src.indexOf('Widget build(BuildContext context)');
+      expect(b, greaterThan(0));
+      expect(src.indexOf('GuestService', b), -1,
+          reason: '미리보기 화면을 그리는 쪽에 게스트 분기가 생겼다');
+    });
+
+    test('🔴 체험은 아직 꺼져 있다', () {
+      expect(GuestService.enabled, isFalse);
+    });
   });
 }

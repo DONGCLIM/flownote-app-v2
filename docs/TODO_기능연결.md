@@ -163,7 +163,7 @@ flutter test test/<그_화면>_test.dart     # 그 화면 것만
 | ① 보안 규칙 점검 | 익명 사용자 공용 쓰기 차단 | ✅ 완료 (`0d33d2d`, 배포됨) |
 | ② 첫 화면·게스트 계정 | `signInAnonymously` + `GuestService` | ✅ 완료 (`8a05f72`, **꺼둠**) |
 | ②-b 규칙 보정 | 게스트 사진 저장 허용 · PDF 카운터 제거 | ✅ 완료 (#193, 배포됨) |
-| ③ 제한·잠금 | 스캔 5장·잠긴 화면 바텀시트·캘린더 탭·학습 수집 제외 | 🟡 **대부분 끝남** (PDF 저장 안내만 남음) |
+| ③ 제한·잠금 | 스캔 5장·잠긴 화면·캘린더 탭·PDF 저장·학습 수집 제외 | ✅ 완료 (**꺼둠**) |
 | ④ 프로필·가입 유도 | 체험 배너·진행바·🔒 표시·남은 장수 | ⬜ **남음** |
 | ⑤ 가입 전환·Analytics | `linkWithCredential` + 이벤트 전송 | ⬜ **남음** |
 
@@ -196,11 +196,15 @@ PDF 는 사장님 지시대로 **세지 않는다.** 미리보기는 몇 번이�
 | 저장 성공 지점에서 +1 | `scan_review_ds_screen.dart` 의 `_commit()` 반복문 | ✅ |
 | 첫 스캔 성공 안내 | `scan_done_ds_screen.dart` 의 `initState()` | ✅ |
 | 학습 수집 제외 (게스트) | `training_data_service.dart` 의 `collectAllowed` | ✅ |
-| PDF 저장·공유 → 가입 안내 | `settle_preview_ds_screen.dart` 의 `_openMethodSheet()` 앞 | ⬜ **남음** |
+| PDF 저장·공유 → 가입 안내 | `settle_preview_ds_screen.dart` 의 `_openMethodSheet()` 앞 | ✅ |
 
 🔴 **캘린더는 홈의 `_push()` 를 지나지 않는다.** 아래 탭바에서 바로 열려서
 `main_ds_screen.dart` 쪽에 따로 붙였다. 새로 잠글 화면이 생기면 그 화면이
 어느 문을 지나는지부터 확인한다.
+
+🔴 **PDF 미리보기는 게스트도 그대로 본다.** 막는 건 **저장·공유를 누르는
+순간**뿐이다(`_openMethodSheet()` 맨 앞). 뭘 받게 되는지 봐야 가입할 마음이
+든다. 그래서 잠금을 `build()` 가 아니라 그 한 곳에만 걸었다.
 
 🔴 **게스트 영수증은 학습 데이터로 보내지 않는다.** 이유는 보안이 아니라
 **동의**다 — 게스트는 가입 절차가 없어 학습 활용 동의를 받은 적이 없다.

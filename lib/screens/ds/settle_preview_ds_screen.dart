@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
@@ -12,7 +14,9 @@ import '../../models/receipt_model.dart';
 import '../../providers/auth_provider.dart';
 import '../../services/settlement_pdf_service.dart';
 import '../../services/vendor_tax_service.dart';
+import '../../services/guest_service.dart';
 import '../../services/subscription_service.dart';
+import '../../widgets/fn_signup_sheet.dart';
 import 'fn_data.dart';
 import 'onboarding_ds_screens.dart';
 import 'paywall_ds_screen.dart';
@@ -165,6 +169,22 @@ class _SettlePreviewDsScreenState extends State<SettlePreviewDsScreen> {
   ///    도매상에게 보낼 요청서와, 내가 보관할 내역서는 내용이 달라야 한다.
   ///    (요청서에는 품목을 넣지 않는다 — OCR 품목명이 틀릴 수 있어서)
   void _openMethodSheet() {
+    // 🔴 게스트는 여기서 멈춘다 (#195 — ③단계).
+    //
+    //    **미리보기는 막지 않는다.** 이 화면(정산서 미리보기)은 게스트도
+    //    그대로 보고, 달을 고르고, 합계도 확인할 수 있다. 뭘 받게 되는지
+    //    봐야 가입할 마음이 든다. 막는 건 **저장·공유를 누르는 순간**뿐이다.
+    //
+    //    🔴 `canExportPdf` 는 게스트가 아니면 늘 true 다. 회원은 이 if 를
+    //       그냥 지나쳐 예전과 완전히 똑같이 문서 종류 시트를 연다.
+    if (!GuestService.instance.canExportPdf) {
+      unawaited(showFnSignUpSheet(
+        context,
+        feature: '가입하면 바로 저장돼요. 찍은 영수증도 그대로 남아요',
+      ));
+      return;
+    }
+
     showFnDsBottomSheet(
       context,
       title: '어떤 문서로 내보낼까요?',
