@@ -1,8 +1,16 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
 import '../design/fn_controls_ds.dart';
+import '../design/fn_feedback.dart';
+import '../design/fn_sheet.dart';
+import '../providers/auth_provider.dart';
+import '../screens/ds/add_to_home_sheet.dart';
 import '../screens/ds/legal_doc_ds_screen.dart';
 import '../screens/ds/splash_ds_screen.dart';
+import '../services/guest_service.dart';
 import '../theme/fn_ds.dart';
 import 'fn_inquiry_parts.dart';
 
@@ -15,13 +23,14 @@ import 'fn_inquiry_parts.dart';
 /// 금세 어긋난다. 그래서 **한 줄 설명만 자리별로 받고** 나머지(버튼·
 /// 로그인 링크)는 여기 한 곳에서 그린다.
 ///
-/// ## 지금 단계에서 버튼이 하는 일
+/// ## 버튼이 하는 일 (#195 ⑤ 에서 갈라졌다)
 ///
-/// 🔴 `[카카오로 가입]` `[구글로 가입]` `이미 가입하셨나요? 로그인` —
-///    셋 다 **기존 로그인 화면([SplashDsScreen])으로 보낸다.** 게스트
-///    계정을 그대로 들고 가입하는 계정 연결은 ⑤단계
-///    일이라 아직 없다. 지금 버튼마다 다른 길을 뚫어 두면 ⑤에서 전부
-///    다시 뜯어야 해서, 한 길로 모아 뒀다.
+/// 🔴 `[구글로 가입]` — 체험 계정에 구글을 **붙인다**(`linkWithCredential`).
+///    uid 가 그대로라 찍어 둔 영수증이 남는다. 로그인이 아니다.
+/// 🔴 `[카카오로 가입]` — 기존 로그인 화면으로 보낸다. 카카오는 커스텀
+///    토큰이라 uid 가 바뀐다. 영수증 옮기기는 **서버 함수가 필요해서**
+///    다음 작업으로 미뤘다. 지금 붙이면 영수증이 사라진 것처럼 보인다.
+/// 🔴 `이미 가입하셨나요? 로그인` — 기존 로그인 화면(카카오 포함).
 ///
 /// 🔴 이 바텀시트는 **게스트일 때만** 뜬다. 부르는 쪽에서
 ///    `GuestService.instance.isGuest` 를 먼저 보고 부른다. 회원 흐름은
@@ -37,6 +46,103 @@ void fnOpenSignIn(BuildContext context) {
   Navigator.of(context, rootNavigator: true).push(
     MaterialPageRoute<void>(builder: (_) => const SplashDsScreen()),
   );
+}
+
+/// 체험 계정을 정식 계정으로 **전환**한다. 게스트 가입 버튼이 모두 여기로.
+///
+/// 🔴 **게스트일 때만 부른다.** 회원이 들어오면 첫 줄에서 그냥 돌아가므로,
+///    가입하신 분의 로그인·가입 흐름은 이 함수를 지나지 않는다.
+///
+/// 하는 일:
+///   1. `AuthProvider.linkGuestTo()` — 연결 + (기존과 같은) 동의 기록 ·
+///      `users/{uid}` 문서 생성
+///   2. 성공하면 체험 카운터를 치우고 '가입 완료' 안내 → 바탕화면 설치 안내
+///   3. 이미 가입된 계정이면 **여쭙고** 고르실 때만 로그인
+Future<void> fnLinkGuestAccount(
+  BuildContext context,
+  GuestLinkMethod method, {
+  String email = '',
+  String password = '',
+  String displayName = '',
+}) async {
+  if (!GuestService.instance.isGuest) return;   // 🔴 회원은 여기 안 온다
+
+  final auth = context.read<AuthProvider>();
+  final r = await auth.linkGuestTo(
+    method,
+    email: email,
+    password: password,
+    displayName: displayName,
+  );
+  if (!context.mounted) return;
+
+  switch (r) {
+    case GuestLinkResult.ok:
+      // 체험 카운터는 이제 뜻이 없다. 영수증은 그대로 남는다.
+      GuestService.instance.clearAfterSignUp();
+      await _afterSignUp(context);
+
+    case GuestLinkResult.conflict:
+      await _askSignInInstead(context, auth);
+
+    case GuestLinkResult.cancelled:
+      break;                                     // 조용히 — 사장님이 닫으셨다
+
+    case GuestLinkResult.failed:
+      final msg = auth.error;
+      if (msg != null) {
+        showFnToast(context, msg, type: FnToastType.error);
+        auth.clearError();
+      }
+  }
+}
+
+/// 가입이 끝났다. 영수증이 남았다는 걸 먼저 알리고 설치로 이어 준다.
+Future<void> _afterSignUp(BuildContext context) async {
+  await showFnAlert(
+    context,
+    title: '가입 완료! 찍어둔 영수증이 저장됐어요',
+    message: '바탕화면에 설치해 두면 다음부터 앱처럼 바로 열려요.',
+    confirmLabel: '설치 안내 보기',
+    cancelLabel: '나중에',
+    icon: Icons.check_circle_rounded,
+  ).then((go) async {
+    if (!go || !context.mounted) return;
+    await AddToHomeSheet.open(context);
+  });
+}
+
+/// "이미 가입된 계정이에요" — 바로 로그인하지 않고 여쭙는다.
+///
+/// 🔴 말없이 로그인하면 uid 가 바뀌어 체험 영수증이 **사라진 것처럼**
+///    보인다. 그래서 반드시 고르시게 한다. 고르셔도 체험 데이터는
+///    지우지 않는다(다음 작업에서 합친다).
+Future<void> _askSignInInstead(
+    BuildContext context, AuthProvider auth) async {
+  final go = await showFnAlert(
+    context,
+    title: '이미 가입된 계정이에요',
+    message: '이 계정으로 로그인할까요?',
+    confirmLabel: '로그인',
+    cancelLabel: '취소',
+    icon: Icons.info_outline_rounded,
+  );
+  if (!context.mounted) return;
+  if (!go) {
+    auth.clearPendingLink();
+    return;
+  }
+  final ok = await auth.signInWithConflicted();
+  if (!context.mounted) return;
+  if (!ok) {
+    final msg = auth.error;
+    if (msg != null) {
+      showFnToast(context, msg, type: FnToastType.error);
+      auth.clearError();
+    }
+    // 자격이 없어 못 들어갔다면 평소 로그인 화면으로 보낸다.
+    if (!auth.isLoggedIn) fnOpenSignIn(context);
+  }
 }
 
 /// 가입 안내 바텀시트를 띄운다.
@@ -62,7 +168,7 @@ class _SignUpSheetBody extends StatelessWidget {
 
   final String line;
 
-  /// 세 버튼이 모두 같은 곳으로 간다. 바텀시트를 먼저 닫고 보낸다.
+  /// 기존 로그인 화면으로 보낸다. 바텀시트를 먼저 닫는다.
   ///
   /// 🔴 닫기와 이동에 쓰는 `Navigator` 가 서로 다르다. 바텀시트는 자기
   ///    라우트를 닫아야 하고(`Navigator.of(context)`), 화면 이동은 그
@@ -72,6 +178,16 @@ class _SignUpSheetBody extends StatelessWidget {
     final outer = context;
     Navigator.of(context).pop();
     fnOpenSignIn(outer);
+  }
+
+  /// 구글로 가입 — 체험 계정에 **붙인다.** uid 가 그대로라 영수증이 남는다.
+  ///
+  /// 🔴 바텀시트를 먼저 닫는다. 구글 팝업·안내창이 시트 위로 겹치면
+  ///    눌러도 닿지 않는 자리가 생긴다.
+  void _linkGoogle(BuildContext context) {
+    final outer = context;
+    Navigator.of(context).pop();
+    unawaited(fnLinkGuestAccount(outer, GuestLinkMethod.google));
   }
 
   @override
@@ -90,14 +206,18 @@ class _SignUpSheetBody extends StatelessWidget {
           ),
         ),
         const SizedBox(height: FnDs.gapL),
+        // 🔴 카카오는 커스텀 토큰이라 uid 가 바뀐다. 붙이면 체험 영수증이
+        //    사라진 것처럼 보이므로, 옮기는 서버 함수가 생기기 전까지는
+        //    지금처럼 로그인 화면으로만 보낸다.
         FnPrimaryButton(
           label: '카카오로 가입',
           onTap: () => _toSignIn(context),
         ),
         const SizedBox(height: FnDs.gapS),
+        // 구글은 **붙인다** — uid 가 그대로라 찍어 둔 영수증이 남는다.
         FnOutlineButton(
           label: '구글로 가입',
-          onTap: () => _toSignIn(context),
+          onTap: () => _linkGoogle(context),
         ),
         const SizedBox(height: FnDs.gapM),
         Center(

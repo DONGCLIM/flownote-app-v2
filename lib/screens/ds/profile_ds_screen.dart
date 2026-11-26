@@ -665,14 +665,19 @@ class _GuestTrialCard extends StatelessWidget {
             color: FnProfile.coral,
           ),
           const SizedBox(height: 18),
+          // 🔴 카카오는 커스텀 토큰이라 uid 가 바뀐다. 붙이면 체험 영수증이
+          //    사라진 것처럼 보이므로, 옮기는 서버 함수가 생기기 전까지는
+          //    지금처럼 로그인 화면으로만 보낸다. (#195 ⑤)
           FnPrimaryButton(
             label: '카카오로 3초 가입',
             onTap: () => fnOpenSignIn(context),
           ),
           const SizedBox(height: 10),
+          // 구글은 체험 계정에 **붙인다** — uid 가 그대로라 영수증이 남는다.
           FnOutlineButton(
             label: '구글로 가입',
-            onTap: () => fnOpenSignIn(context),
+            onTap: () =>
+                unawaited(fnLinkGuestAccount(context, GuestLinkMethod.google)),
           ),
           const SizedBox(height: 14),
           Center(

@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../../services/guest_service.dart';
 import '../../services/pwa_install.dart';
 import '../../theme/fn_ds.dart';
 import '../../widgets/fn_inquiry_parts.dart';
@@ -271,7 +272,15 @@ class _AddToHomeSheetState extends State<AddToHomeSheet> {
       case PwaHowTo.iosSafari:
         return _Plan(
           title: '바탕화면에 설치하기',
-          subtitle: '한 번 설치하면 앱처럼 바로 열려요.',
+          // 🔴 체험 중인 분께만 다르게 말한다. (#195)
+          //
+          //    아이폰은 설치하면 **다른 저장소**로 열린다. 체험 계정은
+          //    기기에만 있어서, 가입 전에 설치하면 찍어 둔 영수증이
+          //    안 보인다. 가입하면 계정에 붙으므로 그대로 따라온다.
+          //    🔴 가입하신 분께는 예전 문구 그대로다.
+          subtitle: GuestService.instance.isGuest
+              ? '가입한 뒤 설치하면 영수증이 그대로 보여요'
+              : '한 번 설치하면 앱처럼 바로 열려요.',
           steps: const [
             _Step('화면 아래 맨 왼쪽 ', icon: _StepIcon.more, tail: ' 누르기'),
             _Step('"공유" ', icon: _StepIcon.share, tail: ' 누르기'),

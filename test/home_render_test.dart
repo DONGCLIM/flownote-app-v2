@@ -972,12 +972,30 @@ void _k195Guest() {
       expect('showFnSignUpSheet'.allMatches(home).length, 1);
     });
 
-    test('🔴 가입 버튼 세 개가 모두 기존 로그인 화면으로 간다', () {
+    test('🔴 카카오·로그인은 기존 로그인 화면, 구글은 계정 연결 (#195 ⑤)', () {
+      // 🔴 ③단계에는 "셋 다 로그인 화면" 이었다. ⑤단계에서 구글만
+      //    갈라졌다 — 체험 계정에 **붙여야**(link) uid 가 유지되어
+      //    찍어 둔 영수증이 남기 때문이다.
       final sheet = _read('lib/widgets/fn_signup_sheet.dart');
-      expect(sheet.contains('SplashDsScreen'), isTrue);
-      // ⑤단계 전에는 계정 연결(link)을 흉내 내지 않는다.
-      expect(sheet.contains('linkWithCredential'), isFalse);
       expect(sheet.contains('showFnDsBottomSheet'), isTrue);
+      // 기존 로그인 화면(카카오 포함)으로 가는 길이 살아 있다.
+      expect(sheet.contains('SplashDsScreen'), isTrue);
+      expect(sheet.contains('fnOpenSignIn'), isTrue);
+
+      // 카카오는 **붙이지 않는다** — 커스텀 토큰이라 uid 가 바뀐다.
+      final kakao = sheet.indexOf("label: '카카오로");
+      expect(kakao, greaterThan(0));
+      expect(sheet.substring(kakao, kakao + 160),
+          isNot(contains('fnLinkGuestAccount')));
+
+      // 구글은 붙인다.
+      final google = sheet.indexOf("label: '구글로 가입'");
+      expect(google, greaterThan(0));
+      expect(sheet.substring(google, google + 160), contains('_linkGoogle'));
+
+      // 🔴 연결은 서비스 계층이 한다. 화면이 Firebase 를 직접 부르지 않는다.
+      expect(sheet.contains('.linkWithCredential('), isFalse);
+      expect(sheet.contains('GuestLinkMethod.google'), isTrue);
     });
 
     test('🔴 게스트 체험은 아직 꺼져 있다', () {

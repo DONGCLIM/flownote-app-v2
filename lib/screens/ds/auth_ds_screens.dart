@@ -9,6 +9,8 @@ import '../../design/fn_shell.dart';
 import '../../design/fn_tokens.dart';
 import '../../providers/auth_provider.dart';
 import '../../services/auth_service.dart';
+import '../../services/guest_service.dart';
+import '../../widgets/fn_signup_sheet.dart';
 import 'auth_unavailable_banner.dart';
 import 'legal_doc_ds_screen.dart';
 import 'onboarding_ds_screens.dart';
@@ -204,6 +206,37 @@ class _SignUpDsScreenState extends State<SignUpDsScreen> {
     setState(() => _busy = true);
     final email = _email.text.trim();
     final auth = context.read<AuthProvider>();
+
+    // 🔴 체험 중이면 **새 계정을 만들지 않고 붙인다.** (#195 ⑤)
+    //
+    //    `signUp()` 은 새 uid 를 만든다. 체험으로 찍어 둔 영수증은
+    //    `users/{지금 uid}` 아래 있으므로, 새로 만들면 눈앞에서 사라진
+    //    것처럼 보인다. `linkGuestTo()` 는 uid 를 그대로 두고 이메일만
+    //    붙인 뒤, **그 다음은 기존 가입과 똑같은 절차**(동의 기록 ·
+    //    users 문서 생성)를 밟는다.
+    //
+    //    🔴 가입하신 분은 `isGuest` 가 false 라 이 if 를 지나쳐
+    //       예전 `signUp()` 으로 그대로 간다.
+    if (GuestService.instance.isGuest) {
+      await fnLinkGuestAccount(
+        context,
+        GuestLinkMethod.email,
+        email: email,
+        password: _pw.text,
+        displayName: _name.text.trim(),
+      );
+      if (!mounted) return;
+      setState(() => _busy = false);
+      // 연결에 성공했으면 로그인 상태가 됐다. 사업자 온보딩으로 이어간다.
+      if (auth.isLoggedIn) {
+        Navigator.of(context).pushAndRemoveUntil(
+          MaterialPageRoute(builder: (_) => const BusinessDsScreen()),
+          (r) => r.isFirst,
+        );
+      }
+      return;
+    }
+
     final ok = await auth.signUp(
       email: email,
       name: _name.text.trim(),

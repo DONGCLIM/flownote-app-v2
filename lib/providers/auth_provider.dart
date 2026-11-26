@@ -370,6 +370,107 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
+  // ──────────────────────────────────────────────────────────
+  // 체험 계정 → 정식 계정 (#195 ⑤)
+  // ──────────────────────────────────────────────────────────
+
+  /// 체험 계정에 구글/애플/이메일을 **붙여서** 정식 계정으로 만든다.
+  ///
+  /// 🔴 로그인(`signIn*`)이 아니라 연결(`link*`)이다. uid 가 그대로라
+  ///    체험으로 찍어 둔 영수증이 남는다.
+  ///
+  /// 🔴 연결 **뒤 절차는 기존 가입과 똑같다.** 일부러 같은 함수를 쓴다:
+  ///    `_hydrate()` 가 `users/{uid}` 문서를 만들고(`createIfAbsent`),
+  ///    `_ensureRequiredConsents()` 가 `consent_log` 에 이력을 남긴다.
+  ///    새 동의 항목은 하나도 만들지 않았다.
+  ///
+  /// 돌려주는 값:
+  ///  - [GuestLinkResult.ok] 가입 완료
+  ///  - [GuestLinkResult.cancelled] 사장님이 창을 닫았다 (조용히)
+  ///  - [GuestLinkResult.conflict] 이미 가입된 계정이다 → 화면이 여쭌다
+  ///  - [GuestLinkResult.failed] 그 밖 — [error] 에 사유
+  Future<GuestLinkResult> linkGuestTo(
+    GuestLinkMethod method, {
+    String email = '',
+    String password = '',
+    String displayName = '',
+    bool agreeMarketing = false,
+  }) async {
+    _begin();
+    try {
+      final fbUser = switch (method) {
+        GuestLinkMethod.google => await AuthService.instance.linkGuestWithGoogle(),
+        GuestLinkMethod.apple => await AuthService.instance.linkGuestWithApple(),
+        GuestLinkMethod.email => await AuthService.instance.linkGuestWithEmail(
+            email: email,
+            password: password,
+            displayName: displayName,
+          ),
+      };
+
+      // 🔴 여기부터는 기존 가입과 **같은 길**이다.
+      await _hydrate(fbUser);                               // users/{uid} 생성
+      await _ensureRequiredConsents(fbUser.uid,             // consent_log 기록
+          agreeMarketing: agreeMarketing);
+
+      _end();
+      return GuestLinkResult.ok;
+    } on AuthLinkConflict catch (e) {
+      // 이미 가입된 계정이다. **여기서 로그인하지 않는다.** 화면이 먼저
+      // 여쭙고, 사장님이 고르시면 `signInWithConflicted()` 로 들어간다.
+      _pendingLink = e;
+      _isLoading = false;
+      _error = null;
+      notifyListeners();
+      return GuestLinkResult.conflict;
+    } on AuthCancelled {
+      _isLoading = false;
+      _error = null;
+      notifyListeners();
+      return GuestLinkResult.cancelled;
+    } on AuthFailure catch (e) {
+      _fail(e.message);
+      return GuestLinkResult.failed;
+    } catch (e) {
+      if (kDebugMode) debugPrint('[AuthProvider] 게스트 연결 오류: $e');
+      _fail('가입 중 오류가 발생했습니다.\n(${e.runtimeType})');
+      return GuestLinkResult.failed;
+    }
+  }
+
+  /// 연결이 막혔을 때 들고 있는 자격. 화면이 "로그인할까요?" 를 띄울 때 쓴다.
+  AuthLinkConflict? _pendingLink;
+  bool get hasPendingLink => _pendingLink != null;
+  String? get pendingLinkEmail => _pendingLink?.email;
+  void clearPendingLink() => _pendingLink = null;
+
+  /// "이미 가입된 계정이에요" 에서 **[로그인]** 을 고르셨다.
+  ///
+  /// 🔴 체험 데이터는 **지우지 않는다.** uid 가 달라 상자가 갈릴 뿐,
+  ///    찍어 둔 영수증은 그대로 남아 있다. 합치는 일은 다음 작업이다.
+  ///    (그래서 `GuestService.clearAfterSignUp()` 도 부르지 않는다)
+  Future<bool> signInWithConflicted() async {
+    final pending = _pendingLink;
+    final cred = pending?.credential;
+    if (cred == null) return false;
+    _begin();
+    try {
+      final fbUser = await AuthService.instance.signInWithPendingCredential(cred);
+      await _hydrate(fbUser);
+      await _ensureRequiredConsents(fbUser.uid);
+      _pendingLink = null;
+      _end();
+      return true;
+    } on AuthFailure catch (e) {
+      _fail(e.message);
+      return false;
+    } catch (e) {
+      if (kDebugMode) debugPrint('[AuthProvider] 충돌 로그인 오류: $e');
+      _fail('로그인 중 오류가 발생했습니다.');
+      return false;
+    }
+  }
+
   /// 첫 로그인 시 필수 동의 이력을 남긴다.
   ///
   /// 🔴 카카오 로그인은 웹에서 **두 경로**로 들어온다.
@@ -653,4 +754,22 @@ class AuthProvider extends ChangeNotifier {
       await prefs.remove('all_users');
     } catch (_) {}
   }
+}
+
+/// 체험 계정에 무엇을 붙일지. (#195)
+enum GuestLinkMethod { google, apple, email }
+
+/// 붙이기 결과. 화면이 이 값만 보고 다음을 정한다.
+enum GuestLinkResult {
+  /// 가입 완료 — uid 그대로, 영수증 그대로.
+  ok,
+
+  /// 사장님이 창을 닫았다. 아무 말도 하지 않는다.
+  cancelled,
+
+  /// 이미 가입된 계정이라 붙일 수 없다. 화면이 여쭙는다.
+  conflict,
+
+  /// 그 밖의 실패. `error` 에 사유가 있다.
+  failed,
 }

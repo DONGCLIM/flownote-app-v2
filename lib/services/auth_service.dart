@@ -368,6 +368,224 @@ class AuthService {
     }
   }
 
+  // ──────────────────────────────────────────────────────────
+  // 게스트 계정 → 정식 계정 (#195 ⑤)
+  // ──────────────────────────────────────────────────────────
+
+  /// 지금 체험(익명) 계정으로 들어와 있는가. 아니면 null.
+  ///
+  /// 🔴 **회원은 여기서 늘 null 이다.** 아래 link* 함수들은 null 이면
+  ///    바로 멈추므로, 가입하신 분의 로그인 흐름은 이 길을 지나지 않는다.
+  User? get _guestUser {
+    final u = currentUser;
+    if (u == null || !u.isAnonymous) return null;
+    return u;
+  }
+
+  /// 체험 계정을 그대로 두고 로그인 수단만 **붙인다.**
+  ///
+  /// `link` 는 `signIn` 과 달리 **uid 를 바꾸지 않는다.** 그래서 체험으로
+  /// 찍어 둔 영수증(`users/{uid}` · Hive 상자 이름 모두 uid 기준)이
+  /// 그대로 남는다. 새로 로그인해 버리면 uid 가 바뀌어 전부 사라진 것처럼
+  /// 보인다 — 그게 이 함수가 있는 이유다.
+  Future<User> linkGuestWithGoogle() async {
+    _requireAvailable();
+    final guest = _guestUser;
+    if (guest == null) throw const AuthFailure('체험 계정이 아니에요.');
+
+    try {
+      // 웹은 `signInWithGoogle` 과 같은 이유로 팝업을 쓴다(meta 태그 불필요).
+      if (kIsWeb) {
+        final provider = GoogleAuthProvider()
+          ..addScope('email')
+          ..addScope('profile');
+        final cred = await guest.linkWithPopup(provider);
+        final u = cred.user;
+        if (u == null) throw const AuthFailure('구글 가입에 실패했습니다.');
+        return u;
+      }
+
+      final google = GoogleSignIn(scopes: const ['email', 'profile']);
+      try {
+        await google.signOut();
+      } catch (_) {/* 이전 세션이 없어도 계속 간다 */}
+      final account = await google.signIn();
+      if (account == null) throw const AuthCancelled();
+      final gAuth = await account.authentication;
+      if (gAuth.idToken == null && gAuth.accessToken == null) {
+        throw const AuthFailure('구글 인증 토큰을 받지 못했습니다. 다시 시도해 주세요.');
+      }
+      final credential = GoogleAuthProvider.credential(
+        idToken: gAuth.idToken,
+        accessToken: gAuth.accessToken,
+      );
+      final cred = await guest
+          .linkWithCredential(credential)
+          .timeout(const Duration(seconds: 30));
+      final u = cred.user;
+      if (u == null) throw const AuthFailure('구글 가입에 실패했습니다.');
+      return u;
+    } on FirebaseAuthException catch (e) {
+      throw _linkFailure(e);
+    } on AuthCancelled {
+      rethrow;
+    } on AuthFailure {
+      rethrow;
+    } on AuthLinkConflict {
+      rethrow;
+    } on TimeoutException {
+      throw const AuthFailure('응답이 너무 늦어요.\n네트워크를 확인하고 다시 시도해 주세요.',
+          code: 'timeout');
+    } catch (e) {
+      if (kDebugMode) debugPrint('[AuthService] 구글 연결 오류: $e');
+      throw AuthFailure('구글 가입 중 오류가 발생했어요.\n(${e.runtimeType})',
+          code: 'link-google-unknown');
+    }
+  }
+
+  /// 체험 계정에 애플을 붙인다. (아이폰 전용)
+  Future<User> linkGuestWithApple() async {
+    _requireAvailable();
+    final guest = _guestUser;
+    if (guest == null) throw const AuthFailure('체험 계정이 아니에요.');
+    if (!isAppleSignInSupported) {
+      throw const AuthFailure('애플 가입은 아이폰에서만 사용할 수 있어요.');
+    }
+    try {
+      final rawNonce = _randomNonce();
+      final credential = await SignInWithApple.getAppleIDCredential(
+        scopes: const [
+          AppleIDAuthorizationScopes.email,
+          AppleIDAuthorizationScopes.fullName,
+        ],
+        nonce: _sha256(rawNonce),
+      );
+      final idToken = credential.identityToken;
+      if (idToken == null) {
+        throw const AuthFailure('애플 인증 토큰을 받지 못했습니다. 다시 시도해 주세요.');
+      }
+      final oauth = OAuthProvider('apple.com').credential(
+        idToken: idToken,
+        rawNonce: rawNonce,
+        accessToken: credential.authorizationCode,
+      );
+      final cred = await guest.linkWithCredential(oauth);
+      final u = cred.user;
+      if (u == null) throw const AuthFailure('애플 가입에 실패했습니다.');
+
+      // 애플은 **최초 1회만** 이름을 준다. 그때 받아 둔다.
+      final appleName =
+          '${credential.familyName?.trim() ?? ''}${credential.givenName?.trim() ?? ''}'
+              .trim();
+      if ((u.displayName ?? '').trim().isEmpty && appleName.isNotEmpty) {
+        try {
+          await u.updateDisplayName(appleName);
+          await u.reload();
+        } catch (_) {}
+      }
+      return _auth!.currentUser ?? u;
+    } on SignInWithAppleAuthorizationException catch (e) {
+      if (e.code == AuthorizationErrorCode.canceled) throw const AuthCancelled();
+      throw const AuthFailure('애플 가입에 실패했습니다.\n다시 시도해 주세요.');
+    } on FirebaseAuthException catch (e) {
+      throw _linkFailure(e);
+    } on AuthCancelled {
+      rethrow;
+    } on AuthFailure {
+      rethrow;
+    } on AuthLinkConflict {
+      rethrow;
+    } catch (e) {
+      if (kDebugMode) debugPrint('[AuthService] 애플 연결 오류: $e');
+      throw const AuthFailure('애플 가입 준비가 아직 안 됐어요.');
+    }
+  }
+
+  /// 체험 계정에 이메일·비밀번호를 붙인다.
+  Future<User> linkGuestWithEmail({
+    required String email,
+    required String password,
+    required String displayName,
+  }) async {
+    _requireAvailable();
+    final guest = _guestUser;
+    if (guest == null) throw const AuthFailure('체험 계정이 아니에요.');
+    try {
+      final credential = EmailAuthProvider.credential(
+        email: email.trim(),
+        password: password,
+      );
+      final cred =
+          await guest.linkWithCredential(credential).timeout(_authTimeout);
+      final u = cred.user;
+      if (u == null) throw const AuthFailure('가입에 실패했습니다.');
+      final name = displayName.trim();
+      if (name.isNotEmpty) {
+        try {
+          await u.updateDisplayName(name);
+          await u.reload();
+        } catch (_) {}
+      }
+      return _auth!.currentUser ?? u;
+    } on FirebaseAuthException catch (e) {
+      throw _linkFailure(e);
+    } on AuthFailure {
+      rethrow;
+    } on AuthLinkConflict {
+      rethrow;
+    } on TimeoutException {
+      throw const AuthFailure(_timeoutMessage, code: 'timeout');
+    } catch (e) {
+      if (kDebugMode) debugPrint('[AuthService] 이메일 연결 오류: $e');
+      throw const AuthFailure('가입 중 오류가 발생했어요.');
+    }
+  }
+
+  /// 연결 실패를 알맞은 예외로 바꾼다.
+  ///
+  /// 🔴 **이미 그 계정으로 가입한 적이 있으면** 연결이 안 된다. 그때
+  ///    말없이 로그인해 버리면 체험으로 찍어 둔 영수증이 **눈앞에서
+  ///    사라진 것처럼** 보인다(uid 가 바뀌니까). 그래서 바로 로그인하지
+  ///    않고 [AuthLinkConflict] 로 올려보내 화면이 먼저 여쭙게 한다.
+  Object _linkFailure(FirebaseAuthException e) {
+    if (e.code == 'credential-already-in-use' ||
+        e.code == 'email-already-in-use' ||
+        e.code == 'account-exists-with-different-credential') {
+      return AuthLinkConflict(e.credential, email: e.email);
+    }
+    if (e.code == 'popup-closed-by-user' ||
+        e.code == 'cancelled-popup-request' ||
+        e.code == 'user-cancelled') {
+      return const AuthCancelled();
+    }
+    if (e.code == 'popup-blocked') {
+      return const AuthFailure(
+          '브라우저가 창을 막았어요.\n주소창의 팝업 차단을 해제하고 다시 시도해 주세요.',
+          code: 'popup-blocked');
+    }
+    return AuthFailure(_messageOf(e), code: e.code);
+  }
+
+  /// 충돌한 자격으로 **기존 계정에 로그인**한다. (사장님이 고르셨을 때만)
+  ///
+  /// 🔴 체험 계정 데이터는 **지우지 않는다.** uid 가 달라 Hive 상자가
+  ///    갈릴 뿐, 찍어 둔 영수증은 그대로 남는다. 합치는 일은 다음 작업이다.
+  Future<User> signInWithPendingCredential(AuthCredential credential) async {
+    _requireAvailable();
+    try {
+      final cred = await _auth!
+          .signInWithCredential(credential)
+          .timeout(const Duration(seconds: 30));
+      final u = cred.user;
+      if (u == null) throw const AuthFailure('로그인에 실패했습니다.');
+      return u;
+    } on FirebaseAuthException catch (e) {
+      throw AuthFailure(_messageOf(e), code: e.code);
+    } on TimeoutException {
+      throw const AuthFailure(_timeoutMessage, code: 'timeout');
+    }
+  }
+
   /// 새 사용자인지 판별 — 가입 직후 온보딩으로 보낼지 결정할 때 사용.
   bool isNewUser(UserCredential cred) =>
       cred.additionalUserInfo?.isNewUser ?? false;
@@ -848,6 +1066,18 @@ class AuthFailure implements Exception {
 /// 사용자가 스스로 취소한 경우 — 에러 토스트를 띄우지 않는다.
 class AuthCancelled implements Exception {
   const AuthCancelled();
+}
+
+/// 체험 계정에 붙이려는 수단이 **이미 다른 계정에 쓰이고 있다.** (#195)
+///
+/// 화면은 이걸 받으면 "이미 가입된 계정이에요. 이 계정으로 로그인할까요?"
+/// 를 먼저 여쭙는다. 말없이 로그인하면 체험 영수증이 사라진 것처럼 보인다.
+class AuthLinkConflict implements Exception {
+  const AuthLinkConflict(this.credential, {this.email});
+
+  /// 그 계정으로 로그인할 때 쓸 자격. 없으면 화면에서 평소 로그인으로 보낸다.
+  final AuthCredential? credential;
+  final String? email;
 }
 
 /// 계정 삭제 전 재인증이 필요한 경우.
