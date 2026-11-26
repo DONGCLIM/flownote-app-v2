@@ -120,6 +120,28 @@ void main() {
       final p = ReceiptProvider();
       await p.init();
 
+      // 🔴 영수증을 **이 테스트가 직접 넣는다.**
+      //
+      //    예전에는 `init()` 이 빈 상자에 가짜 샘플을 채워 줘서 그냥
+      //    `isNotEmpty` 가 됐다. 그 생성기는 `e770e18` 에서 일부러
+      //    없앴다(남의 계정 영수증이 섞이던 문제). 그래서 상자가 빈 채로
+      //    남아 이 검사가 깨졌다 — 앱이 아니라 테스트가 옛 동작에
+      //    묶여 있던 것이다.
+      //
+      //    여기서 보려는 것은 "같은 목록을 두 번 만들지 않는가" 이므로
+      //    영수증이 몇 장이든 상관없다. 세 장만 넣는다.
+      for (var i = 0; i < 3; i++) {
+        await p.addReceipt(ReceiptModel(
+          id: 'c$i',
+          date: DateTime(2026, 7, 20 + i),
+          storeName: '대한꽃도매',
+          items: const [],
+          totalAmount: 10000 + i.toDouble(),
+          rawOcrText: 't',
+          createdAt: DateTime(2026, 7, 20 + i),
+        ));
+      }
+
       final a = p.allReceipts;
       final b = p.allReceipts;
       expect(identical(a, b), isTrue,

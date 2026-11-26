@@ -482,11 +482,21 @@ void _k135() {
 
     testWidgets('CTA 를 누르면 전체 인사이트가 열린다', (tester) async {
       await _pumpHome(tester, items: _sample());
-      // CTA 는 접힌 화면 기준 y≈938 — 844 뷰포트 밖이다. 먼저 끌어올린다.
-      await tester.drag(find.byType(SingleChildScrollView).first,
-          const Offset(0, -200));
+      // 🔴 CTA 는 844 뷰포트 **밖**에 있다. 먼저 끌어올려야 눌린다.
+      //
+      //    예전에는 `drag(..., Offset(0, -200))` 으로 **고정 거리**를
+      //    끌었다. 그런데 홈 본문 높이는 그날 데이터에 따라 달라진다
+      //    (팁 줄 수·인사이트 개수·버튼 글자의 달 이름). 날짜가 바뀌어
+      //    본문이 조금 길어지자 -200 으로는 모자라서 CTA 가 y=857 에
+      //    남았고(뷰포트 844), 누른 자리가 화면 밖이라 **아무 일도 일어나지
+      //    않았다.** 화면이 안 바뀌니 findsNothing 이 된 것이다.
+      //
+      //    `ensureVisible` 은 "보일 때까지" 올린다. 본문 높이가 또 달라져도
+      //    깨지지 않는다.
+      final cta = find.textContaining('맞춤 사입 리포트 보기');
+      await tester.ensureVisible(cta);
       await tester.pump(const Duration(milliseconds: 300));
-      await tester.tap(find.textContaining('맞춤 사입 리포트 보기'));
+      await tester.tap(cta);
       // 🔴 라우트 전환에는 pump 가 **두 번** 필요하다.
       //    첫 pump 가 새 라우트를 트리에 끼워 넣고, 두 번째가 전환을 끝낸다.
       //    한 번만 하면 화면이 아직 안 바뀌어 findsNothing 이 된다.
