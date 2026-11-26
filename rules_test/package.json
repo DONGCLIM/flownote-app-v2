@@ -5,7 +5,7 @@
   "type": "module",
   "description": "보안 규칙 테스트 — 규칙을 바꾸면 배포 전에 반드시 돌린다 (#194)",
   "scripts": {
-    "test": "firebase emulators:exec --only firestore,storage --project flownote-rules-test \"npx vitest run\"",
+    "test": "firebase emulators:exec --only firestore,storage,auth --project flownote-rules-test \"npx vitest run\"",
     "test:guards": "npx vitest run app_guards.test.js"
   },
   "devDependencies": {

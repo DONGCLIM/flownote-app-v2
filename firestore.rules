@@ -159,6 +159,21 @@ service cloud.firestore {
       allow delete: if isOwner(resource.data.uid) || isAdmin();
     }
 
+    // ── 체험 데이터 옮기기 기록 (서버 전용) ──────────────────
+    //   migrations/{게스트 uid}
+    //   `functions/migrate_guest_data.js` 가 쓴다.
+    //
+    //   🔴 **앱은 읽지도 쓰지도 못한다.** Admin SDK 는 규칙을 지나치므로
+    //      서버 함수만 쓸 수 있다. 이 문서는 "이 체험 계정은 이미 누구에게
+    //      옮겼다" 는 자물쇠라서, 앱이 지울 수 있으면 같은 데이터를 여러
+    //      계정으로 반복해 가져갈 수 있다.
+    //
+    //   🔴 아래 `{document=**}` 차단으로도 막히지만 명시해 둔다. 포괄
+    //      규칙은 나중에 손댈 때 제일 먼저 흔들리는 자리다.
+    match /migrations/{guestUid} {
+      allow read, write: if false;
+    }
+
     // ── 그 외 모든 경로 차단 ─────────────────────────────────
     match /{document=**} {
       allow read, write: if false;

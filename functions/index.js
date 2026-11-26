@@ -57,7 +57,7 @@
 'use strict';
 
 const { onSchedule } = require('firebase-functions/v2/scheduler');
-const { onRequest } = require('firebase-functions/v2/https');
+const { onRequest, onCall, HttpsError } = require('firebase-functions/v2/https');
 const { defineSecret } = require('firebase-functions/params');
 const logger = require('firebase-functions/logger');
 const admin = require('firebase-admin');
@@ -605,6 +605,67 @@ exports.kakaoCustomToken = onRequest(
       return res
         .status(500)
         .json({ ok: false, error: String((e && e.message) || e) });
+    }
+  },
+);
+
+
+// ═══════════════════════════════════════════════════════════════════
+//  체험(익명) 데이터 옮기기 — migrateGuestData (#195 ⑤-b)
+//
+//  🔴 위의 함수들은 한 줄도 건드리지 않았다. 여기에 **더하기만** 했다.
+//
+//  왜 필요한가: 카카오는 커스텀 토큰이라 `linkWithCredential` 로 붙일 수
+//  없고 uid 가 바뀐다. 그래서 체험으로 찍어 둔 영수증이 옛 uid 아래
+//  남겨진다. 이 함수가 새 계정 아래로 옮긴다.
+//
+//  🔴 **받는 계정을 입력으로 받지 않는다.** 오직 `request.auth.uid`,
+//     즉 지금 요청을 보낸 사람 자신이다. 입력으로 받으면 "내 데이터를
+//     남의 계정으로 보내 줘" 가 가능해진다. 자세한 설명은
+//     `migrate_guest_data.js` 머리말 참고.
+// ═══════════════════════════════════════════════════════════════════
+
+const { createMigrator, MigrateError } = require('./migrate_guest_data');
+
+exports.migrateGuestData = onCall(
+  {
+    region: 'asia-northeast3',
+    timeoutSeconds: 300,
+    memory: '512MiB',
+  },
+  async (request) => {
+    // 🔴 입력에서 읽는 값은 **체험 계정 토큰 하나뿐**이다.
+    //    받는 계정(targetUid)은 절대 입력에서 읽지 않는다.
+    const guestIdToken = (request.data && request.data.guestIdToken) || '';
+
+    const migrator = createMigrator({
+      auth: admin.auth(),
+      db,
+      bucket: admin.storage().bucket(),
+      logger,
+    });
+
+    try {
+      const out = await migrator.run({
+        guestIdToken,
+        // 🔴 받는 계정 = 호출한 사람 자신. 오직 이 값만 쓴다.
+        callerUid: request.auth && request.auth.uid,
+        callerToken: request.auth && request.auth.token,
+      });
+      return {
+        ok: true,
+        receipts: out.receipts,
+        purchaseLists: out.purchaseLists,
+        photos: out.photos,
+        alreadyDone: out.alreadyDone,
+      };
+    } catch (e) {
+      if (e instanceof MigrateError) {
+        logger.warn('migrateGuestData 거절', { code: e.code, msg: e.message });
+        throw new HttpsError(e.code, e.message);
+      }
+      logger.error('migrateGuestData 실패', e);
+      throw new HttpsError('internal', '옮기는 중 오류가 발생했습니다.');
     }
   },
 );
