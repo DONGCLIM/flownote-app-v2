@@ -19,7 +19,9 @@ import '../../services/cost_calc.dart';
 import '../../services/monthly_insight.dart';
 import '../../services/purchase_list_service.dart';
 import '../../widgets/fn_purchase_parts.dart';
+import '../../widgets/fn_signup_sheet.dart';
 import '../../services/subscription_service.dart';
+import '../../services/guest_service.dart';
 import '../../theme/fn_ds.dart';
 import '../../widgets/fn_inquiry_parts.dart';
 import 'fn_data.dart';
@@ -1085,9 +1087,33 @@ class GuideDsScreen extends StatelessWidget {
     );
   }
 
+  /// 게스트에게 잠긴 메뉴인가. 잠겼으면 **기능 한 줄 설명**을 준다. (#192)
+  ///
+  /// 🔴 가이드 화면 자체는 게스트도 들어와 **내용을 본다.** 사장님 지시 —
+  ///    "들어가 내용은 볼 수 있게, 안에 있는 기능 버튼을 누르면 가입 시트".
+  ///    목록과 설명을 보셔야 이 앱이 무엇을 해 주는지 알 수 있다.
+  static String? _guestLockLine(String page) => switch (page) {
+        'season' => '작년 이맘때와 올해 매입을 나란히 비교해 드려요',
+        'cost' => '매입가에 마진을 얹은 판매가를 바로 계산해 드려요',
+        'budget' => '정한 예산 안에서 뭘 얼마나 살지 같이 맞춰 드려요',
+        'saved' => '사입 리스트를 저장해 두고 시장에서 체크하며 쓸 수 있어요',
+        'memo' => '사입 메모와 부케 스케치를 함께 기록할 수 있어요',
+        _ => null,
+      };
+
   /// 🔴 아직 없는 화면은 넘어가지 않고 안내만 띄운다.
   ///    빈 화면으로 보내면 사장님이 "고장났나" 하게 된다.
   void _open(BuildContext context, String page) {
+    // 🔴 **게스트일 때만** 갈라진다. 회원은 아래로 그대로 내려가 예전과
+    //    똑같이 화면이 열린다.
+    if (GuestService.instance.isGuest) {
+      final line = _guestLockLine(page);
+      if (line != null) {
+        unawaited(showFnSignUpSheet(context, feature: line));
+        return;
+      }
+    }
+
     final screen = switch (page) {
       'season' => const GuideSeasonDsScreen(),
       'cost' => const GuideCostDsScreen(),

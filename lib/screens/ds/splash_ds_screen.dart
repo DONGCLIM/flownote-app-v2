@@ -4,6 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../design/fn_brand.dart';
 import '../../design/fn_feedback.dart';
+import '../../design/fn_tab_intent.dart';
 import '../../design/fn_fit.dart';
 import '../../design/fn_tokens.dart';
 import '../../providers/auth_provider.dart';
@@ -209,6 +210,38 @@ class _SplashDsScreenState extends State<SplashDsScreen> {
     _leaveAfterSuccess();
     // 성공 → `_AppEntry` 가 MainDsScreen 으로 자동 전환.
     // 사업자 정보가 없으면 홈에서 온보딩 배너로 안내한다.
+  }
+
+  /// '로그인 없이 먼저 써보기' — 체험으로 시작해 스캔 화면을 연다. (#192)
+  ///
+  /// 🔴 **이미 체험 중이면 새로 만들지 않는다.** `enterAsGuest()` 가
+  ///    `currentUser != null` 이면 그대로 돌아오므로, 찍어 두신 영수증과
+  ///    남은 장수가 그대로 유지된다. (5장을 새로 드리지 않는다)
+  Future<void> _startGuest() async {
+    if (_busy) return;
+    if (AuthUnavailableBanner.blocked) {
+      showFnToast(context, FirebaseStatus.userMessage,
+          type: FnToastType.error, duration: const Duration(seconds: 5));
+      return;
+    }
+    setState(() => _busy = true);
+    var ok = false;
+    try {
+      ok = await GuestService.instance.enterAsGuest();
+    } catch (_) {
+      ok = false;
+    }
+    if (!mounted) return;
+    setState(() => _busy = false);
+    if (!ok) {
+      showFnToast(context, '지금은 체험을 시작할 수 없어요. 잠시 뒤 다시 시도해 주세요.',
+          type: FnToastType.error);
+      return;
+    }
+    // 체험은 스캔 화면에서 시작한다.
+    FnTabIntent.request('scan');
+    // 루트(`_AppEntry`)가 게스트 상태를 보고 MainDsScreen 으로 바꾼다.
+    _leaveAfterSuccess();
   }
 
   /// 스플래시의 '가입하기' → 회원가입 **이메일 단계** 화면.
@@ -498,9 +531,50 @@ class _SplashDsScreenState extends State<SplashDsScreen> {
                   ),
                 ),
 
+                // ── 로그인 없이 먼저 써보기 (#192) ──────────────
+                //
+                // 🔴 이 기기에서 회원으로 로그인한 적이 있으면 첫 화면이
+                //    여기(로그인)로 온다. 그래도 체험으로 갈 길은 열어
+                //    둔다 — 다른 분이 잠깐 써 보실 수도 있다.
+                //
+                // 🔴 이미 체험 중이면 보여 주지 않는다. 눌러도 할 일이
+                //    없고, 새 체험 계정이 또 생기는 것처럼 오해하신다.
+                if (!GuestService.instance.isGuest) ...[
+                  const SizedBox(height: 12),
+                  Center(
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: _busy ? null : _startGuest,
+                      child: const Padding(
+                        padding: EdgeInsets.symmetric(
+                            vertical: 6, horizontal: 8),
+                        child: Text(
+                          '로그인 없이 먼저 써보기',
+                          style: TextStyle(
+                            fontFamily: 'Pretendard',
+                            fontSize: 13.5,
+                            fontWeight: FontWeight.w700,
+                            color: _IntroLogin.link,
+                            decoration: TextDecoration.underline,
+                            decorationColor: _IntroLogin.link,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+
                 // ── SNS ────────────────────────────────────────
                 // 시안 가입->SNS제목 80.0dp
-                const SizedBox(height: 62),
+                //
+                // 🔴 '먼저 써보기' 줄이 보일 때는 그 줄이 먹은 높이만큼
+                //    여기서 돌려준다. 화면 전체 높이가 예전과 같아야
+                //    `FnDesignFit` 배율이 1 로 유지되고, 배율이 1 이라야
+                //    버튼 폭도 예전 그대로다(#132 회귀 방지).
+                //    줄이 안 보이면 **예전 값 62 를 그대로** 쓴다.
+                SizedBox(
+                  height: GuestService.instance.isGuest ? 62 : 14,
+                ),
                 const Center(
                   child: Text(
                     'SNS 계정으로 간편 시작해볼까요?',

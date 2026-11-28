@@ -167,14 +167,14 @@ Future<void> fnRunGuestMigration(BuildContext context) async {
 
     case GuestMigrateStatus.skippedExisting:
       // 🔴 Hive 복사도 하지 않는다. 남의 장부에 체험 영수증이 섞인다.
-      await showFnAlert(
-        context,
-        title: '기존 계정으로 로그인했어요',
-        message: '체험으로 찍은 영수증 ${r.guestReceipts}장은 '
-            '기존 계정에 옮기지 않았어요. 필요하면 다시 찍어 주세요.',
-        confirmLabel: '확인',
-        icon: Icons.info_outline_rounded,
-      );
+      //
+      // 🔴 사장님 지시(2026-11-28) — **팝업이 아니라 닫을 수 있는 안내
+      //    줄**로 바꿨다. 로그인하자마자 팝업이 또 뜨면 피로하다.
+      //    줄은 `FnShell` 안의 `FnMigrateSkippedNotice` 가 그린다.
+      //
+      // 🔴 **새로 가입하신 분에게는 절대 안 뜬다.** 이 갈래(서버가
+      //    "기존 회원이라 안 옮겼다" 고 답한 경우)에서만 켠다.
+      GuestService.instance.raiseSkipNotice();
 
     case GuestMigrateStatus.failed:
       final again = await showFnAlert(
@@ -351,7 +351,7 @@ class _SignUpSheetBody extends StatelessWidget {
 // ─────────────────────────────────────────────────────────────
 
 /// 첫 스캔 **전에 한 번** 띄우는 안내. 동의해야 스캔으로 넘어간다.
-const String kTrialConsentTitle = '체험으로 찍어 보기 전에';
+const String kTrialConsentTitle = '플로노트를 처음 써보시나요?';
 
 /// 첫 스캔이 **성공한 직후 한 번** 띄우는 안내. 그냥 닫을 수 있다.
 const String kFirstScanDoneTitle = '잘 읽혔나요?';
@@ -423,10 +423,28 @@ class _TrialConsentBody extends StatelessWidget {
           ),
         ),
         const SizedBox(height: FnDs.gapL),
+        // 주 버튼 — 체험을 이어서 한다.
         FnPrimaryButton(
-          label: '확인하고 찍기',
+          label: '처음이에요, 체험해볼게요',
           // 🔴 `pop(true)` 여야 부르는 쪽이 스캔을 시작한다.
           onTap: () => Navigator.of(context).pop(true),
+        ),
+        const SizedBox(height: FnDs.gapS),
+        // 보조 버튼 — 이미 회원이신 분을 로그인으로 보낸다.
+        //
+        // 🔴 이 자리가 없으면, 쓰시던 사장님이 새 기기·시크릿 창에서
+        //    들어오셨을 때 체험 계정에 영수증을 쌓게 된다. 그 영수증은
+        //    **기존 계정으로 옮겨지지 않는다**(서버가 기존 회원이면
+        //    건너뛴다). 들어가기 전에 길을 갈라 드려야 한다.
+        //
+        // 🔴 `pop(false)` 다 — 스캔을 시작하지 않고 로그인 화면으로 간다.
+        FnOutlineButton(
+          label: '이미 회원이에요 → 로그인',
+          onTap: () {
+            final outer = context;
+            Navigator.of(context).pop(false);
+            fnOpenSignIn(outer);
+          },
         ),
       ],
     );

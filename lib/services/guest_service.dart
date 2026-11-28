@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/user_model.dart';
 import 'auth_service.dart';
@@ -82,6 +83,15 @@ class GuestService extends ChangeNotifier {
   ///    한 줄도 건드리지 않는다.
   static const String _metaCol = 'meta';
   static const String _metaDoc = 'guest';
+
+  /// 이 **기기**에서 회원으로 로그인한 적이 있는가. (SharedPreferences)
+  ///
+  /// 🔴 왜 기기에 적나. 로그아웃하면 Firebase 쪽에는 아무 흔적이 없다.
+  ///    그 상태로 다시 들어오시면 앱은 "처음 온 사람" 과 구별할 수 없어서
+  ///    **회원인 사장님을 게스트로 밀어 넣는다.** 그러면 본인 영수증이
+  ///    하나도 없는 화면을 보고 "데이터가 날아갔다" 고 느끼신다.
+  ///    한 번이라도 회원으로 들어온 기기는 로그인 화면을 먼저 보여 준다.
+  static const String _kMemberSeen = 'fn_member_signed_in_before';
 
   int _scans = 0;
   bool _loaded = false;
@@ -328,6 +338,64 @@ class GuestService extends ChangeNotifier {
     }
   }
 
+  // ── "기존 계정이라 안 옮겼어요" 안내 줄 ───────────────────────
+
+  /// 안내 줄을 지금 띄워야 하는가.
+  ///
+  /// 🔴 **새로 가입하신 분에게는 절대 켜지지 않는다.** 서버가 "기존
+  ///    회원이라 옮기지 않았다"(`skipped`) 고 답했을 때만 켠다.
+  ///    새 회원은 영수증이 그대로 옮겨졌으므로 알릴 것이 없다.
+  bool _skipNotice = false;
+  bool get pendingSkipNotice => _skipNotice;
+
+  /// 이관이 건너뛰어졌다. 다음 화면에서 한 번 알린다.
+  void raiseSkipNotice() {
+    if (_skipNotice) return;
+    _skipNotice = true;
+    notifyListeners();
+  }
+
+  /// 사장님이 닫으셨다. 다시 띄우지 않는다.
+  void dismissSkipNotice() {
+    if (!_skipNotice) return;
+    _skipNotice = false;
+    notifyListeners();
+  }
+
+  // ── 이 기기에 회원 로그인 이력이 있는가 ──────────────────────
+
+  /// 메모리 사본. `await` 없이 `build` 에서 읽을 수 있어야 한다.
+  static bool _memberSeen = false;
+  static bool get memberSeenOnThisDevice => _memberSeen;
+
+  /// 앱 시작 때 한 번 읽어 둔다.
+  static Future<bool> loadMemberSeen() async {
+    try {
+      final p = await SharedPreferences.getInstance();
+      _memberSeen = p.getBool(_kMemberSeen) ?? false;
+    } catch (_) {
+      _memberSeen = false;      // 못 읽으면 "처음" 으로 본다
+    }
+    return _memberSeen;
+  }
+
+  /// 회원으로 로그인했다고 이 기기에 적는다.
+  ///
+  /// 🔴 **게스트(익명)는 적지 않는다.** 익명까지 적으면 체험만 해 본
+  ///    기기도 다음부터 로그인 화면을 보게 된다 — 체험이 통째로 막힌다.
+  static Future<void> markMemberSeen() async {
+    if (_memberSeen) return;
+    _memberSeen = true;
+    try {
+      final p = await SharedPreferences.getInstance();
+      await p.setBool(_kMemberSeen, true);
+    } catch (_) {/* 다음 로그인 때 다시 적는다 */}
+  }
+
+  /// 테스트에서만 되돌린다.
+  @visibleForTesting
+  static void resetMemberSeenForTest() => _memberSeen = false;
+
   /// 가입이 끝났다. 체험 숫자를 치운다.
   void clearAfterSignUp() {
     _scans = 0;
@@ -340,10 +408,12 @@ class GuestService extends ChangeNotifier {
     int scans = 0,
     bool agreed = false,
     bool doneNoticeShown = false,
+    bool skipNotice = false,
   }) {
     _scans = scans;
     _agreed = agreed;
     _doneNoticeShown = doneNoticeShown;
+    _skipNotice = skipNotice;
     _loaded = true;
   }
 }

@@ -29,6 +29,7 @@ import 'services/vendor_tax_service.dart';
 import 'services/subscription_service.dart';
 import 'services/kakao_config.dart';
 import 'services/pwa_install.dart';
+import 'design/fn_tab_intent.dart';
 import 'theme/app_theme.dart';
 import 'screens/ds/splash_ds_screen.dart';
 import 'screens/ds/main_ds_screen.dart';
@@ -164,6 +165,10 @@ void main() async {
 
   // Initialize notification service
   await NotificationService().init();
+
+  // 🔴 이 기기에서 회원으로 로그인한 적이 있는지 먼저 읽는다.
+  //    첫 화면을 고르는 데 쓰므로 `authProvider.init()` 보다 앞서야 한다.
+  await GuestService.loadMemberSeen();
 
   // Initialize auth provider
   final authProvider = AuthProvider();
@@ -322,6 +327,10 @@ class _AppEntryState extends State<_AppEntry> {
     if (ok) {
       // 첫 방문을 남긴다. 화면은 바뀌지 않는다.
       unawaited(FnAnalytics.guestStart());
+      // 🔴 체험은 **스캔 화면**에서 시작한다. 사장님 지시 —
+      //    "바로 게스트로 시작해서 스캔 화면 열기".
+      //    홈으로 보내면 잠긴 카드만 잔뜩 보여서 할 수 있는 일이 안 보인다.
+      FnTabIntent.request('scan');
     }
   }
 
@@ -335,24 +344,43 @@ class _AppEntryState extends State<_AppEntry> {
       return const Scaffold(body: IntroSplash());
     }
 
-    // 🔴 스플래시가 끝났는데 로그인이 안 돼 있다 → 게스트로 들어간다.
-    //    `addPostFrameCallback` 으로 미루는 이유: build 안에서 바로
-    //    `setState` 를 부르면 Flutter 가 거부한다.
-    if (!auth.isLoggedIn && !_guestTried) {
+    // 회원이면 지금까지와 똑같이 바로 회원 홈.
+    if (auth.isLoggedIn) return const MainDsScreen();
+
+    // ── 여기부터는 로그인이 안 된 분이다 ──────────────────────
+    //
+    // 🔴 두 갈래로 나뉜다. 가르는 기준은 **이 기기에 회원 로그인 이력이
+    //    있는가** 하나뿐이다.
+    //
+    //    (가) 이력 없음 — 처음 오신 분. 로그인 화면을 보여 드리지 않고
+    //         바로 게스트로 시작해 **스캔 화면**을 연다. 앱이 뭘 해 주는지
+    //         먼저 보셔야 가입할 마음이 든다.
+    //
+    //    (나) 이력 있음 — 쓰시던 사장님이 로그아웃하신 것이다. 게스트로
+    //         밀어 넣으면 **본인 영수증이 하나도 없는 화면**을 보시고
+    //         "데이터가 날아갔다" 고 느끼신다. 로그인 화면을 보여 드린다.
+    //         그 화면에도 '로그인 없이 먼저 써보기' 가 있어서 원하시면
+    //         언제든 체험으로 갈 수 있다.
+    if (GuestService.memberSeenOnThisDevice && !GuestService.instance.isGuest) {
+      return const SplashDsScreen();
+    }
+
+    // 🔴 (가) 게스트로 들어간다. `addPostFrameCallback` 으로 미루는 이유:
+    //    build 안에서 바로 `setState` 를 부르면 Flutter 가 거부한다.
+    if (!_guestTried) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) unawaited(_tryGuest());
       });
     }
 
-    if (auth.isLoggedIn) return const MainDsScreen();
-
-    // 🔴 게스트로 들어가 보는 중이다(#192). 스플래시를 유지해서
-    //    로그인 화면이 한 번 번쩍이는 것을 막는다.
+    // 게스트로 들어가 보는 중이다. 스플래시를 유지해서 로그인 화면이
+    // 한 번 번쩍이는 것을 막는다.
     if (_guestTrying) {
       return const Scaffold(body: IntroSplash());
     }
 
-    // 게스트도 안 됐다. 예전 길(인트로 → 로그인)로 간다.
+    // 게스트도 안 됐다(익명 로그인 꺼짐·인터넷 없음).
+    // 예전 길(인트로 → 로그인)로 간다. 게스트가 안 된다고 앱이 멈추면 안 된다.
     if (!_introDone) {
       return IntroDsScreen(
         onDone: () => setState(() => _introDone = true),

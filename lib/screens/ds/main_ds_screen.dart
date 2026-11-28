@@ -102,6 +102,14 @@ class _MainDsScreenState extends State<MainDsScreen> {
     // 탭 이동 요청을 받는다. (#113)
     FnTabIntent.pending.addListener(_onTabIntent);
 
+    // 🔴 리스너는 **값이 바뀔 때만** 울린다. 이 화면이 뜨기 **전에** 이미
+    //    요청이 남아 있으면 아무도 집어 가지 않아 그대로 묻힌다.
+    //    게스트 첫 진입이 정확히 그 경우다 — `main.dart` 가 게스트로
+    //    들어가면서 'scan' 을 남기는데, 그 시점에 이 화면은 아직 없다.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _applyTabIntent();
+    });
+
     // 🔴 알림 벨의 빨간 점은 '안 읽은 알림이 있나' 로 정해진다.
     //    듣고 있지 않으면 알림을 읽어도 점이 그대로 남는다.
     NoticeFeed.instance.addListener(_onNotice);
@@ -149,15 +157,14 @@ class _MainDsScreenState extends State<MainDsScreen> {
 
   /// 게스트에게 잠긴 탭. 잠겼으면 **기능 한 줄 설명**을 준다. (#195)
   ///
-  /// 🔴 홈의 `_push()` 와 달리 캘린더는 **탭바**로 열린다. 그래서 홈 쪽
-  ///    잠금이 여기까지 닿지 않았고, 이 자리에 따로 붙였다.
+  /// 🔴 2026-11-28 사장님 지시로 **다섯 탭을 모두 열었다.** 캘린더까지
+  ///    포함해서다. 체험으로 찍은 영수증이 달력에 찍히는 걸 보셔야
+  ///    이 앱이 무엇을 해 주는지 알 수 있다.
   ///
-  /// 🔴 잠그는 건 캘린더 하나뿐이다. 홈·내역·스캔·프로필은 체험해 보셔야
-  ///    가입할 마음이 들기 때문에 일부러 열어 둔다.
+  /// 🔴 함수는 **남겨 둔다.** 탭을 다시 잠가야 할 때 여기 한 줄만
+  ///    되살리면 된다. `_onTab` 쪽 분기도 그대로 둔다.
+  ///    (지우면 다음에 잠글 때 두 군데를 다시 이어야 한다)
   static String? _guestLockLine(String key) {
-    if (key == 'calendar') {
-      return '어느 날 얼마나 사입했는지 달력 위에서 한눈에 보여 드려요';
-    }
     return null;
   }
 

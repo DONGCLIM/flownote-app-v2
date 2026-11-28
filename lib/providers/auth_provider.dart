@@ -191,6 +191,16 @@ class AuthProvider extends ChangeNotifier {
         .timeout(const Duration(seconds: 8), onTimeout: () {})
         .catchError((_) {});
     await _saveCache();
+
+    // 🔴 이 기기에 "회원으로 들어온 적 있다" 를 남긴다. 로그아웃한 뒤
+    //    다시 오시면 게스트로 밀어 넣지 않고 로그인 화면을 보여 주기
+    //    위해서다. (안 적으면 회원이 본인 영수증 없는 화면을 보게 된다)
+    //
+    // 🔴 익명은 적지 않는다. 체험만 해 본 기기까지 로그인 화면으로
+    //    가면 체험이 통째로 막힌다.
+    if (!fbUser.isAnonymous) {
+      await GuestService.markMemberSeen();
+    }
   }
 
   static String _nameFromEmail(String? email) {

@@ -948,9 +948,11 @@ class _HomeDsScreenState extends State<HomeDsScreen> {
     if (page is TrendDsScreen) {
       return '달마다 지출이 어떻게 움직였는지 추이를 보여 드려요';
     }
-    if (page is GuideDsScreen) {
-      return '사입을 도와주는 계산기와 비교표를 모아 뒀어요';
-    }
+    // 🔴 `GuideDsScreen`(스마트 사입 가이드)은 **잠그지 않는다.**
+    //    사장님 지시(2026-11-28) — 들어가서 내용은 볼 수 있게 하고,
+    //    안에 있는 기능 버튼을 누를 때 가입 시트를 띄운다. 목록 자체를
+    //    막으면 이 앱이 무엇을 해 주는지 보여 드릴 길이 없다.
+    //    잠금은 `insight_ds_screens.dart` 의 `_open()` 에 붙어 있다.
     return null;
   }
 }

@@ -524,21 +524,19 @@ void _k195GuestTab() {
   group('#195 게스트 잠금 — 캘린더 탭', () {
     tearDown(() => GuestService.debugIsGuest = null);
 
-    testWidgets('🔴 게스트가 캘린더 탭을 누르면 탭이 안 바뀌고 바텀시트가 뜬다',
-        (t) async {
-      GuestService.debugIsGuest = true;
-      await _pumpShell(t);
-      expect(find.byType(CalendarDsScreen), findsNothing,
-          reason: '시작은 홈 탭이다');
-
-      await t.tap(find.text('캘린더'));
-      await t.pump();
-      await t.pump(const Duration(milliseconds: 500));
-
-      expect(t.takeException(), isNull);
-      expect(find.byType(CalendarDsScreen), findsNothing,
-          reason: '잠긴 탭이 열렸다');
-      expect(find.text(kSignUpSheetTitle), findsOneWidget);
+    testWidgets('🔴 게스트도 캘린더 탭이 열린다 (2026-11-28 지시)', (tester) async {
+      // 🔴 전에는 캘린더만 잠겨 있었다. 사장님 지시로 **다섯 탭을 모두**
+      //    열었다 — 체험으로 찍은 영수증이 달력에 찍히는 걸 보셔야
+      //    이 앱이 무엇을 해 주는지 알 수 있다.
+      final src =
+          File('lib/screens/ds/main_ds_screen.dart').readAsStringSync();
+      final body = src.substring(src.indexOf('static String? _guestLockLine'));
+      final fn = body.substring(0, body.indexOf('\n  }'));
+      // 잠그는 탭이 하나도 없다.
+      expect(fn, isNot(contains("'calendar'")));
+      expect(fn, contains('return null;'));
+      // 🔴 분기 자체는 남겨 둔다. 다시 잠글 때 한 줄만 되살리면 된다.
+      expect(src, contains('GuestService.instance.isGuest'));
     });
 
     testWidgets('🔴 회원은 지금처럼 캘린더 탭이 열린다', (t) async {

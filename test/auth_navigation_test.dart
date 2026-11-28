@@ -455,10 +455,16 @@ void _k195GuestMigrate() {
       final s = read('lib/widgets/fn_signup_sheet.dart');
       final sk = s.substring(s.indexOf('case GuestMigrateStatus.skippedExisting:'),
           s.indexOf('case GuestMigrateStatus.failed:'));
-      expect(sk, contains('기존 계정으로 로그인했어요'));
-      expect(sk, contains('옮기지 않았어요'));
-      expect(sk, contains('필요하면 다시 찍어 주세요.'));
-      expect(sk, contains("confirmLabel: '확인'"));
+      // 🔴 2026-11-28 사장님 지시로 **팝업이 아니라 닫을 수 있는 안내 줄**
+      //    이 되었다. 문구는 `FnMigrateSkippedNotice` 가 들고 있다.
+      expect(sk, contains('raiseSkipNotice'));
+      final banner = read('lib/widgets/fn_guest_banner.dart');
+      expect(banner, contains('체험으로 찍은 영수증은 기존 계정으로 옮겨지지 않아요.'));
+      expect(banner, contains('필요한 영수증은 다시 스캔해 주세요.'));
+      // 닫을 수 있어야 한다.
+      expect(banner, contains('dismissSkipNotice'));
+      // 🔴 새로 가입한 분에게는 안 뜬다 — 켜는 자리가 이 갈래 하나뿐이다.
+      expect('raiseSkipNotice()'.allMatches(s).length, 1);
       // 🔴 기기 상자를 복사하면 남의 장부에 체험 영수증이 섞인다.
       expect(sk, isNot(contains('adoptGuestBox')));
       expect(sk, isNot(contains('pushAllToCloud')));

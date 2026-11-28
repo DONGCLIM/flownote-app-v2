@@ -3,6 +3,7 @@ import 'fn_tokens.dart';
 import 'fn_home_tokens.dart';
 import 'fn_brand.dart';
 import 'fn_icons.dart';
+import '../widgets/fn_guest_banner.dart';
 
 /// 시안 원본 `window.FN.Shell` 1:1 포팅
 ///
@@ -107,6 +108,17 @@ class FnShell extends StatelessWidget {
             )
           else
             SizedBox(height: topInset),
+
+          // 🔴 게스트 체험 띠 (#192). 모든 화면 맨 위에 고정으로 붙는다.
+          //
+          //    회원에게는 `SizedBox.shrink()` 라 **높이가 0** 이다 —
+          //    회원 화면은 한 픽셀도 달라지지 않는다. 그래서 화면마다
+          //    붙이지 않고 여기 한 곳에만 둔다(빠뜨릴 자리가 없다).
+          const FnGuestBanner(),
+
+          // 체험 영수증이 기존 계정으로 안 옮겨졌을 때만 한 번 뜨는 줄.
+          const FnMigrateSkippedNotice(),
+
           Expanded(child: child),
           if (tabs != null && floatingTabs)
             // #136 시안 탭바 — 떠 있는 흰 카드

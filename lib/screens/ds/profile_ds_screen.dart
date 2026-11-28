@@ -295,11 +295,19 @@ class _ProfileDsScreenState extends State<ProfileDsScreen> {
                             builder: (_) => const NoticeListDsScreen()),
                       ),
                 ),
-                // 🔴 문의는 잠근다. 게스트는 답변을 받을 곳이 없다.
-                ('제안 및 피드백', lockedTap),
+                // 🔴 2026-11-28 사장님 지시로 **문의를 열었다.** 체험 중에
+                //    막히는 곳이 있으면 물어보실 수 있어야 한다. 답변은
+                //    익명 계정에도 `users/{uid}` 아래로 남으므로 받으실 수
+                //    있다(가입하면 그 계정으로 따라간다).
+                (
+                  '제안 및 피드백',
+                  () => Navigator.of(context).push(
+                        MaterialPageRoute(
+                            builder: (_) => const InquiryListDsScreen()),
+                      ),
+                ),
                 ('이용약관 및 개인정보 처리방침', () => _openLegal(context)),
               ],
-              lockedLabels: const {'제안 및 피드백'},
             ),
 
             // 🔴 마케팅 수신 동의와 회원 탈퇴는 **계정이 있어야** 뜻이 있다.
