@@ -13,7 +13,9 @@ import '../../services/firebase_status.dart';
 import '../../services/kakao_config.dart';
 import '../../services/pwa_install.dart';
 import '../../theme/fn_ds.dart';
+import '../../services/guest_service.dart';
 import '../../widgets/fn_inquiry_parts.dart';
+import '../../widgets/fn_signup_sheet.dart';
 import 'add_to_home_sheet.dart';
 import 'auth_unavailable_banner.dart';
 import 'legal_doc_ds_screen.dart';
@@ -170,6 +172,16 @@ class _SplashDsScreenState extends State<SplashDsScreen> {
     }
     setState(() => _busy = true);
     final auth = context.read<AuthProvider>();
+
+    // 🔴 #195 ⑤-d — 체험 중일 때만, 로그인 **시작 전에** 체험 계정의 ID
+    //    토큰을 맡아 둔다. 카카오는 커스텀 토큰이라 로그인하는 순간 uid 가
+    //    바뀌어, 그 뒤에는 체험 계정을 증명할 길이 없다.
+    //
+    //    가입하신 분은 `fnRememberGuest()` 가 맡아 두는 것 없이 그냥
+    //    돌아오므로, 아래 로그인 줄은 **지금과 똑같이** 돈다.
+    final wasGuest = GuestService.instance.isGuest;
+    if (wasGuest) await fnRememberGuest();
+
     final ok = switch (s) {
       _Sns.kakao => await auth.signInWithKakao(),
       _Sns.apple => await auth.signInWithApple(),
@@ -186,6 +198,14 @@ class _SplashDsScreenState extends State<SplashDsScreen> {
       }
       return;
     }
+
+    // 🔴 로그인 **끝난 뒤에** 옮긴다. 맡아 둔 것이 없으면(=회원이었다면)
+    //    첫 줄에서 조용히 돌아간다.
+    if (wasGuest) {
+      await fnRunGuestMigration(context);
+      if (!mounted) return;
+    }
+
     _leaveAfterSuccess();
     // 성공 → `_AppEntry` 가 MainDsScreen 으로 자동 전환.
     // 사업자 정보가 없으면 홈에서 온보딩 배너로 안내한다.

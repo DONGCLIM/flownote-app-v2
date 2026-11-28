@@ -353,6 +353,95 @@ class ReceiptProvider extends ChangeNotifier {
     return added;
   }
 
+  // ── 체험(게스트) 상자 넘겨받기 ───────────────────────────────
+
+  /// 체험으로 찍어 둔 영수증을 **지금 계정 상자로 옮겨 담는다.** (#195 ⑤-d)
+  ///
+  /// 카카오로 가입하면 uid 가 바뀐다(커스텀 토큰이라 붙일 수 없다). 그러면
+  /// 기기 안 영수증은 **옛 상자에 그대로 남아** 화면에서 사라진 것처럼
+  /// 보인다. 서버 쪽은 `migrateGuestData` 가 옮기고, 기기 쪽은 여기서
+  /// 옮긴다.
+  ///
+  /// 🔴 서버가 **"옮겼다"** 고 답했을 때만 부른다. 기존 회원이라
+  ///    건너뛴 경우에는 부르면 안 된다 — 남의 장부에 체험 영수증이
+  ///    섞인다.
+  /// 🔴 지금 열린 상자가 **내 상자일 때만** 옮긴다. 계정이 막 바뀌는
+  ///    찰나에 넣으면 앞사람 상자로 들어간다. ([pushAllToCloud] 와 같은 빗장)
+  /// 🔴 원본(체험 상자)은 **지우지 않는다.** 옮기기가 반쯤 되다 말아도
+  ///    되돌릴 것이 남아 있어야 한다.
+  ///
+  /// 돌려주는 값은 새로 담긴 장수다.
+  Future<int> adoptGuestBox(String guestUid) async {
+    if (!_ready) return 0;
+    final uid = _uid;
+    if (uid == null || uid.isEmpty) return 0;
+    if (_openedFor != uid) return 0;
+
+    final from = boxNameFor(guestUid);
+    if (from == boxNameFor(uid)) return 0;      // 같은 상자다 — 할 일 없음
+
+    Box<ReceiptModel>? src;
+    var opened = false;
+    try {
+      if (!await Hive.boxExists(from)) return 0;
+      if (Hive.isBoxOpen(from)) {
+        src = Hive.box<ReceiptModel>(from);
+      } else {
+        src = await Hive.openBox<ReceiptModel>(from);
+        opened = true;
+      }
+      final moved = await copyReceipts(src, _box);
+      if (moved > 0) {
+        _invalidate();
+        notifyListeners();
+      }
+      if (kDebugMode) debugPrint('[Receipt] 체험 상자에서 $moved건 넘겨받음');
+      return moved;
+    } catch (e) {
+      if (kDebugMode) debugPrint('[Receipt] 체험 상자 넘겨받기 실패: $e');
+      return 0;
+    } finally {
+      if (opened && src != null) {
+        try {
+          await src.close();
+        } catch (_) {/* 이미 닫혔으면 넘어간다 */}
+      }
+    }
+  }
+
+  /// 상자 사이로 영수증을 베껴 담는다.
+  ///
+  /// 🔴 **같은 id 가 이미 있으면 건너뛴다.** 두 번 불러도 늘어나지 않는다
+  ///    (옮기다 끊겨서 다시 시도하는 길이 있다).
+  /// 🔴 **새 객체로 만들어** 담는다. `HiveObject` 는 상자 하나에만 속할 수
+  ///    있어서, 원본을 그대로 넣으면 "already in a box" 로 터진다.
+  @visibleForTesting
+  static Future<int> copyReceipts(
+    Box<ReceiptModel> from,
+    Box<ReceiptModel> to,
+  ) async {
+    var moved = 0;
+    for (final r in from.values.toList()) {
+      if (to.containsKey(r.id)) continue;
+      await to.put(
+        r.id,
+        r.copyWith(
+          items: r.items
+              .map((i) => FlowerItem(
+                    name: i.name,
+                    quantity: i.quantity,
+                    unitPrice: i.unitPrice,
+                    unit: i.unit,
+                    color: i.color,
+                  ))
+              .toList(),
+        ),
+      );
+      moved++;
+    }
+    return moved;
+  }
+
   /// 영수증을 저장한다.
   ///
   /// 🔴 저장 전에 사진을 **영구 폴더로 옮긴다.**

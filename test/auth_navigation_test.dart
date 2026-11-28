@@ -2,6 +2,13 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hive/hive.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+import 'package:flow_note/models/receipt_model.dart';
+import 'package:flow_note/providers/receipt_provider.dart';
+import 'package:flow_note/services/guest_migration.dart';
+import 'package:flow_note/services/guest_service.dart';
 
 /// 요청 #30 회귀 — "로그인은 되는데 다음 화면으로 안 넘어간다".
 ///
@@ -99,6 +106,7 @@ void main() {
   });
 
   _k195GuestLink();
+  _k195GuestMigrate();
 }
 
 // ─────────────────────────────────────────────────────────────────────
@@ -309,6 +317,305 @@ void _k195GuestLink() {
       // 회원 문구는 그대로 남아 있다.
       expect(src, contains('한 번 설치하면 앱처럼 바로 열려요.'));
       expect(src, contains('GuestService.instance.isGuest'));
+    });
+  });
+}
+
+
+// ─────────────────────────────────────────────────────────────────────
+//  #195 ⑤-d 체험 데이터 옮기기 (migrateGuestData 연결)
+//
+//  🔴 서버를 부르는 길은 Firebase 가 있어야 해서 테스트에서 돌릴 수 없다.
+//     그래서 ① 서버 없이 돌릴 수 있는 곳은 **실제로 돌려 보고**(상자 복사·
+//     답 해석·회원 차단), ② 화면을 잇는 순서는 **코드 계약**으로 못을
+//     박는다. 이 계약이 깨지면 체험 영수증이 조용히 사라진다.
+// ─────────────────────────────────────────────────────────────────────
+void _k195GuestMigrate() {
+  String read(String p) => File(p).readAsStringSync();
+
+  ReceiptModel receipt(int i) => ReceiptModel(
+        id: 'g$i',
+        date: DateTime(2026, 3, 10 + i),
+        storeName: '양재꽃시장',
+        items: [
+          FlowerItem(name: '장미', quantity: 10, unitPrice: 1200, unit: 'stems'),
+        ],
+        totalAmount: 12000 + i.toDouble(),
+        rawOcrText: 't$i',
+        createdAt: DateTime(2026, 3, 10 + i),
+      );
+
+  // ── ① 게스트 → 카카오 **새 회원** ──────────────────────────────
+  group('#195 ⑤-d 게스트 → 카카오 새 회원 — 5장이 그대로 따라온다', () {
+    late Directory dir;
+
+    setUpAll(() async {
+      dir = await Directory.systemTemp.createTemp('fn195mig');
+      Hive.init(dir.path);
+      if (!Hive.isAdapterRegistered(0)) Hive.registerAdapter(ReceiptModelAdapter());
+      if (!Hive.isAdapterRegistered(1)) Hive.registerAdapter(FlowerItemAdapter());
+    });
+
+    tearDownAll(() async {
+      await Hive.deleteFromDisk();
+      await dir.delete(recursive: true);
+    });
+
+    test('🔴 체험 상자 5장이 새 계정 상자로 그대로 옮겨진다', () async {
+      final from = await Hive.openBox<ReceiptModel>('mig_guest_a');
+      final to = await Hive.openBox<ReceiptModel>('mig_member_a');
+      for (var i = 0; i < 5; i++) {
+        await from.put('g$i', receipt(i));
+      }
+
+      final moved = await ReceiptProvider.copyReceipts(from, to);
+
+      expect(moved, 5);
+      expect(to.length, 5);
+      // 품목까지 따라와야 한다 — 빈 영수증만 남으면 쓸모가 없다.
+      expect(to.get('g2')!.items.single.name, '장미');
+      expect(to.get('g2')!.totalAmount, 12002);
+      // 🔴 원본은 지우지 않는다. 옮기다 끊겨도 되돌릴 것이 남아야 한다.
+      expect(from.length, 5);
+
+      await from.close();
+      await to.close();
+    });
+
+    test('🔴 두 번 옮겨도 늘어나지 않는다 (다시 시도해도 안전)', () async {
+      final from = await Hive.openBox<ReceiptModel>('mig_guest_b');
+      final to = await Hive.openBox<ReceiptModel>('mig_member_b');
+      for (var i = 0; i < 5; i++) {
+        await from.put('g$i', receipt(i));
+      }
+
+      expect(await ReceiptProvider.copyReceipts(from, to), 5);
+      expect(await ReceiptProvider.copyReceipts(from, to), 0);
+      expect(to.length, 5);
+
+      await from.close();
+      await to.close();
+    });
+
+    test('🔴 서버가 "옮겼다" 고 하면 장수를 그대로 읽는다', () {
+      final r = GuestMigration.parseResult(const {
+        'ok': true,
+        'skipped': false,
+        'receipts': 5,
+        'purchaseLists': 1,
+        'guestReceipts': 5,
+      });
+      expect(r.isMoved, isTrue);
+      expect(r.receipts, 5);
+    });
+
+    test('🔴 옮김 갈래에서만 상자를 복사하고 클라우드로 올린다', () {
+      final s = read('lib/widgets/fn_signup_sheet.dart');
+      final mv = s.substring(s.indexOf('case GuestMigrateStatus.moved:'),
+          s.indexOf('case GuestMigrateStatus.skippedExisting:'));
+      expect(mv, contains('adoptGuestBox'));
+      expect(mv, contains('pushAllToCloud'));
+      expect(mv, contains('clearAfterSignUp'));
+      expect(mv, contains('_afterSignUpWithCount'));
+      // 안내 문구에 장수가 들어간다.
+      final a = s.substring(s.indexOf('Future<void> _afterSignUpWithCount'));
+      expect(a, contains(r"가입 완료! 찍어둔 영수증 $n장이 저장됐어요"));
+      expect(a, contains('AddToHomeSheet.open'));   // → 바탕화면 설치 안내
+    });
+
+    test('🔴 가입 동의 절차는 기존 카카오 로그인이 그대로 한다', () {
+      final prov = read('lib/providers/auth_provider.dart');
+      final k = prov.substring(prov.indexOf('Future<bool> signInWithKakao({'),
+          prov.indexOf('bool get isKakaoAccount'));
+      // 🔴 기존 함수 안에 게스트 분기를 넣지 않았다. 회원은 지금 그대로다.
+      expect(k, isNot(contains('GuestService')));
+      expect(k, isNot(contains('GuestMigration')));
+      // 회원 문서 생성 · 필수 동의 기록은 예전 그대로 남아 있다.
+      expect(k, contains('_hydrate(fbUser)'));
+      expect(k, contains('_ensureRequiredConsents(fbUser.uid'));
+    });
+  });
+
+  // ── ② 게스트 → **기존** 카카오 회원 ───────────────────────────
+  group('#195 ⑤-d 게스트 → 기존 회원 — 옮기지 않고 알려만 드린다', () {
+    test('🔴 서버가 건너뛰었다고 하면 장수와 함께 "안 옮김" 으로 읽는다', () {
+      final r = GuestMigration.parseResult(const {
+        'ok': true,
+        'skipped': true,
+        'reason': 'existing_member',
+        'receipts': 0,
+        'guestReceipts': 5,
+      });
+      expect(r.isSkipped, isTrue);
+      expect(r.isMoved, isFalse);
+      expect(r.guestReceipts, 5);
+    });
+
+    test('🔴 안내 문구가 지시대로이고, 상자는 건드리지 않는다', () {
+      final s = read('lib/widgets/fn_signup_sheet.dart');
+      final sk = s.substring(s.indexOf('case GuestMigrateStatus.skippedExisting:'),
+          s.indexOf('case GuestMigrateStatus.failed:'));
+      expect(sk, contains('기존 계정으로 로그인했어요'));
+      expect(sk, contains('옮기지 않았어요'));
+      expect(sk, contains('필요하면 다시 찍어 주세요.'));
+      expect(sk, contains("confirmLabel: '확인'"));
+      // 🔴 기기 상자를 복사하면 남의 장부에 체험 영수증이 섞인다.
+      expect(sk, isNot(contains('adoptGuestBox')));
+      expect(sk, isNot(contains('pushAllToCloud')));
+      // 🔴 체험 데이터는 지우지 않는다.
+      expect(sk, isNot(contains('clearAfterSignUp')));
+    });
+
+    test('🔴 상자 복사는 서버가 "옮겼다" 고 할 때만 부른다', () {
+      final s = read('lib/widgets/fn_signup_sheet.dart');
+      // 파일 통틀어 adoptGuestBox 를 부르는 자리는 옮김 갈래 한 곳뿐이다.
+      expect('await receipts.adoptGuestBox'.allMatches(s).length, 1);
+    });
+  });
+
+  // ── ③ 실패 ──────────────────────────────────────────────────
+  group('#195 ⑤-d 옮기기 실패 — 다시 시도, 체험 데이터 보존', () {
+    test('🔴 서버가 거절하면 실패로 읽고 문구를 들고 온다', () {
+      final r = GuestMigration.parseResult(const {'ok': false});
+      expect(r.isFailed, isTrue);
+      expect(r.message, '체험 영수증을 옮기지 못했어요.');
+    });
+
+    test('🔴 실패했을 때만 맡아 둔 토큰을 남겨 둔다', () {
+      final g = read('lib/services/guest_migration.dart');
+      // 성공·건너뜀은 끝난 일이라 지우고, 실패만 남겨 다시 시도한다.
+      expect(g, contains('if (!out.isFailed) await clear();'));
+      // 예외로 떨어져도 지우지 않는다 — catch 안에 clear 가 없어야 한다.
+      final c = g.substring(g.indexOf('    } catch (e) {',
+          g.indexOf('Future<GuestMigrateResult> runIfPending')));
+      expect(c.substring(0, c.indexOf('\n  }')), isNot(contains('clear()')));
+    });
+
+    test('🔴 [다시 시도] 를 드리고, 누르면 한 번 더 간다', () {
+      final s = read('lib/widgets/fn_signup_sheet.dart');
+      final fl = s.substring(s.indexOf('case GuestMigrateStatus.failed:'),
+          s.indexOf('/// 옮긴 장수를 넣은'));
+      expect(fl, contains('체험 영수증을 옮기지 못했어요.'));
+      expect(fl, contains("confirmLabel: '다시 시도'"));
+      expect(fl, contains('await fnRunGuestMigration(context)'));
+      // 🔴 로그인은 그대로 둔다 — 여기서 로그아웃시키면 안 된다.
+      expect(fl, isNot(contains('signOut')));
+      // 🔴 체험 데이터는 지우지 않는다.
+      expect(fl, isNot(contains('clearAfterSignUp')));
+      expect(fl, isNot(contains('adoptGuestBox')));
+    });
+  });
+
+  // ── ④ 회원 로그인은 지금과 똑같다 ─────────────────────────────
+  group('#195 ⑤-d 회원 로그인 — 이 길로 들어오지 않는다', () {
+    tearDown(() {
+      GuestService.debugIsGuest = null;
+      GuestMigration.debugCall = null;
+    });
+
+    test('🔴 회원이면 토큰을 맡아 두지 않는다', () async {
+      SharedPreferences.setMockInitialValues({});
+      GuestService.debugIsGuest = false;
+
+      final kept = await GuestMigration.instance.rememberGuest();
+
+      expect(kept, isFalse);
+      expect(GuestMigration.instance.hasPending, isFalse);
+      expect(GuestMigration.instance.pendingGuestUid, isNull);
+    });
+
+    test('🔴 맡아 둔 것이 없으면 서버를 부르지 않는다', () async {
+      SharedPreferences.setMockInitialValues({});
+      GuestService.debugIsGuest = false;
+      await GuestMigration.instance.clear();
+
+      var called = 0;
+      GuestMigration.debugCall = (_) async {
+        called++;
+        return const {'ok': true};
+      };
+
+      final r = await GuestMigration.instance.runIfPending();
+
+      expect(called, 0, reason: '회원 로그인에서 migrateGuestData 를 불렀다');
+      expect(r.status, GuestMigrateStatus.none);
+    });
+
+    test('🔴 체험 중일 때만 토큰을 맡아 둔다 (게스트 빗장)', () {
+      final g = read('lib/services/guest_migration.dart');
+      final rm = g.substring(g.indexOf('Future<bool> rememberGuest()'));
+      expect(rm.substring(0, rm.indexOf('\n  }')),
+          contains('if (!GuestService.instance.isGuest) return false;'));
+    });
+
+    test('🔴 로그인 화면은 기존 호출을 고치지 않고 앞뒤로만 덧붙였다', () {
+      final s = read('lib/screens/ds/splash_ds_screen.dart');
+      final f = s.substring(s.indexOf('Future<void> _sns(_Sns s) async {'));
+      final guard = f.indexOf('final wasGuest = GuestService.instance.isGuest;');
+      final remember = f.indexOf('await fnRememberGuest();');
+      final kakao = f.indexOf('_Sns.kakao => await auth.signInWithKakao(),');
+      final run = f.indexOf('await fnRunGuestMigration(context);');
+
+      expect(guard, greaterThan(0));
+      // 순서: 게스트인지 본다 → 토큰 보관 → (기존 로그인 그대로) → 옮기기
+      expect(remember, greaterThan(guard));
+      expect(kakao, greaterThan(remember));
+      expect(run, greaterThan(kakao));
+      // 🔴 둘 다 게스트일 때만 돈다.
+      expect('if (wasGuest)'.allMatches(f.substring(0, run + 60)).length, 2);
+      // 기존 로그인 줄 자체는 그대로다.
+      expect(f, contains('_Sns.apple => await auth.signInWithApple(),'));
+      expect(f, contains('_ => await auth.signInWithGoogle(),'));
+    });
+
+    test('🔴 기존 로그인 서비스에는 손대지 않았다', () {
+      final a = read('lib/services/auth_service.dart');
+      expect(a, isNot(contains('GuestMigration')));
+      // 카카오 로그인 세 함수가 그대로 있다.
+      for (final f in [
+        'Future<User> signInWithKakao()',
+        'Future<User?> completeKakaoWebLogin()',
+        'Future<User> _finishKakao(',
+      ]) {
+        expect(a, contains(f), reason: '$f 가 사라졌다');
+      }
+    });
+  });
+
+  // ── ⑤ 공통 ──────────────────────────────────────────────────
+  group('#195 ⑤-d 공통 — 옮긴 영수증은 학습으로 올리지 않는다', () {
+    test('🔴 옮기기 길에는 학습 수집이 끼어들지 않는다', () {
+      // 학습 업로드는 **스캔하는 순간** 한 번만 일어난다. 옮기기는 이미
+      // 찍힌 것을 자리만 바꾸는 일이라 그 길을 지나지 않는다.
+      expect(read('lib/widgets/fn_signup_sheet.dart'),
+          isNot(contains('TrainingDataService')));
+      expect(read('lib/providers/receipt_provider.dart'),
+          isNot(contains('TrainingDataService')));
+      expect(read('lib/services/guest_migration.dart'),
+          isNot(contains('TrainingDataService')));
+    });
+
+    test('🔴 웹 카카오는 돌아온 뒤에 마저 옮긴다', () {
+      // 웹 카카오 로그인은 페이지가 통째로 갔다 오므로, 로그인 완료가
+      // 다음 실행에서 일어난다. 그때 집어 줄 자리가 있어야 한다.
+      final m = read('lib/screens/ds/main_ds_screen.dart');
+      expect(m, contains('await fnRunGuestMigration(context);'));
+      final i = m.indexOf('await fnRunGuestMigration(context);');
+      final restore = m.indexOf('await receipts.restoreFromCloud();');
+      expect(i, greaterThan(0));
+      expect(restore, greaterThan(i),
+          reason: '옮기기보다 클라우드 복원이 먼저 돌면 장부가 엇갈린다');
+    });
+
+    test('🔴 체험 상자는 내 상자일 때만 넘겨받는다', () {
+      final r = read('lib/providers/receipt_provider.dart');
+      final f = r.substring(r.indexOf('Future<int> adoptGuestBox('));
+      final body = f.substring(0, f.indexOf('\n  }'));
+      // pushAllToCloud 와 같은 빗장 — 계정이 바뀌는 찰나를 막는다.
+      expect(body, contains('if (_openedFor != uid) return 0;'));
+      // 🔴 원본을 지우는 코드가 없어야 한다.
+      expect(body, isNot(contains('deleteBoxFromDisk')));
+      expect(body, isNot(contains('.clear()')));
     });
   });
 }

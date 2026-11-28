@@ -7,9 +7,11 @@ import '../design/fn_controls_ds.dart';
 import '../design/fn_feedback.dart';
 import '../design/fn_sheet.dart';
 import '../providers/auth_provider.dart';
+import '../providers/receipt_provider.dart';
 import '../screens/ds/add_to_home_sheet.dart';
 import '../screens/ds/legal_doc_ds_screen.dart';
 import '../screens/ds/splash_ds_screen.dart';
+import '../services/guest_migration.dart';
 import '../services/guest_service.dart';
 import '../theme/fn_ds.dart';
 import 'fn_inquiry_parts.dart';
@@ -112,6 +114,99 @@ Future<void> _afterSignUp(BuildContext context) async {
   });
 }
 
+// ─────────────────────────────────────────────────────────────
+//  체험 데이터 옮기기 (#195 ⑤-d)
+//
+//  🔴 **게스트일 때만** 이 길로 들어온다. 회원은 [fnRememberGuest] 가
+//     아무것도 맡아 두지 않으므로, [fnRunGuestMigration] 이 첫 줄에서
+//     조용히 끝난다. 기존 로그인 함수는 한 줄도 고치지 않았다.
+// ─────────────────────────────────────────────────────────────
+
+/// 로그인 **시작 전에** — 체험 계정의 ID 토큰을 맡아 둔다.
+///
+/// 카카오는 커스텀 토큰이라 로그인하는 순간 uid 가 바뀐다. 그 전에 받아
+/// 두지 않으면 체험 계정을 증명할 길이 영영 사라진다.
+///
+/// 🔴 회원이 부르면 `false` 만 돌려주고 아무 일도 하지 않는다.
+Future<bool> fnRememberGuest() => GuestMigration.instance.rememberGuest();
+
+/// 로그인 **끝난 뒤에** — 맡아 둔 것이 있으면 서버에 옮겨 달라고 하고,
+/// 결과에 따라 사장님께 알린다.
+///
+/// 세 갈래다.
+///   · 옮김 — 기기 상자까지 옮기고 클라우드로 올린 뒤 '가입 완료' 안내
+///   · 기존 회원 — 아무것도 옮기지 않았다고 알린다(체험 데이터는 보존)
+///   · 실패 — 로그인은 그대로 두고 [다시 시도] 를 드린다(체험 데이터 보존)
+Future<void> fnRunGuestMigration(BuildContext context) async {
+  if (!GuestMigration.instance.hasPending) {
+    // 웹 카카오는 페이지가 통째로 갔다 오므로 기억이 메모리에 없을 수 있다.
+    await GuestMigration.instance.load();
+    if (!GuestMigration.instance.hasPending) return;   // 🔴 회원은 여기서 끝
+  }
+  final guestUid = GuestMigration.instance.pendingGuestUid ?? '';
+  final receipts = context.read<ReceiptProvider>();
+
+  final r = await GuestMigration.instance.runIfPending();
+  if (!context.mounted) return;
+
+  switch (r.status) {
+    case GuestMigrateStatus.none:
+      return;
+
+    case GuestMigrateStatus.moved:
+      // ① 기기 안 상자부터 옮긴다. 화면에 바로 보여야 안심이 되신다.
+      if (guestUid.isNotEmpty) await receipts.adoptGuestBox(guestUid);
+      // ② 옮겨 담은 것을 클라우드로 올린다. 실패해도 기기에는 남는다.
+      try {
+        await receipts.pushAllToCloud();
+      } catch (_) {/* 다음 실행의 자동 동기화가 마저 한다 */}
+      // ③ 체험 카운터는 이제 뜻이 없다.
+      GuestService.instance.clearAfterSignUp();
+      if (!context.mounted) return;
+      await _afterSignUpWithCount(context, r.receipts);
+
+    case GuestMigrateStatus.skippedExisting:
+      // 🔴 Hive 복사도 하지 않는다. 남의 장부에 체험 영수증이 섞인다.
+      await showFnAlert(
+        context,
+        title: '기존 계정으로 로그인했어요',
+        message: '체험으로 찍은 영수증 ${r.guestReceipts}장은 '
+            '기존 계정에 옮기지 않았어요. 필요하면 다시 찍어 주세요.',
+        confirmLabel: '확인',
+        icon: Icons.info_outline_rounded,
+      );
+
+    case GuestMigrateStatus.failed:
+      final again = await showFnAlert(
+        context,
+        title: '체험 영수증을 옮기지 못했어요.',
+        message: '로그인은 그대로예요. 체험으로 찍은 영수증도 지우지 않았어요.',
+        confirmLabel: '다시 시도',
+        cancelLabel: '나중에',
+        icon: Icons.error_outline_rounded,
+      );
+      if (!again || !context.mounted) return;
+      await fnRunGuestMigration(context);               // 한 번 더
+  }
+}
+
+/// 옮긴 장수를 넣은 '가입 완료' 안내.
+///
+/// 🔴 기존 [_afterSignUp] 은 그대로 둔다. 구글·애플·이메일은 uid 가
+///    유지돼서 옮길 것이 없고, 장수를 말할 일도 없다.
+Future<void> _afterSignUpWithCount(BuildContext context, int n) async {
+  final go = await showFnAlert(
+    context,
+    title: '가입 완료! 찍어둔 영수증 $n장이 저장됐어요',
+    message: '바탕화면에 설치해 두면 다음부터 앱처럼 바로 열려요.',
+    confirmLabel: '설치 안내 보기',
+    cancelLabel: '나중에',
+    icon: Icons.check_circle_rounded,
+  );
+  if (!go || !context.mounted) return;
+  await AddToHomeSheet.open(context);
+}
+
 /// "이미 가입된 계정이에요" — 바로 로그인하지 않고 여쭙는다.
 ///
 /// 🔴 말없이 로그인하면 uid 가 바뀌어 체험 영수증이 **사라진 것처럼**
@@ -132,17 +227,23 @@ Future<void> _askSignInInstead(
     auth.clearPendingLink();
     return;
   }
+  // 🔴 로그인 **전에** 체험 토큰을 맡아 둔다. 로그인하는 순간 체험
+  //    계정을 증명할 길이 사라진다. (게스트일 때만 맡아 둔다)
+  await fnRememberGuest();
   final ok = await auth.signInWithConflicted();
   if (!context.mounted) return;
-  if (!ok) {
-    final msg = auth.error;
-    if (msg != null) {
-      showFnToast(context, msg, type: FnToastType.error);
-      auth.clearError();
-    }
-    // 자격이 없어 못 들어갔다면 평소 로그인 화면으로 보낸다.
-    if (!auth.isLoggedIn) fnOpenSignIn(context);
+  if (ok) {
+    // 로그인 자체는 성공했다. 체험 영수증 옮기기 결과는 따로 알린다.
+    await fnRunGuestMigration(context);
+    return;
   }
+  final msg = auth.error;
+  if (msg != null) {
+    showFnToast(context, msg, type: FnToastType.error);
+    auth.clearError();
+  }
+  // 자격이 없어 못 들어갔다면 평소 로그인 화면으로 보낸다.
+  if (!auth.isLoggedIn) fnOpenSignIn(context);
 }
 
 /// 가입 안내 바텀시트를 띄운다.

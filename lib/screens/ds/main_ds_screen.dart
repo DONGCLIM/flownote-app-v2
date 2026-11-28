@@ -73,6 +73,17 @@ class _MainDsScreenState extends State<MainDsScreen> {
     // 모두 실패해도 앱 동작에는 영향이 없다 (Hive 가 진실의 원천).
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       if (!mounted) return;
+
+      // 🔴 #195 ⑤-d — 웹 카카오 로그인은 **페이지가 통째로 카카오로 갔다
+      //    돌아오는** 방식이라, 로그인 요청과 완료가 서로 다른 실행에서
+      //    일어난다. 돌아오면 앱이 처음부터 다시 뜨고 곧장 여기로 온다.
+      //    그래서 맡겨 둔 체험 토큰이 있으면 여기서 마저 옮긴다.
+      //
+      //    맡겨 둔 것이 없으면(=회원이었다면) 첫 줄에서 조용히 돌아간다.
+      //    가입하신 분에게는 아무 일도 일어나지 않는다.
+      await fnRunGuestMigration(context);
+      if (!mounted) return;
+
       final receipts = context.read<ReceiptProvider>();
       await receipts.restoreFromCloud();
       await receipts.pushAllToCloud();
