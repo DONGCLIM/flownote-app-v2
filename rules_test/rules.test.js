@@ -21,7 +21,7 @@ import {
   doc, setDoc, getDoc, updateDoc, addDoc, collection,
 } from 'firebase/firestore';
 import { ref, uploadBytes, getBytes } from 'firebase/storage';
-import { beforeAll, afterAll, beforeEach, describe, test } from 'vitest';
+import { beforeAll, afterAll, beforeEach, describe, test, expect } from 'vitest';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const r = (p) => resolve(here, '..', p);
@@ -271,34 +271,71 @@ describe('게스트(익명) — 지금 라이브 규칙 기준', () => {
       ref(st(ANON), `users/${OTHER.uid}/receipts/x.jpg`), PNG, META));
   });
 
-  test('🔴 규칙에 아직 익명 조항이 없다 (앱에서 막는다)', async () => {
+  test('🔴 학습 데이터는 규칙이 아니라 **앱**에서 막는다', async () => {
     // 이 테스트는 **지금 상태를 적어 두는 것**이다. 실패가 아니라 기록이다.
-    // 규칙에서도 막고 싶으면 재설계안을 올린 뒤 아래 skip 을 푼다.
+    //
+    // 🔴 `training_data` 와 `receipts/**` 는 #194 에서 회원 저장을 막았던
+    //    바로 그 두 줄이다. 다시는 손대지 않는다. 게스트를 막는 일은
+    //    `training_data_service.collectAllowed` 가 한다.
+    //    그 약속이 살아 있는지는 `app_guards.test.js` 가 소스로 확인한다.
     await assertSucceeds(setDoc(
       doc(db(ANON), 'training_data/doc1'), { doc_id: 'doc1' }));
   });
 });
 
-// 🔴 재설계안을 올리기 전까지는 건너뛴다. 올리는 날 `describe.skip` 의
-//    skip 만 지우면 바로 검증된다. (`docs/게스트_규칙_재설계안.md`)
-describe.skip('재설계안 — users/{uid}/usage 를 더한 뒤', () => {
-  test('게스트는 scans 를 1씩만 올린다', async () => {
+// ══════════════════════════════════════════════════════════════
+// users/{uid}/usage — 5장 한도는 **앱이** 막는다 (규칙 아님)
+//
+// 🔴 2026-11-28, 사장님 지시로 (A) 안을 골랐다.
+//
+//    재설계안은 `usage` 경로에 "게스트는 1씩·5까지" 상한을 거는 것이었다.
+//    skip 을 풀고 돌려 보니 **상한이 전혀 걸리지 않았다.** 바로 위에 있는
+//    기존 포괄 규칙 때문이다.
+//
+//      match /users/{uid}/{document=**} {
+//        allow read, write: if isOwner(uid);      ← 기존 줄
+//      }
+//
+//    보안 규칙은 **하나라도 통과하면 허용**이다. 이 줄이 "주인이면 뭐든
+//    OK" 로 먼저 열어 주므로, 뒤에 아무리 조인 조건을 더해도 무력화된다.
+//    실제로 걸리게 하려면 **기존 줄에서 usage 를 빼야** 하는데, 그것은
+//    "기존 allow 줄은 한 줄도 바꾸지 않는다" 는 제1원칙을 깨는 일이다.
+//    #194 에서 회원 영수증 저장이 막힌 사고가 바로 기존 줄을 건드려서
+//    났다.
+//
+//    그래서 상한은 포기하고 **앱**(`GuestService.canScan`)이 막는다.
+//    서버를 직접 조작하면 한도를 넘길 수 있지만, 피해는 체험 영수증
+//    몇 장뿐이고 **회원 위험은 0** 이다. 얻는 것보다 위험이 크다.
+//
+//    🔴 그래서 `firestore.rules` 에는 `usage` 조항도 `isAnon()` 도 없다.
+//       아래 두 검사가 그 상태를 못으로 박는다. 나중에 누가 다시
+//       기존 줄을 건드리면 여기서 걸린다.
+// ══════════════════════════════════════════════════════════════
+describe('users/{uid}/usage — 한도는 앱이 막는다 (A안)', () => {
+  test('🔴 규칙에 게스트 상한이 없다 (앱이 막는다는 기록)', async () => {
+    // 실패가 아니라 **기록**이다. 게스트는 자기 usage 를 자유롭게 쓴다.
     const d = db(ANON);
     const p = `users/${ANON.uid}/usage/counters`;
     await assertSucceeds(setDoc(doc(d, p), { scans: 1 }));
     await assertSucceeds(updateDoc(doc(d, p), { scans: 2 }));
-    // 건너뛰기·되돌리기는 거부
-    await assertFails(updateDoc(doc(d, p), { scans: 5 }));
-    await assertFails(updateDoc(doc(d, p), { scans: 1 }));
   });
 
-  test('게스트는 5 를 넘길 수 없다', async () => {
-    await env.withSecurityRulesDisabled(async (c) => {
-      await setDoc(doc(c.firestore(),
-        `users/${ANON.uid}/usage/counters`), { scans: 5 });
-    });
-    await assertFails(updateDoc(
-      doc(db(ANON), `users/${ANON.uid}/usage/counters`), { scans: 6 }));
+  test('🔴 기존 포괄 줄을 건드리지 않았다 (#194 재발 방지)', async () => {
+    const rules = readFileSync(r('firestore.rules'), 'utf8');
+    // 포괄 줄은 조건 없이 `isOwner(uid)` 그대로여야 한다.
+    expect(rules).toContain(`      match /{document=**} {
+        allow read, write: if isOwner(uid);
+      }`);
+    // 상한을 걸려다 만 흔적이 남아 있으면 안 된다.
+    expect(rules).not.toContain('match /usage/{docId}');
+    expect(rules).not.toContain('isAnon()');
+  });
+
+  test('🔴 앱이 5장에서 막는다 (GuestService.canScan)', () => {
+    const src = readFileSync(r('lib/services/guest_service.dart'), 'utf8');
+    // 규칙이 안 지켜 주므로, 이 분기가 **유일한** 한도다. 지우면 안 된다.
+    expect(src).toContain('static const int scanMax = 5;');
+    expect(src).toContain('bool get canScan => !isGuest || _scans < scanMax;');
   });
 
   test('🔴 회원은 usage 에 제한이 없다', async () => {
