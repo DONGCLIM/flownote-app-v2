@@ -417,8 +417,8 @@ void _k195GuestProfile() {
       expect(src.substring(member, guest), isNot(contains('GuestService')));
     });
 
-    test('🔴 체험은 아직 꺼져 있다', () {
-      expect(GuestService.enabled, isFalse);
+    test('🔴 체험이 켜져 있다', () {
+      expect(GuestService.enabled, isTrue);
     });
   });
 }

@@ -686,25 +686,44 @@ exports.migrateGuestData = onCall(
 //     머리말 참고.
 // ═══════════════════════════════════════════════════════════════════
 
-const { createCleaner } = require('./cleanup_guest_data');
+// ───────────────────────────────────────────────────────────────────
+//  🚫🚫 사용 안 함 - 배포 금지 🚫🚫
+//
+//  사장님 지시(2026-11-28)로 **게스트 데이터 30일 자동 삭제를 하지
+//  않기로** 했다. 그래서 이 함수는 **내보내지 않는다.**
+//
+//  🔴 아래 주석을 풀면 다음 `firebase deploy --only functions` 때
+//     **예약 작업이 살아나 실제로 계정을 지우기 시작한다.** 되돌릴 수
+//     없는 삭제다. 사장님이 "삭제 정책을 다시 켜라" 고 말씀하시기
+//     전에는 절대 풀지 않는다.
+//
+//  🔴 코드(`cleanup_guest_data.js`)와 테스트는 **지우지 않고 남겨 둔다.**
+//     게스트가 많이 쌓이면 다시 검토하기로 했다. 그때 이 주석만 풀면
+//     된다. 지웠다 다시 쓰면 카카오 회원 오인 같은 함정을 또 밟는다.
+//
+//  (`require` 도 함께 막아 둔다. 불러만 둬도 읽는 사람이 "쓰고 있구나"
+//   라고 오해한다.)
+// ───────────────────────────────────────────────────────────────────
 
-exports.cleanupGuestData = onSchedule(
-  {
-    // 새벽 4시 — 사람이 거의 안 쓰는 시간.
-    schedule: '0 4 * * *',
-    timeZone: 'Asia/Seoul',
-    region: 'asia-northeast3',
-    timeoutSeconds: 540,
-    memory: '512MiB',
-    retryCount: 0,
-  },
-  async () => {
-    const cleaner = createCleaner({
-      auth: admin.auth(),
-      db,
-      bucket: admin.storage().bucket(),
-      logger,
-    });
-    await cleaner.run();
-  },
-);
+// const { createCleaner } = require('./cleanup_guest_data');
+//
+// exports.cleanupGuestData = onSchedule(
+//   {
+//     // 새벽 4시 — 사람이 거의 안 쓰는 시간.
+//     schedule: '0 4 * * *',
+//     timeZone: 'Asia/Seoul',
+//     region: 'asia-northeast3',
+//     timeoutSeconds: 540,
+//     memory: '512MiB',
+//     retryCount: 0,
+//   },
+//   async () => {
+//     const cleaner = createCleaner({
+//       auth: admin.auth(),
+//       db,
+//       bucket: admin.storage().bucket(),
+//       logger,
+//     });
+//     await cleaner.run();
+//   },
+// );

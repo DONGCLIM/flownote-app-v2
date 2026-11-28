@@ -998,9 +998,13 @@ void _k195Guest() {
       expect(sheet.contains('GuestLinkMethod.google'), isTrue);
     });
 
-    test('🔴 게스트 체험은 아직 꺼져 있다', () {
-      // 켜는 일은 ③④⑤ 가 다 끝난 날 사장님 지시로 한다.
-      expect(GuestService.enabled, isFalse);
+    test('🔴 게스트 체험이 켜져 있다', () {
+      // 2026-11-28 사장님 지시로 켰다. ①~⑤ 단계가 모두 끝났고
+      // Firebase 콘솔의 익명 로그인도 켜졌다.
+      //
+      // 🔴 되돌리려면 `GuestService.enabled` 를 false 로 바꾸고 웹만
+      //    다시 배포하면 된다. 이 테스트도 함께 뒤집어야 한다.
+      expect(GuestService.enabled, isTrue);
     });
   });
 }

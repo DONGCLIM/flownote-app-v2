@@ -492,6 +492,25 @@ function createMigrator({ auth, db, bucket, logger }) {
       completedAt: new Date().toISOString(),
     }, { merge: true });
 
+    // ⑥ 원래 게스트의 표시에 "옮겨 갔다" 를 적는다. (방문자 집계용)
+    //
+    // 🔴 `migrations` 는 앱이 못 읽는 서버 전용 칸이다. 집계를 보려면
+    //    게스트 쪽에도 흔적이 있어야 한다. `users/<게스트>/meta/guest` 는
+    //    앱이 체험 시작 때 만든 바로 그 문서다.
+    //
+    // 🔴 **받는 계정이 아니라 게스트 쪽**에 적는다. 회원 칸은 건드리지
+    //    않는다. 실패해도 옮기기는 이미 끝났으므로 넘어간다.
+    try {
+      await db.doc(`users/${guestUid}/meta/guest`).set({
+        migratedAt: new Date().toISOString(),
+        migratedTo: targetUid,
+      }, { merge: true });
+    } catch (e) {
+      logger.warn('게스트 표시 남기기 실패', {
+        guestUid: shortOf(guestUid), err: String(e && e.message),
+      });
+    }
+
     log.info('체험 데이터 옮기기 완료', {
       guestUid, targetUid, receipts, purchaseLists, photos,
     });

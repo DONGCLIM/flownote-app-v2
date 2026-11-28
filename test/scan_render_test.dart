@@ -408,7 +408,7 @@ void _k195GuestScan() {
       expect(t.takeException(), isNull);
       expect(find.text(kTrialConsentTitle), findsOneWidget);
       expect(
-          find.text('체험으로 찍은 영수증은 가입하지 않으면 30일 뒤 삭제돼요'),
+          find.text('가입하면 테스트한 영수증이 내 계정으로 옮겨져 계속 보관돼요.'),
           findsOneWidget);
       expect(find.text('개인정보 처리방침 보기'), findsOneWidget);
     });
@@ -502,8 +502,8 @@ void _k195GuestScan() {
       expect(body, contains('if (_scans >= scanMax) return false;'));
     });
 
-    test('🔴 체험은 아직 꺼져 있다', () {
-      expect(GuestService.enabled, isFalse);
+    test('🔴 체험이 켜져 있다', () {
+      expect(GuestService.enabled, isTrue);
     });
   });
 }

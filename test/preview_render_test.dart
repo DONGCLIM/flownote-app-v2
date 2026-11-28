@@ -365,8 +365,8 @@ void _k195GuestPdf() {
           reason: '미리보기 화면을 그리는 쪽에 게스트 분기가 생겼다');
     });
 
-    test('🔴 체험은 아직 꺼져 있다', () {
-      expect(GuestService.enabled, isFalse);
+    test('🔴 체험이 켜져 있다', () {
+      expect(GuestService.enabled, isTrue);
     });
   });
 }

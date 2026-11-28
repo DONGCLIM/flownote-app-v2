@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/user_model.dart';
 import '../services/auth_service.dart';
+import '../services/guest_service.dart';
 import '../services/legal_documents.dart';
 import '../services/user_repository.dart';
 
@@ -412,6 +413,10 @@ class AuthProvider extends ChangeNotifier {
       await _hydrate(fbUser);                               // users/{uid} 생성
       await _ensureRequiredConsents(fbUser.uid,             // consent_log 기록
           agreeMarketing: agreeMarketing);
+
+      // 방문자 집계용 표시. uid 가 그대로라 체험 때 만든 문서에 덧붙는다.
+      // 🔴 실패해도 가입은 성공이다 — 집계 때문에 가입을 막지 않는다.
+      await GuestService.instance.markLinked(method.name);
 
       _end();
       return GuestLinkResult.ok;

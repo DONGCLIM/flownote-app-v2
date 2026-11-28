@@ -163,6 +163,29 @@ describe('체험 → 새 카카오 회원 옮기기', () => {
     expect(await countOf(K, 'purchase_lists')).toBe(1);
   });
 
+  test('🔴 옮기면 원래 게스트의 meta/guest 에 migratedAt 이 적힌다', async () => {
+    // 방문자 집계용. `migrations` 는 앱이 못 읽는 서버 전용 칸이라,
+    // 게스트 쪽에도 흔적을 남긴다.
+    const guest = await newAnon();
+    await seedGuest(guest.uid, 2);
+    const K = 'kakao:5555';
+
+    await migrate.run({
+      guestIdToken: guest.idToken,
+      callerUid: K,
+      callerToken: memberToken('custom'),
+    });
+
+    const snap = await db.doc(`users/${guest.uid}/meta/guest`).get();
+    expect(snap.exists).toBe(true);
+    expect(typeof snap.data().migratedAt).toBe('string');
+    expect(snap.data().migratedTo).toBe(K);
+
+    // 🔴 **받는 계정(회원) 쪽에는 이 표시를 만들지 않는다.**
+    const mine = await db.doc(`users/${K}/meta/guest`).get();
+    expect(mine.exists).toBe(false);
+  });
+
   test('🔴 사진 주소가 새 경로로 바뀐다', async () => {
     const guest = await newAnon();
     await seedGuest(guest.uid, 2);

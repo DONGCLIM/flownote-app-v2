@@ -271,6 +271,26 @@ describe('게스트(익명) — 지금 라이브 규칙 기준', () => {
       ref(st(ANON), `users/${OTHER.uid}/receipts/x.jpg`), PNG, META));
   });
 
+  test('🔴 방문자 표시 meta/guest 를 자기 아래 쓸 수 있다', async () => {
+    // 🔴 **새 규칙을 더하지 않았다.** `users/{uid}/{document=**}` 포괄
+    //    규칙이 주인에게 열려 있어 이미 저장된다. 이 테스트가 그 증인이다.
+    //    여기서 실패하면 그때 `meta/guest` 전용 규칙을 더해야 한다.
+    await assertSucceeds(setDoc(
+      doc(db(ANON), `users/${ANON.uid}/meta/guest`),
+      { guest: true, createdAt: new Date().toISOString() }));
+
+    // 연결 가입 표시도 같은 문서에 덧붙는다.
+    await assertSucceeds(setDoc(
+      doc(db(ANON), `users/${ANON.uid}/meta/guest`),
+      { linkedAt: new Date().toISOString(), linkedWith: 'google' },
+      { merge: true }));
+  });
+
+  test('🔴 남의 meta/guest 는 못 쓴다', async () => {
+    await assertFails(setDoc(
+      doc(db(ANON), `users/${OTHER.uid}/meta/guest`), { guest: true }));
+  });
+
   test('🔴 학습 데이터는 규칙이 아니라 **앱**에서 막는다', async () => {
     // 이 테스트는 **지금 상태를 적어 두는 것**이다. 실패가 아니라 기록이다.
     //
@@ -336,6 +356,13 @@ describe('users/{uid}/usage — 한도는 앱이 막는다 (A안)', () => {
     // 규칙이 안 지켜 주므로, 이 분기가 **유일한** 한도다. 지우면 안 된다.
     expect(src).toContain('static const int scanMax = 5;');
     expect(src).toContain('bool get canScan => !isGuest || _scans < scanMax;');
+  });
+
+  test('🔴 회원도 meta 를 쓸 수 있다 (기존 포괄 규칙 그대로)', async () => {
+    for (const who of [GOOGLE, KAKAO]) {
+      await assertSucceeds(setDoc(
+        doc(db(who), `users/${who.uid}/meta/guest`), { x: 1 }));
+    }
   });
 
   test('🔴 회원은 usage 에 제한이 없다', async () => {

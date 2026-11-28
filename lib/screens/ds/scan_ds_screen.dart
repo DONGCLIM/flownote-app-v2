@@ -48,7 +48,7 @@ class ScanDsScreenState extends State<ScanDsScreen> {
   ///
   /// 두 가지를 본다.
   ///   1. 체험 장수를 다 썼으면 → 가입 안내 바텀시트 (스캔은 시작 안 함)
-  ///   2. 첫 장이면 → 보관 안내에 동의를 받는다. 동의해야 넘어간다.
+  ///   2. 첫 장이면 → 안내에 동의를 받는다. 동의해야 넘어간다.
   Future<bool> _guestGate() async {
     final g = GuestService.instance;
     if (!g.isGuest) return true;

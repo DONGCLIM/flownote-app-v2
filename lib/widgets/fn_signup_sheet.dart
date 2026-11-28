@@ -358,6 +358,11 @@ const String kFirstScanDoneTitle = '잘 읽혔나요?';
 
 /// 체험 영수증 보관 안내 + 개인정보 처리방침 링크.
 ///
+/// 🔴 2026-11-28 사장님 지시로 **체험 데이터 자동 정리를 하지 않기로**
+///    했다. 그래서 기한을 두고 지우겠다던 안내 문구를 걷어냈다. 지키지
+///    못할 약속을 적어 두면 안 된다 — 동의 화면의 문구는 그대로 약속이
+///    된다. 지금은 "가입하면 옮겨져 계속 보관된다" 만 말한다.
+///
 /// 🔴 돌려주는 값은 **동의했는가**다. 시트를 쓸어 내려 닫으면 false 가
 ///    되고, 부르는 쪽에서 스캔을 시작하지 않는다. 동의 없이 찍게 두면
 ///    안내를 한 뜻이 없다.
@@ -382,7 +387,7 @@ class _TrialConsentBody extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         const Text(
-          '체험으로 찍은 영수증은 가입하지 않으면 30일 뒤 삭제돼요',
+          '가입하면 테스트한 영수증이 내 계정으로 옮겨져 계속 보관돼요.',
           style: TextStyle(
             fontFamily: FnDs.font,
             fontSize: FnDs.fontM,

@@ -38,15 +38,20 @@ class GuestService extends ChangeNotifier {
   GuestService._();
   static final GuestService instance = GuestService._();
 
-  /// 🔴 **게스트 체험을 아직 켜지 않았다.** (#192 — 2·5단계만 끝남)
+  /// 🔴 **게스트 체험을 켰다.** (2026-11-28, 사장님 지시)
   ///
-  ///    ①②단계(보안 규칙·게스트 계정)는 됐지만 ③제한·잠금 ④프로필
-  ///    ⑤가입 전환이 아직 없다. 이대로 켜면 처음 오신 분이 **게스트로
-  ///    들어와 가입할 길이 없는 채로 갇힌다.** 지금 상태보다 나쁘다.
+  ///    ①보안 규칙 ②게스트 계정 ③제한·잠금 ④프로필 ⑤가입 전환이
+  ///    모두 끝났고, Firebase 콘솔에서 익명 로그인도 켜졌다.
   ///
-  ///    ③④⑤ 가 끝나는 날 이 값을 `true` 로 바꾸면 켜진다. 그 전까지는
-  ///    예전처럼 인트로 → 로그인으로 간다.
-  static const bool enabled = false;
+  /// 🔴 **되돌리는 법:** 이 값을 `false` 로 바꾸고 웹만 다시 배포하면
+  ///    된다(`./tool/build_web.sh --deploy`). 서버 함수와 규칙은 그대로
+  ///    둬도 된다 — 아무도 부르지 않으면 아무 일도 하지 않는다.
+  ///    이미 체험 중이던 분의 데이터도 지워지지 않는다.
+  ///
+  /// 🔴 이 값이 false 면 `enterAsGuest()` 가 첫 줄에서 돌아가므로,
+  ///    예전처럼 인트로 → 로그인으로 간다. 회원 흐름은 어느 쪽이든
+  ///    **똑같이** 돈다 — 회원은 이 값을 지나지 않는다.
+  static const bool enabled = true;
 
   /// 체험 한도. **`firestore.rules` 의 `guestScanMax()` 와 같은 값**이어야
   /// 한다. 한쪽만 바꾸면 앱은 통과시키는데 서버가 거부한다.
@@ -56,11 +61,27 @@ class GuestService extends ChangeNotifier {
   ///    미리보기는 몇 번이든 열 수 있고, **저장·공유를 누르는 순간**
   ///    가입 안내를 띄운다. 셀 것이 없으니 칸도 두지 않았다.
 
-  /// 체험 영수증을 며칠 뒤에 지우는가. 안내 문구와 2차 작업이 같이 쓴다.
+  /// 🚫 **지금은 쓰지 않는다.** 체험 데이터를 며칠 보관하는가.
+  ///
+  /// 🔴 2026-11-28 사장님 지시로 **자동 정리를 하지 않기로** 했다. 정리
+  ///    서버 함수(`functions/cleanup_guest_data.js`)는 만들어 두었지만
+  ///    `index.js` 에서 내보내지 않아 **돌지 않는다.**
+  ///
+  /// 🔴 상수를 남겨 둔 이유: 나중에 게스트가 많이 쌓여 정리 정책을 다시
+  ///    켤 때 앱과 서버가 같은 값을 봐야 한다. 없앴다 다시 만들면 두 값이
+  ///    갈라진다. **이 값을 보고 무언가를 치우는 코드는 지금 없다.**
   static const int keepDays = 30;
 
   static const String _usageCol = 'usage';
   static const String _usageDoc = 'counters';
+
+  /// 방문자 집계용 표시. `users/{uid}/meta/guest`
+  ///
+  /// 🔴 **기존 규칙으로 이미 저장된다.** `users/{uid}/{document=**}` 포괄
+  ///    규칙이 주인에게 열려 있어서, 새 규칙을 더하지 않았다. 회원 흐름은
+  ///    한 줄도 건드리지 않는다.
+  static const String _metaCol = 'meta';
+  static const String _metaDoc = 'guest';
 
   int _scans = 0;
   bool _loaded = false;
@@ -136,6 +157,8 @@ class GuestService extends ChangeNotifier {
     try {
       await FirebaseAuth.instance.signInAnonymously();
       await load();
+      // 방문자 집계용 표시. 실패해도 체험은 그대로 돈다.
+      await markEnteredAsGuest();
       return true;
     } catch (e) {
       // 콘솔에서 익명 로그인을 꺼 두면 여기로 온다. 로그인 화면으로 보낸다.
@@ -242,6 +265,67 @@ class GuestService extends ChangeNotifier {
         ),
       );
     } catch (_) {/* 위와 같다 */}
+  }
+
+  // ── 게스트 표시 (방문자 집계용) ──────────────────────────────
+  //
+  // `users/{uid}/meta/guest` 한 문서에 세 시각을 적는다.
+  //
+  //   createdAt   체험으로 처음 들어온 때
+  //   linkedAt    구글·애플·이메일로 **연결 가입**한 때 (uid 그대로)
+  //   migratedAt  카카오로 가입해 **옮겨진** 때 (uid 가 바뀐다 — 서버가 적는다)
+  //
+  // 🔴 어느 것도 실패가 앱을 멈추게 하지 않는다. 집계용 표시일 뿐이고,
+  //    이것 때문에 사장님이 영수증을 못 찍으면 본말이 뒤바뀐다.
+  //
+  // 🔴 **게스트일 때만** 적는다. 회원 계정에는 이 문서가 생기지 않는다.
+
+  DocumentReference<Map<String, dynamic>>? _metaRef([String? uid]) {
+    final id = uid ?? AuthService.instance.uid;
+    if (id == null) return null;
+    try {
+      return FirebaseFirestore.instance
+          .collection('users')
+          .doc(id)
+          .collection(_metaCol)
+          .doc(_metaDoc);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// 체험으로 처음 들어왔다고 적는다.
+  Future<void> markEnteredAsGuest() async {
+    final ref = _metaRef();
+    if (ref == null) return;
+    try {
+      // 🔴 `merge` 다. 이미 있으면 `createdAt` 을 덮어쓰지 않는다 —
+      //    처음 들어온 때가 집계의 기준이다.
+      await ref.set({
+        'createdAt': FieldValue.serverTimestamp(),
+        'guest': true,
+      }, SetOptions(merge: true));
+    } catch (e) {
+      if (kDebugMode) debugPrint('[Guest] 표시 남기기 실패: $e');
+    }
+  }
+
+  /// 구글·애플·이메일로 **연결 가입**했다고 적는다.
+  ///
+  /// 🔴 uid 가 그대로이므로 같은 문서에 덧붙인다. 부르는 쪽은 연결이
+  ///    **성공한 뒤**에 부른다 — 그 시점에는 이미 회원이라 `isGuest` 가
+  ///    false 다. 그래서 여기서 게스트인지 묻지 않는다.
+  Future<void> markLinked(String method) async {
+    final ref = _metaRef();
+    if (ref == null) return;
+    try {
+      await ref.set({
+        'linkedAt': FieldValue.serverTimestamp(),
+        'linkedWith': method,
+      }, SetOptions(merge: true));
+    } catch (e) {
+      if (kDebugMode) debugPrint('[Guest] 연결 표시 실패: $e');
+    }
   }
 
   /// 가입이 끝났다. 체험 숫자를 치운다.
