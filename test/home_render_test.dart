@@ -900,8 +900,11 @@ void _k195Guest() {
   group('#195 게스트 잠금 — 잠긴 화면 대신 가입 안내', () {
     tearDown(() => GuestService.debugIsGuest = null);
 
-    testWidgets('🔴 게스트가 총 지출 카드를 누르면 화면이 아니라 바텀시트가 뜬다',
+    testWidgets('🔴 게스트도 지출 추이가 열린다 (2026-11-28 지시)',
         (tester) async {
+      // 🔴 홈 분석 카드는 **전부 열었다.** 게스트 본인이 찍은 영수증으로만
+      //    계산하므로 보여 드려도 된다. 체험으로 찍은 몇 장이 숫자로
+      //    정리되는 걸 보셔야 이 앱이 무엇을 해 주는지 아신다.
       GuestService.debugIsGuest = true;
       await _pumpHome(tester, items: _sample());
       await tester.tap(find.text('500,000원'));
@@ -909,10 +912,8 @@ void _k195Guest() {
       await tester.pump(const Duration(milliseconds: 500));
 
       expect(tester.takeException(), isNull);
-      // 잠긴 화면은 열리지 않았다.
-      expect(find.byType(TrendDsScreen), findsNothing);
-      // 대신 가입 안내가 떴다.
-      expect(find.text(kSignUpSheetTitle), findsOneWidget);
+      expect(find.byType(TrendDsScreen), findsOneWidget);
+      expect(find.text(kSignUpSheetTitle), findsNothing);
     });
 
     testWidgets('🔴 회원은 지금처럼 화면이 그대로 열린다', (tester) async {
@@ -939,22 +940,70 @@ void _k195Guest() {
       expect(find.byType(TrendDsScreen), findsOneWidget);
     });
 
-    testWidgets('🔴 게스트가 품목 비중을 눌러도 바텀시트다', (tester) async {
+    testWidgets('🔴 게스트도 품목 비중이 열린다 (2026-11-28 지시)', (tester) async {
       GuestService.debugIsGuest = true;
       await _pumpHome(tester, items: _sample());
       await tester.tap(find.text('상세 분석 보기 >'));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 500));
 
-      expect(find.byType(ItemSpendDsScreen), findsNothing);
-      expect(find.text(kSignUpSheetTitle), findsOneWidget);
+      expect(find.byType(ItemSpendDsScreen), findsOneWidget);
+      expect(find.text(kSignUpSheetTitle), findsNothing);
+    });
+
+    testWidgets('🔴 게스트도 월별 인사이트(CTA)가 열린다', (tester) async {
+      GuestService.debugIsGuest = true;
+      await _pumpHome(tester, items: _sample());
+      final cta = find.textContaining('맞춤 사입 리포트 보기');
+      await tester.ensureVisible(cta);
+      await tester.pump(const Duration(milliseconds: 300));
+      await tester.tap(cta);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+
+      expect(tester.takeException(), isNull);
+      expect(find.byType(InsightsDsScreen), findsOneWidget);
+      expect(find.text(kSignUpSheetTitle), findsNothing);
+    });
+
+    test('🔴 잠그는 것은 사입 리스트 묶음뿐이다', () {
+      final home = _read('lib/screens/ds/home_ds_screen.dart');
+      final fn = home.substring(home.indexOf('static String? _guestLockLine'));
+      final body = fn.substring(0, fn.indexOf('\n  }'));
+
+      // 사입 리스트 관련 다섯은 잠긴다.
+      for (final locked in [
+        'SavedListsDsScreen',
+        'PurchaseMemoDsScreen',
+        'GuideCostDsScreen',
+        'GuideBudgetDsScreen',
+        'GuideSeasonDsScreen',
+      ]) {
+        expect(body, contains(locked), reason: '$locked 잠금이 풀렸다');
+      }
+      // 🔴 홈 분석 카드는 하나도 잠기면 안 된다.
+      for (final open in [
+        'InsightsDsScreen',
+        'ItemSpendDsScreen',
+        'TrendDsScreen',
+        'DonutDsScreen',
+        'PriceDsScreen',
+        'CompareDsScreen',
+      ]) {
+        expect(body, isNot(contains(open)), reason: '$open 이 다시 잠겼다');
+      }
     });
 
     testWidgets('🔴 바텀시트에 가입 두 갈래와 로그인 링크가 다 있다',
         (tester) async {
+      // 🔴 분석 카드는 이제 다 열려서 시트가 안 뜬다. **아직 잠긴**
+      //    사입 리스트 쪽(가이드 칩)으로 띄운다.
       GuestService.debugIsGuest = true;
       await _pumpHome(tester, items: _sample());
-      await tester.tap(find.text('500,000원'));
+      final chip = find.text('사입 리스트');
+      await tester.ensureVisible(chip);
+      await tester.pump(const Duration(milliseconds: 300));
+      await tester.tap(chip);
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 500));
 
@@ -962,7 +1011,7 @@ void _k195Guest() {
       expect(find.text('구글로 가입'), findsOneWidget);
       expect(find.text('이미 가입하셨나요? 로그인'), findsOneWidget);
       // 기능 한 줄 설명도 같이 보인다.
-      expect(find.textContaining('추이'), findsWidgets);
+      expect(find.textContaining('사입 리스트'), findsWidgets);
     });
 
     test('🔴 잠금은 `_push` 한 곳에만 붙어 있다', () {

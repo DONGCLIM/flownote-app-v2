@@ -918,14 +918,22 @@ class _HomeDsScreenState extends State<HomeDsScreen> {
   /// 🔴 캘린더는 이 문을 지나지 않는다. 홈이 아니라 아래 탭바에서 열려서
   ///    `main_ds_screen.dart` 쪽에 따로 붙여야 한다. (아직 안 붙였다)
   static String? _guestLockLine(Widget page) {
-    if (page is InsightsDsScreen) {
-      return '이번 달 지출·절약 포인트를 한 장으로 정리해 드려요';
-    }
-    if (page is ItemSpendDsScreen) {
-      return '어떤 꽃에 돈이 가장 많이 나갔는지 품목별로 보여 드려요';
-    }
+    // ── 사입 리스트 관련만 잠근다 ───────────────────────────────
+    //
+    // 🔴 2026-11-28 사장님 지시 — **홈 분석 카드는 전부 연다.**
+    //    (지출 추이 · 품목 비중 · 월별 인사이트 · 과세/면세 도넛 …)
+    //    전부 **게스트 본인이 찍은 영수증**으로만 계산한다. 셈하는 길은
+    //    회원과 똑같고, 들어 있는 데이터만 본인 것이라 보여 드려도 된다.
+    //    오히려 체험으로 찍은 5장이 숫자로 정리되는 걸 보셔야 이 앱이
+    //    무엇을 해 주는지 아신다.
+    //
+    // 🔴 잠그는 것은 **사입 리스트 묶음**뿐이다. 이쪽은 저장해 두고
+    //    다음 사입에 이어 쓰는 기능이라, 계정이 없으면 뜻이 없다.
     if (page is SavedListsDsScreen) {
       return '사입 리스트를 저장해 두고 시장에서 체크하며 쓸 수 있어요';
+    }
+    if (page is PurchaseMemoDsScreen) {
+      return '사입 메모와 부케 스케치를 함께 기록할 수 있어요';
     }
     if (page is GuideCostDsScreen) {
       return '매입가에 마진을 얹은 판매가를 바로 계산해 드려요';
@@ -936,23 +944,10 @@ class _HomeDsScreenState extends State<HomeDsScreen> {
     if (page is GuideSeasonDsScreen) {
       return '작년 이맘때와 올해 매입을 나란히 비교해 드려요';
     }
-    if (page is PriceDsScreen) {
-      return '품목마다 시세가 오르는지 내리는지 보여 드려요';
-    }
-    if (page is CompareDsScreen) {
-      return '같은 꽃을 어느 거래처에서 싸게 샀는지 비교해 드려요';
-    }
-    if (page is DonutDsScreen) {
-      return '과세·면세 비중을 나눠 보여 드려요';
-    }
-    if (page is TrendDsScreen) {
-      return '달마다 지출이 어떻게 움직였는지 추이를 보여 드려요';
-    }
     // 🔴 `GuideDsScreen`(스마트 사입 가이드)은 **잠그지 않는다.**
-    //    사장님 지시(2026-11-28) — 들어가서 내용은 볼 수 있게 하고,
-    //    안에 있는 기능 버튼을 누를 때 가입 시트를 띄운다. 목록 자체를
-    //    막으면 이 앱이 무엇을 해 주는지 보여 드릴 길이 없다.
-    //    잠금은 `insight_ds_screens.dart` 의 `_open()` 에 붙어 있다.
+    //    들어가서 목록과 설명은 볼 수 있게 하고, 안쪽 기능 버튼을 누를
+    //    때 가입 시트를 띄운다. 그 잠금은
+    //    `insight_ds_screens.dart` 의 `_open()` 에 붙어 있다.
     return null;
   }
 }
