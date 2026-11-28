@@ -669,3 +669,42 @@ exports.migrateGuestData = onCall(
     }
   },
 );
+
+
+// ═══════════════════════════════════════════════════════════════════
+//  가입하지 않은 체험 데이터 30일 뒤 삭제 — 하루 한 번
+//
+//  체험 동의 화면에서 "30일 뒤 삭제" 를 약속했다. 그 약속을 지키는 함수다.
+//
+//  🔴 **가입하신 분은 대상이 아니다.** 체험 영수증은 `migrateGuestData` 가
+//     회원 계정으로 옮겨 영구 보관한다. 여기서 지우는 것은 끝내 가입하지
+//     않은 체험 계정뿐이다.
+//
+//  🔴 판정은 **허용 목록**이다 — "이 조건을 전부 만족해야만 지운다".
+//     모르는 것이 생기면 안 지우는 쪽으로 틀린다. 자세한 설명(특히
+//     카카오 회원을 익명으로 오인하는 함정)은 `cleanup_guest_data.js`
+//     머리말 참고.
+// ═══════════════════════════════════════════════════════════════════
+
+const { createCleaner } = require('./cleanup_guest_data');
+
+exports.cleanupGuestData = onSchedule(
+  {
+    // 새벽 4시 — 사람이 거의 안 쓰는 시간.
+    schedule: '0 4 * * *',
+    timeZone: 'Asia/Seoul',
+    region: 'asia-northeast3',
+    timeoutSeconds: 540,
+    memory: '512MiB',
+    retryCount: 0,
+  },
+  async () => {
+    const cleaner = createCleaner({
+      auth: admin.auth(),
+      db,
+      bucket: admin.storage().bucket(),
+      logger,
+    });
+    await cleaner.run();
+  },
+);
