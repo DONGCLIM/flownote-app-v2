@@ -33,6 +33,24 @@
  * 만든다. 같은 요청을 두 번 보내도 같은 자리에 같은 내용을 쓸 뿐이라
  * 늘어나지 않는다. 중간에 끊겨도 다시 부르면 이어서 끝난다.
  *
+ * ## 받는 계정에 영수증이 이미 있으면 옮기지 않는다 (#195 ⑤-c)
+ *
+ * 체험 데이터를 **기존 회원 것과 섞는 일**은 사람이 봐야 한다. 같은 영수증을
+ * 체험에서도 찍고 가입 뒤에도 찍었을 수 있고, 그걸 서버가 말없이 합치면
+ * 매입 합계가 부풀거나 같은 영수증이 두 건이 된다. 되돌리기도 어렵다.
+ * 그래서 **새 회원(영수증 0건)일 때만** 옮기고, 이미 쓰던 분께는
+ * 아무것도 하지 않고 "기존 회원이라 옮기지 않음" 을 돌려준다.
+ * 합치기는 나중에 대조 화면에서 사장님이 직접 고르시게 만든다.
+ *
+ * ## 중복 검사 지문도 같이 간다
+ *
+ * 앱의 중복 검사(`receipt_duplicate_service.dart`)는 지문을 따로 저장하지
+ * 않는다. **매입처 · 날짜 · 총액 · 품목** 네 칸에서 그때그때 계산한다.
+ * 그래서 이 네 칸을 그대로 옮기면 지문도 함께 옮겨진 셈이고, 가입 뒤에
+ * 같은 영수증을 다시 찍으면 **기존 중복 검사에 그대로 걸린다.**
+ * 🔴 아래 영수증 복사에서 네 칸을 **일부러 하나씩 적어 둔** 이유다.
+ *    나중에 누가 칸을 추려내도 이 네 개는 빠지지 않는다.
+ *
  * ## 원본은 지우지 않는다
  *
  * 옮긴 뒤에도 `users/<게스트 uid>` 는 그대로 둔다. 지우다 끊기면 양쪽
@@ -49,6 +67,14 @@ const MIGRATIONS = 'migrations';
 
 /** 한 번에 옮기는 최대 개수. 체험 한도가 5장이라 넉넉하다. */
 const MAX_DOCS = 500;
+
+/**
+ * 중복 검사 지문을 이루는 칸. (`receipt_duplicate_service.dart` 의 `ReceiptKey`)
+ *
+ * 🔴 앱은 지문을 저장하지 않고 이 네 칸에서 계산한다. 하나라도 빠지면
+ *    가입 뒤 같은 영수증을 다시 찍어도 중복으로 안 잡힌다.
+ */
+const FINGERPRINT_FIELDS = ['storeName', 'date', 'totalAmount', 'items'];
 
 /**
  * 게스트 uid 를 짧고 안전한 꼬리표로 바꾼다.
@@ -272,13 +298,55 @@ function createMigrator({ auth, db, bucket, logger }) {
     return n;
   }
 
+  /**
+   * 중복 검사 지문 네 칸을 **있는 것만** 골라 담는다.
+   *
+   * 🔴 `date: data.date` 처럼 통째로 적으면 그 칸이 없는 문서에서
+   *    `undefined` 가 되고, Firestore 는 그런 값을 받지 않아 **옮기기
+   *    자체가 실패**한다. 한 칸이 비었다고 영수증을 통째로 잃을 수는 없다.
+   *    있는 것만 적고 없는 칸은 건드리지 않는다.
+   */
+  function fingerprintOf(data) {
+    const out = {};
+    for (const f of FINGERPRINT_FIELDS) {
+      if (data[f] !== undefined) out[f] = data[f];
+    }
+    return out;
+  }
+
+  /**
+   * 받는 계정에 영수증이 **한 장이라도** 있는가.
+   *
+   * 전부 세지 않는다. 한 장만 찾으면 "기존 회원" 으로 판정하기에 충분하고,
+   * 수천 장을 세면 느리고 비싸다.
+   */
+  async function targetHasReceipts(targetUid) {
+    const snap = await db
+      .collection('users').doc(targetUid).collection('receipts')
+      .limit(1).get();
+    return !snap.empty;
+  }
+
+  /** 체험 계정의 영수증이 몇 장인가. 안내 문구에 쓴다. */
+  async function countGuestReceipts(guestUid) {
+    const snap = await db
+      .collection('users').doc(guestUid).collection('receipts')
+      .limit(MAX_DOCS).get();
+    return snap.size;
+  }
+
   // ── 본 작업 ─────────────────────────────────────────────────
 
   /**
-   * 옮긴다. 확인 → 사진 → 영수증 → 사입 리스트 → 동의 이력 → 완료 기록.
+   * 옮긴다. 확인 → (받는 쪽이 새 회원인가) → 사진 → 영수증 → 사입 리스트
+   * → 동의 이력 → 완료 기록.
+   *
+   * 🔴 받는 계정에 영수증이 **한 장이라도 있으면 아무것도 옮기지 않는다.**
+   *    섞는 판단은 사람이 해야 한다(#195 ⑤-c). 그때는 `skipped` 가 true 다.
    *
    * @returns {Promise<{receipts:number, purchaseLists:number, photos:number,
-   *                    alreadyDone:boolean}>}
+   *                    alreadyDone:boolean, skipped:boolean,
+   *                    reason:string, guestReceipts:number}>}
    */
   async function run({ guestIdToken, callerUid, callerToken }) {
     const { guestUid, targetUid } =
@@ -295,15 +363,59 @@ function createMigrator({ auth, db, bucket, logger }) {
           '이미 다른 계정으로 옮겨진 체험 데이터입니다.');
       }
       // 같은 사람이 또 불렀다. 이미 끝났으면 **그때 결과를 그대로** 준다.
-      if (m.status === 'complete') {
+      //
+      // 🔴 '기존 회원이라 건너뜀' 도 끝난 것이다. 다시 부른다고 옮기지
+      //    않는다 — 그 사이에 영수증이 지워졌더라도 판단은 그대로 둔다.
+      //    (이중 처리 방지. 합치기는 나중에 사람이 고른다)
+      if (m.status === 'complete' || m.status === 'skipped_existing_member') {
         return {
           receipts: m.receipts || 0,
           purchaseLists: m.purchaseLists || 0,
           photos: m.photos || 0,
           alreadyDone: true,
+          skipped: m.status === 'skipped_existing_member',
+          reason: m.reason || '',
+          guestReceipts: m.guestReceipts || 0,
         };
       }
       // 끊긴 작업이다. 아래에서 이어서 끝낸다(같은 자리에 다시 쓴다).
+    }
+
+    // 🔴 **받는 계정이 이미 쓰던 분인가.** 옮기기 **전에** 본다.
+    //
+    //    영수증이 한 장이라도 있으면 섞지 않는다. 같은 영수증을 체험에서도
+    //    찍고 가입 뒤에도 찍었을 수 있는데, 서버가 말없이 합치면 매입
+    //    합계가 부풀고 되돌리기도 어렵다. 사람이 대조 화면에서 고르는 일로
+    //    남겨 둔다.
+    if (await targetHasReceipts(targetUid)) {
+      const guestReceipts = await countGuestReceipts(guestUid);
+      const reason = 'existing_member';
+      await markRef.set({
+        guestUid,
+        targetUid,
+        status: 'skipped_existing_member',
+        reason,
+        guestReceipts,
+        receipts: 0,
+        purchaseLists: 0,
+        photos: 0,
+        sourceKept: true,
+        skippedAt: new Date().toISOString(),
+      }, { merge: true });
+
+      log.info('기존 회원이라 옮기지 않음', {
+        guestUid, targetUid, guestReceipts,
+      });
+
+      return {
+        receipts: 0,
+        purchaseLists: 0,
+        photos: 0,
+        alreadyDone: false,
+        skipped: true,
+        reason,
+        guestReceipts,
+      };
     }
 
     await markRef.set({
@@ -322,6 +434,18 @@ function createMigrator({ auth, db, bucket, logger }) {
       guestUid, targetUid, 'receipts',
       (data, oldId, newId) => ({
         ...data,
+
+        // 🔴 **중복 검사 지문**(`ReceiptKey`) 네 칸을 일부러 다시 적는다.
+        //    앱은 지문을 따로 저장하지 않고 이 값들로 그때그때 계산한다
+        //    (`receipt_duplicate_service.dart`: 매입처·날짜·총액·품목).
+        //    그대로 옮겨야 가입 뒤 같은 영수증을 다시 찍었을 때
+        //    **기존 중복 검사에 걸린다.**
+        //
+        //    위 `...data` 로도 넘어오지만, 나중에 누가 칸을 추려낼 때
+        //    이 네 개가 빠지지 않도록 못 박아 둔다. 없는 칸은 담지 않는다
+        //    (`undefined` 는 Firestore 가 받지 않는다).
+        ...fingerprintOf(data),
+
         id: newId,
         imagePath: rewritePhoto(data.imagePath, urlMap),
         trialReceipt: true,
@@ -359,9 +483,11 @@ function createMigrator({ auth, db, bucket, logger }) {
       guestUid,
       targetUid,
       status: 'complete',
+      reason: 'new_member',
       receipts,
       purchaseLists,
       photos,
+      guestReceipts: receipts,
       sourceKept: true,
       completedAt: new Date().toISOString(),
     }, { merge: true });
@@ -370,7 +496,15 @@ function createMigrator({ auth, db, bucket, logger }) {
       guestUid, targetUid, receipts, purchaseLists, photos,
     });
 
-    return { receipts, purchaseLists, photos, alreadyDone: false };
+    return {
+      receipts,
+      purchaseLists,
+      photos,
+      alreadyDone: false,
+      skipped: false,
+      reason: 'new_member',
+      guestReceipts: receipts,
+    };
   }
 
   return { run, verify, shortOf };
@@ -381,5 +515,6 @@ module.exports = {
   MigrateError,
   TRIAL_PREFIX,
   MIGRATIONS,
+  FINGERPRINT_FIELDS,
   shortOf,
 };

@@ -26,7 +26,7 @@ const read = (p) => readFileSync(r(p), 'utf8');
 //    한 칸 위(webapp/node_modules)부터 찾는다 — firebase-admin 을 못 찾는다.
 const fnRequire = createRequire(r('functions/package.json'));
 const admin = fnRequire('firebase-admin');
-const { createMigrator, MigrateError, shortOf } =
+const { createMigrator, MigrateError, shortOf, FINGERPRINT_FIELDS } =
   fnRequire(r('functions/migrate_guest_data.js'));
 
 const PROJECT = 'flownote-rules-test';
@@ -244,26 +244,213 @@ describe('체험 → 새 카카오 회원 옮기기', () => {
   });
 });
 
-describe('이미 쓰던 회원에게 합치기', () => {
-  test('🔴 기존 데이터는 그대로 두고 5장이 더해진다', async () => {
-    const K = 'kakao:5';
-    // 회원이 이미 쓰던 영수증 2장.
+describe('이미 쓰던 회원 — 아무것도 옮기지 않는다 (#195 ⑤-c)', () => {
+  // 🔴 섞는 판단은 사람이 해야 한다. 서버가 말없이 합치면 같은 영수증을
+  //    체험에서도 찍고 가입 뒤에도 찍은 경우 매입 합계가 부푼다.
+  //    합치기는 나중에 대조 화면에서 사장님이 직접 고르신다.
+
+  async function skipCase(K) {
     await db.doc(`users/${K}/receipts/mine1`).set({ id: 'mine1', storeName: '내것1' });
     await db.doc(`users/${K}/receipts/mine2`).set({ id: 'mine2', storeName: '내것2' });
-
     const guest = await newAnon();
     await seedGuest(guest.uid, 5);
+    const out = await migrate.run({
+      guestIdToken: guest.idToken,
+      callerUid: K,
+      callerToken: memberToken('custom'),
+    });
+    return { guest, out };
+  }
+
+  test('🔴 영수증이 이미 있으면 한 건도 옮기지 않는다', async () => {
+    const K = 'kakao:5';
+    const { out } = await skipCase(K);
+
+    expect(out.skipped).toBe(true);
+    expect(out.reason).toBe('existing_member');
+    expect(out.receipts).toBe(0);
+    expect(out.purchaseLists).toBe(0);
+    expect(out.photos).toBe(0);
+    // 체험 영수증이 몇 장인지는 알려 준다 (나중에 합칠 때 쓴다).
+    expect(out.guestReceipts).toBe(5);
+  });
+
+  test('🔴 기존 영수증은 하나도 안 바뀐다', async () => {
+    const K = 'kakao:5b';
+    await skipCase(K);
+
+    // 2장 그대로. 7장이 되면 안 된다.
+    expect(await countOf(K, 'receipts')).toBe(2);
+    expect(await countOf(K, 'purchase_lists')).toBe(0);
+    const mine = await db.doc(`users/${K}/receipts/mine1`).get();
+    expect(mine.data().storeName).toBe('내것1');
+    expect(mine.data().trialReceipt).toBeUndefined();
+    // 사진도 안 옮겼다.
+    const [files] = await bucket.getFiles({ prefix: `users/${K}/` });
+    expect(files.length).toBe(0);
+  });
+
+  test('🔴 체험 원본도 그대로 남는다', async () => {
+    const K = 'kakao:5c';
+    const { guest } = await skipCase(K);
+    expect(await countOf(guest.uid, 'receipts')).toBe(5);
+  });
+
+  test('🔴 migrations 에 "기존 회원이라 옮기지 않음" 이 남는다', async () => {
+    const K = 'kakao:5d';
+    const { guest } = await skipCase(K);
+
+    const m = (await db.doc(`migrations/${guest.uid}`).get()).data();
+    expect(m.status).toBe('skipped_existing_member');
+    expect(m.reason).toBe('existing_member');
+    expect(m.guestUid).toBe(guest.uid);
+    expect(m.targetUid).toBe(K);
+    expect(m.receipts).toBe(0);
+    expect(m.guestReceipts).toBe(5);
+    expect(m.sourceKept).toBe(true);
+    expect(m.skippedAt).toBeTruthy();
+  });
+
+  test('🔴 다시 불러도 옮기지 않는다 (이중 처리 방지)', async () => {
+    const K = 'kakao:5e';
+    const { guest } = await skipCase(K);
+
+    // 그 사이 기존 영수증이 사라져도 판단은 그대로다.
+    await db.doc(`users/${K}/receipts/mine1`).delete();
+    await db.doc(`users/${K}/receipts/mine2`).delete();
+
+    const again = await migrate.run({
+      guestIdToken: guest.idToken,
+      callerUid: K,
+      callerToken: memberToken('custom'),
+    });
+    expect(again.skipped).toBe(true);
+    expect(again.alreadyDone).toBe(true);
+    expect(await countOf(K, 'receipts')).toBe(0);
+  });
+});
+
+// ══════════════════════════════════════════════════════════════
+// 중복 검사 지문이 함께 옮겨진다
+//
+// 🔴 앱은 지문을 저장하지 않는다. **매입처·날짜·총액·품목** 네 칸에서
+//    그때그때 계산한다(`receipt_duplicate_service.dart` 의 `ReceiptKey`).
+//    그래서 네 칸이 그대로 따라가야 가입 뒤 같은 영수증을 다시 찍었을 때
+//    기존 중복 검사에 걸린다.
+// ══════════════════════════════════════════════════════════════
+describe('🔴 중복 검사 지문', () => {
+  /** 앱의 `ReceiptKey` 와 같은 규칙으로 지문을 만든다. */
+  function keyOf(data) {
+    const store = String(data.storeName || '')
+      .toLowerCase()
+      .replace(/주식회사|\(주\)|（주）|㈜|유한회사|\(유\)/g, '')
+      .replace(/[\s.\-·,]/g, '');
+    const d = new Date(data.date);
+    const day = `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
+    const total = Math.round(Number(data.totalAmount) || 0);
+    const items = (data.items || [])
+      .map((i) => `${String(i.name || '').toLowerCase().replace(/\s/g, '')}`
+        + `|${i.quantity}|${Math.round(Number(i.unitPrice) || 0)}`)
+      .sort()
+      .join(';');
+    return `${store}#${day}#${total}#${items}`;
+  }
+
+  test('🔴 네 칸이 글자 그대로 따라온다', async () => {
+    const guest = await newAnon();
+    // 지문 네 칸이 모두 들어간 영수증 하나.
+    await db.doc(`users/${guest.uid}/receipts/r1`).set({
+      id: 'r1',
+      storeName: '(주)대한꽃도매',
+      date: '2026-07-24T09:30:00.000',
+      totalAmount: 160000,
+      items: [
+        { name: '장미', quantity: 10, unitPrice: 12000 },
+        { name: '수국', quantity: 2, unitPrice: 20000 },
+      ],
+    });
+
+    const K = 'kakao:fp1';
     await migrate.run({
       guestIdToken: guest.idToken,
       callerUid: K,
       callerToken: memberToken('custom'),
     });
 
-    expect(await countOf(K, 'receipts')).toBe(7);
-    // 🔴 기존 것이 덮어써지지 않았다.
-    const mine = await db.doc(`users/${K}/receipts/mine1`).get();
-    expect(mine.data().storeName).toBe('내것1');
-    expect(mine.data().trialReceipt).toBeUndefined();
+    const before = (await db.doc(`users/${guest.uid}/receipts/r1`).get()).data();
+    const snap = await db.collection(`users/${K}/receipts`).get();
+    expect(snap.size).toBe(1);
+    const after = snap.docs[0].data();
+
+    for (const f of ['storeName', 'date', 'totalAmount']) {
+      expect(after[f]).toEqual(before[f]);
+    }
+    expect(after.items).toEqual(before.items);
+    // 🔴 지문이 같다 = 다시 찍으면 중복으로 잡힌다.
+    expect(keyOf(after)).toBe(keyOf(before));
+  });
+
+  test('🔴 옮긴 뒤 같은 영수증을 다시 찍으면 중복으로 걸린다', async () => {
+    const guest = await newAnon();
+    await db.doc(`users/${guest.uid}/receipts/r1`).set({
+      id: 'r1',
+      storeName: '대한꽃도매',
+      date: '2026-07-24T09:30:00.000',
+      totalAmount: 160000,
+      items: [{ name: '장미', quantity: 10, unitPrice: 16000 }],
+    });
+
+    const K = 'kakao:fp2';
+    await migrate.run({
+      guestIdToken: guest.idToken,
+      callerUid: K,
+      callerToken: memberToken('custom'),
+    });
+
+    // 가입 뒤 **같은 영수증을 다시 찍었다** — OCR 이 가게 이름을 조금
+    // 다르게 읽은 상황까지 흉내 낸다(정규화로 같아져야 한다).
+    const rescan = {
+      storeName: '(주)대한 꽃도매',
+      date: '2026-07-24T18:00:00.000',   // 같은 날, 다른 시각
+      totalAmount: 160000,
+      items: [{ name: '장미', quantity: 10, unitPrice: 16000 }],
+    };
+
+    const moved = (await db.collection(`users/${K}/receipts`).get()).docs[0].data();
+    expect(keyOf(rescan)).toBe(keyOf(moved));
+  });
+
+  test('🔴 지문 칸 목록이 앱과 같다', () => {
+    // 앱의 `ReceiptKey.ofReceipt` 가 읽는 네 칸 그대로여야 한다.
+    expect(FINGERPRINT_FIELDS)
+      .toEqual(['storeName', 'date', 'totalAmount', 'items']);
+
+    const dart = read('lib/services/receipt_duplicate_service.dart');
+    const ofReceipt = dart.slice(
+      dart.indexOf('static ReceiptKey ofReceipt'),
+      dart.indexOf('static ReceiptKey ofDraft'),
+    );
+    expect(ofReceipt).toContain('r.storeName');
+    expect(ofReceipt).toContain('r.date');
+    expect(ofReceipt).toContain('r.totalAmount');
+    expect(ofReceipt).toContain('r.items');
+  });
+
+  test('🔴 서버가 영수증을 옮길 때 지문을 따로 챙긴다', () => {
+    const js = read('functions/migrate_guest_data.js');
+
+    // 지문은 한 곳(`fingerprintOf`)에서만 만든다. 여러 군데로 흩어지면
+    // 한쪽만 고치고 잊는다.
+    expect(js).toContain('function fingerprintOf(data)');
+    expect(js).toContain('for (const f of FINGERPRINT_FIELDS)');
+
+    // 영수증 복사에서 그 지문을 실제로 쓴다.
+    const part = js.slice(js.indexOf("'receipts',"), js.indexOf("'purchase_lists',"));
+    expect(part).toContain('...fingerprintOf(data),');
+
+    // 🔴 없는 칸은 담지 않는다. `undefined` 를 쓰면 Firestore 가 문서를
+    //    통째로 거부해서 **옮기기 자체가 실패**한다(실제로 한 번 겪었다).
+    expect(js).toContain('if (data[f] !== undefined) out[f] = data[f];');
   });
 });
 
