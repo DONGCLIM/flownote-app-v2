@@ -1,0 +1,16 @@
+{
+  "name": "flownote-rules-test",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "보안 규칙 테스트 — 규칙을 바꾸면 배포 전에 반드시 돌린다 (#194)",
+  "scripts": {
+    "test": "firebase emulators:exec --only firestore,storage,auth --project flownote-rules-test \"npx vitest run\"",
+    "test:guards": "npx vitest run app_guards.test.js"
+  },
+  "devDependencies": {
+    "@firebase/rules-unit-testing": "^5.0.2",
+    "firebase": "^12.19.0",
+    "vitest": "^4.0.18"
+  }
+}

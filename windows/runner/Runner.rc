@@ -90,12 +90,12 @@ BEGIN
         BLOCK "040904e4"
         BEGIN
             VALUE "CompanyName", "com.florascan" "\0"
-            VALUE "FileDescription", "flora_scan" "\0"
+            VALUE "FileDescription", "FlowNote" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
-            VALUE "InternalName", "flora_scan" "\0"
+            VALUE "InternalName", "FlowNote" "\0"
             VALUE "LegalCopyright", "Copyright (C) 2026 com.florascan. All rights reserved." "\0"
-            VALUE "OriginalFilename", "flora_scan.exe" "\0"
-            VALUE "ProductName", "flora_scan" "\0"
+            VALUE "OriginalFilename", "FlowNote.exe" "\0"
+            VALUE "ProductName", "FlowNote" "\0"
             VALUE "ProductVersion", VERSION_AS_STRING "\0"
         END
     END

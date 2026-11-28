@@ -5,6 +5,7 @@ import '../providers/auth_provider.dart';
 import '../providers/receipt_provider.dart';
 import '../theme/app_theme.dart';
 import '../models/receipt_model.dart';
+import 'insight/insight_hub.dart';
 
 typedef TabSwitcher = void Function(int index);
 
@@ -33,6 +34,10 @@ class _HomeScreenState extends State<HomeScreen> {
           slivers: [
             SliverToBoxAdapter(child: _Header(onTabSwitch: widget.onTabSwitch)),
             SliverToBoxAdapter(child: _ThisMonthCard(onTabSwitch: widget.onTabSwitch)),
+            // 신규 기능 퀵 진입
+            const SliverToBoxAdapter(child: SizedBox(height: 8)),
+            const SliverToBoxAdapter(child: FeatureQuickBar()),
+            const SliverToBoxAdapter(child: SizedBox(height: 20)),
             // ① 월별 지출 추이
             SliverToBoxAdapter(child: _MonthlyBarChart(onTabSwitch: widget.onTabSwitch)),
             // ② 업체별 구매 비중

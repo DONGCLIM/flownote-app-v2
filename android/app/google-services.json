@@ -12,7 +12,12 @@
           "package_name": "com.florascan.scan"
         }
       },
-      "oauth_client": [],
+      "oauth_client": [
+        {
+          "client_id": "250664220370-kvgotgkvkn7qde91s2psuedaop57tee0.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
       "api_key": [
         {
           "current_key": "AIzaSyAf657bJJEVeKCM0rqab_mm30Jubk0OnPs"
@@ -20,7 +25,49 @@
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": []
+          "other_platform_oauth_client": [
+            {
+              "client_id": "250664220370-kvgotgkvkn7qde91s2psuedaop57tee0.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:250664220370:android:38b9b61cc9c9368a6adf0b",
+        "android_client_info": {
+          "package_name": "com.flownote.app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "250664220370-jv7m7e38j82ie5lqd0qla3l10aj3t6gg.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.flownote.app",
+            "certificate_hash": "796c012932f0aafb3f1dce2956739477988ef612"
+          }
+        },
+        {
+          "client_id": "250664220370-kvgotgkvkn7qde91s2psuedaop57tee0.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAf657bJJEVeKCM0rqab_mm30Jubk0OnPs"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "250664220370-kvgotgkvkn7qde91s2psuedaop57tee0.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
         }
       }
     }

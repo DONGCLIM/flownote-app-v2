@@ -1,9 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../providers/auth_provider.dart';
-import '../theme/app_theme.dart';
-import 'main_screen.dart';
 
+import '../design/fn_tokens.dart';
+import '../design/fn_button.dart';
+import '../design/fn_input.dart';
+import '../design/fn_scaffold.dart';
+import '../design/fn_feedback.dart';
+import '../providers/auth_provider.dart';
+import 'onboarding/business_info_screen.dart';
+
+/// 회원가입 화면.
+///
+/// 가입 후 곧바로 사업자 정보 입력(온보딩) 으로 넘어간다.
 class SignUpScreen extends StatefulWidget {
   const SignUpScreen({super.key});
 
@@ -12,332 +20,334 @@ class SignUpScreen extends StatefulWidget {
 }
 
 class _SignUpScreenState extends State<SignUpScreen> {
-  final _formKey = GlobalKey<FormState>();
-  final _nameCtrl = TextEditingController();
-  final _emailCtrl = TextEditingController();
-  final _passwordCtrl = TextEditingController();
-  final _confirmCtrl = TextEditingController();
-  bool _obscurePassword = true;
-  bool _obscureConfirm = true;
-  bool _agreedToTerms = false;
+  final _name = TextEditingController();
+  final _email = TextEditingController();
+  final _password = TextEditingController();
+  final _confirm = TextEditingController();
+
+  bool _obscure = true;
+  bool _obscure2 = true;
+  bool _agreeService = false;
+  bool _agreePrivacy = false;
+  bool _agreeMarketing = false;
+
+  String? _eName, _eEmail, _ePw, _eConfirm;
 
   @override
   void dispose() {
-    _nameCtrl.dispose();
-    _emailCtrl.dispose();
-    _passwordCtrl.dispose();
-    _confirmCtrl.dispose();
+    for (final c in [_name, _email, _password, _confirm]) {
+      c.dispose();
+    }
     super.dispose();
   }
 
-  Future<void> _signUp() async {
-    if (!_formKey.currentState!.validate()) return;
-    if (!_agreedToTerms) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('이용약관에 동의해주세요.'),
-          backgroundColor: AppColors.error,
-        ),
-      );
+  bool get _allAgreed =>
+      _agreeService && _agreePrivacy && _agreeMarketing;
+
+  bool get _canSubmit =>
+      _name.text.trim().isNotEmpty &&
+      _email.text.trim().isNotEmpty &&
+      _password.text.length >= 6 &&
+      _password.text == _confirm.text &&
+      _agreeService &&
+      _agreePrivacy;
+
+  /// 비밀번호 강도 0~3
+  int get _pwStrength {
+    final p = _password.text;
+    if (p.isEmpty) return 0;
+    var s = 0;
+    if (p.length >= 8) s++;
+    if (RegExp(r'[A-Za-z]').hasMatch(p) && RegExp(r'[0-9]').hasMatch(p)) s++;
+    if (RegExp(r'[!@#$%^&*(),.?":{}|<>_\-]').hasMatch(p)) s++;
+    return s;
+  }
+
+  void _validate() {
+    setState(() {
+      _eName = _name.text.trim().isEmpty ? '이름을 입력해 주세요' : null;
+      final e = _email.text.trim();
+      _eEmail = e.isEmpty
+          ? '이메일을 입력해 주세요'
+          : (!RegExp(r'^[\w.\-+]+@[\w\-]+\.[\w.\-]+$').hasMatch(e)
+              ? '올바른 이메일 형식이 아니에요'
+              : null);
+      _ePw = _password.text.length < 6 ? '6자 이상 입력해 주세요' : null;
+      _eConfirm =
+          _confirm.text != _password.text ? '비밀번호가 서로 달라요' : null;
+    });
+  }
+
+  Future<void> _submit() async {
+    _validate();
+    if (_eName != null || _eEmail != null || _ePw != null || _eConfirm != null) {
+      return;
+    }
+    if (!_agreeService || !_agreePrivacy) {
+      showFnToast(context, '필수 약관에 동의해 주세요', type: FnToastType.warning);
       return;
     }
 
     final auth = context.read<AuthProvider>();
-    final success = await auth.signUp(
-      name: _nameCtrl.text.trim(),
-      email: _emailCtrl.text.trim(),
-      password: _passwordCtrl.text,
+    final ok = await auth.signUp(
+      name: _name.text.trim(),
+      email: _email.text.trim(),
+      password: _password.text,
     );
+    if (!mounted) return;
 
-    if (success && mounted) {
+    if (ok) {
       Navigator.pushAndRemoveUntil(
         context,
-        MaterialPageRoute(builder: (_) => const MainScreen()),
-        (route) => false,
+        MaterialPageRoute(builder: (_) => const BusinessInfoScreen()),
+        (r) => false,
       );
+    } else {
+      showFnToast(context, auth.error ?? '가입에 실패했어요',
+          type: FnToastType.error);
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.background,
-      appBar: AppBar(
-        leading: const BackButton(),
-        title: const Text('회원가입'),
-        backgroundColor: AppColors.background,
-      ),
-      body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 16),
-          child: Form(
-            key: _formKey,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _buildWelcomeText(),
-                const SizedBox(height: 32),
-                _buildNameField(),
-                const SizedBox(height: 16),
-                _buildEmailField(),
-                const SizedBox(height: 16),
-                _buildPasswordField(),
-                const SizedBox(height: 16),
-                _buildConfirmPasswordField(),
-                const SizedBox(height: 20),
-                _buildFreeScanBanner(),
-                const SizedBox(height: 20),
-                _buildTermsCheckbox(),
-                const SizedBox(height: 28),
-                _buildSignUpButton(),
-                const SizedBox(height: 16),
-                _buildErrorWidget(),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
+    final loading = context.watch<AuthProvider>().isLoading;
 
-  Widget _buildWelcomeText() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+    return Stack(
       children: [
-        const Text(
-          '환영합니다! 🌺',
-          style: TextStyle(
-            fontSize: 26,
-            fontWeight: FontWeight.w700,
-            color: AppColors.textPrimary,
+        FnScaffold(
+          title: '회원가입',
+          bottomBar: FnButton(
+            label: '가입하고 시작하기',
+            size: FnButtonSize.large,
+            expand: true,
+            loading: loading,
+            onPressed: _canSubmit ? _submit : null,
           ),
-        ),
-        const SizedBox(height: 8),
-        const Text(
-          '지금 가입하고 30회 무료 스캔을\n시작해보세요',
-          style: TextStyle(
-            fontSize: 15,
-            color: AppColors.textSecondary,
-            height: 1.5,
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildNameField() {
-    return TextFormField(
-      controller: _nameCtrl,
-      decoration: const InputDecoration(
-        labelText: '이름',
-        prefixIcon: Icon(Icons.person_outline_rounded, color: AppColors.textHint),
-      ),
-      validator: (v) => (v == null || v.isEmpty) ? '이름을 입력하세요' : null,
-    );
-  }
-
-  Widget _buildEmailField() {
-    return TextFormField(
-      controller: _emailCtrl,
-      keyboardType: TextInputType.emailAddress,
-      decoration: const InputDecoration(
-        labelText: '이메일',
-        prefixIcon: Icon(Icons.mail_outline_rounded, color: AppColors.textHint),
-      ),
-      validator: (v) {
-        if (v == null || v.isEmpty) return '이메일을 입력하세요';
-        if (!v.contains('@')) return '올바른 이메일 형식이 아닙니다';
-        return null;
-      },
-    );
-  }
-
-  Widget _buildPasswordField() {
-    return TextFormField(
-      controller: _passwordCtrl,
-      obscureText: _obscurePassword,
-      decoration: InputDecoration(
-        labelText: '비밀번호',
-        prefixIcon: const Icon(Icons.lock_outline_rounded, color: AppColors.textHint),
-        suffixIcon: IconButton(
-          icon: Icon(
-            _obscurePassword
-                ? Icons.visibility_off_outlined
-                : Icons.visibility_outlined,
-            color: AppColors.textHint,
-          ),
-          onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
-        ),
-      ),
-      validator: (v) {
-        if (v == null || v.isEmpty) return '비밀번호를 입력하세요';
-        if (v.length < 6) return '비밀번호는 6자 이상이어야 합니다';
-        return null;
-      },
-    );
-  }
-
-  Widget _buildConfirmPasswordField() {
-    return TextFormField(
-      controller: _confirmCtrl,
-      obscureText: _obscureConfirm,
-      decoration: InputDecoration(
-        labelText: '비밀번호 확인',
-        prefixIcon: const Icon(Icons.lock_outline_rounded, color: AppColors.textHint),
-        suffixIcon: IconButton(
-          icon: Icon(
-            _obscureConfirm
-                ? Icons.visibility_off_outlined
-                : Icons.visibility_outlined,
-            color: AppColors.textHint,
-          ),
-          onPressed: () => setState(() => _obscureConfirm = !_obscureConfirm),
-        ),
-      ),
-      validator: (v) {
-        if (v != _passwordCtrl.text) return '비밀번호가 일치하지 않습니다';
-        return null;
-      },
-    );
-  }
-
-  Widget _buildFreeScanBanner() {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [
-            AppColors.accent.withValues(alpha: 0.12),
-            AppColors.primary.withValues(alpha: 0.08),
-          ],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: AppColors.accent.withValues(alpha: 0.3),
-        ),
-      ),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              color: AppColors.accent.withValues(alpha: 0.15),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: const Text('🎁', style: TextStyle(fontSize: 22)),
-          ),
-          const SizedBox(width: 14),
-          const Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  '30회 무료 스캔 제공!',
-                  style: TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.textPrimary,
-                  ),
-                ),
-                SizedBox(height: 3),
-                Text(
-                  '가입 즉시 30회의 OCR 스캔 기능을\n무료로 이용하실 수 있습니다',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: AppColors.textSecondary,
-                    height: 1.4,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildTermsCheckbox() {
-    return Row(
-      children: [
-        Checkbox(
-          value: _agreedToTerms,
-          onChanged: (v) => setState(() => _agreedToTerms = v ?? false),
-          activeColor: AppColors.primary,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
-        ),
-        Expanded(
-          child: RichText(
-            text: const TextSpan(
-              style: TextStyle(fontSize: 13, color: AppColors.textSecondary),
-              children: [
-                TextSpan(text: '이용약관 및 '),
-                TextSpan(
-                  text: '개인정보처리방침',
-                  style: TextStyle(
-                    color: AppColors.primary,
-                    fontWeight: FontWeight.w600,
-                    decoration: TextDecoration.underline,
-                  ),
-                ),
-                TextSpan(text: '에 동의합니다'),
-              ],
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildSignUpButton() {
-    return Consumer<AuthProvider>(
-      builder: (context, auth, _) {
-        return SizedBox(
-          width: double.infinity,
-          child: ElevatedButton(
-            onPressed: auth.isLoading ? null : _signUp,
-            child: auth.isLoading
-                ? const SizedBox(
-                    height: 20,
-                    width: 20,
-                    child: CircularProgressIndicator(
-                      color: Colors.white,
-                      strokeWidth: 2,
-                    ),
-                  )
-                : const Text('무료로 시작하기'),
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _buildErrorWidget() {
-    return Consumer<AuthProvider>(
-      builder: (context, auth, _) {
-        if (auth.error == null) return const SizedBox.shrink();
-        return Container(
-          padding: const EdgeInsets.all(14),
-          decoration: BoxDecoration(
-            color: AppColors.error.withValues(alpha: 0.08),
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: AppColors.error.withValues(alpha: 0.3)),
-          ),
-          child: Row(
+          body: ListView(
+            padding: const EdgeInsets.fromLTRB(
+                FnSpace.x20, FnSpace.x8, FnSpace.x20, FnSpace.x24),
             children: [
-              const Icon(Icons.error_outline, color: AppColors.error, size: 18),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  auth.error!,
-                  style: const TextStyle(color: AppColors.error, fontSize: 13),
+              Text('꽃집 사장님, 반가워요', style: FnType.title3),
+              const SizedBox(height: FnSpace.x6),
+              Text('가입하면 PRO 기능을 30일 무료로 써볼 수 있어요.',
+                  style: FnType.body2
+                      .copyWith(color: FnColors.labelAlternative)),
+              const SizedBox(height: FnSpace.x24),
+
+              FnTextField(
+                label: '이름',
+                hint: '예) 김꽃순',
+                controller: _name,
+                errorText: _eName,
+                onChanged: (_) => setState(() => _eName = null),
+              ),
+              const SizedBox(height: FnSpace.x16),
+              FnTextField(
+                label: '이메일',
+                hint: 'flower@example.com',
+                controller: _email,
+                keyboardType: TextInputType.emailAddress,
+                errorText: _eEmail,
+                onChanged: (_) => setState(() => _eEmail = null),
+              ),
+              const SizedBox(height: FnSpace.x16),
+              FnTextField(
+                label: '비밀번호',
+                hint: '6자 이상',
+                controller: _password,
+                obscureText: _obscure,
+                errorText: _ePw,
+                onChanged: (_) => setState(() => _ePw = null),
+                suffix: IconButton(
+                  icon: Icon(
+                    _obscure
+                        ? Icons.visibility_off_rounded
+                        : Icons.visibility_rounded,
+                    size: 19,
+                    color: FnColors.labelAssistive,
+                  ),
+                  onPressed: () => setState(() => _obscure = !_obscure),
+                ),
+              ),
+              if (_password.text.isNotEmpty) ...[
+                const SizedBox(height: FnSpace.x8),
+                _StrengthBar(level: _pwStrength),
+              ],
+              const SizedBox(height: FnSpace.x16),
+              FnTextField(
+                label: '비밀번호 확인',
+                hint: '한 번 더 입력',
+                controller: _confirm,
+                obscureText: _obscure2,
+                errorText: _eConfirm,
+                onChanged: (_) => setState(() => _eConfirm = null),
+                suffix: _confirm.text.isNotEmpty &&
+                        _confirm.text == _password.text
+                    ? const Padding(
+                        padding: EdgeInsets.only(right: FnSpace.x16),
+                        child: Icon(Icons.check_circle_rounded,
+                            size: 19, color: FnColors.statusPositive),
+                      )
+                    : IconButton(
+                        icon: Icon(
+                          _obscure2
+                              ? Icons.visibility_off_rounded
+                              : Icons.visibility_rounded,
+                          size: 19,
+                          color: FnColors.labelAssistive,
+                        ),
+                        onPressed: () =>
+                            setState(() => _obscure2 = !_obscure2),
+                      ),
+              ),
+              const SizedBox(height: FnSpace.x24),
+
+              // 약관
+              Container(
+                padding: const EdgeInsets.all(FnSpace.x4),
+                decoration: BoxDecoration(
+                  color: FnColors.backgroundElevated,
+                  borderRadius: FnRadius.br16,
+                  border: Border.all(color: FnColors.lineAlternative),
+                ),
+                child: Column(
+                  children: [
+                    _AgreeRow(
+                      label: '전체 동의',
+                      value: _allAgreed,
+                      onChanged: (v) => setState(() {
+                        _agreeService = v;
+                        _agreePrivacy = v;
+                        _agreeMarketing = v;
+                      }),
+                      bold: true,
+                    ),
+                    const Padding(
+                      padding:
+                          EdgeInsets.symmetric(horizontal: FnSpace.x12),
+                      child: Divider(
+                          height: 1, color: FnColors.lineAlternative),
+                    ),
+                    _AgreeRow(
+                      label: '[필수] 서비스 이용약관',
+                      value: _agreeService,
+                      onChanged: (v) => setState(() => _agreeService = v),
+                    ),
+                    _AgreeRow(
+                      label: '[필수] 개인정보 처리방침',
+                      value: _agreePrivacy,
+                      onChanged: (v) => setState(() => _agreePrivacy = v),
+                    ),
+                    _AgreeRow(
+                      label: '[선택] 시세·혜택 알림 받기',
+                      value: _agreeMarketing,
+                      onChanged: (v) => setState(() => _agreeMarketing = v),
+                    ),
+                  ],
                 ),
               ),
             ],
           ),
-        );
-      },
+        ),
+        if (loading) const FnLoadingOverlay(message: '가입하는 중...'),
+      ],
+    );
+  }
+}
+
+class _AgreeRow extends StatelessWidget {
+  const _AgreeRow({
+    required this.label,
+    required this.value,
+    required this.onChanged,
+    this.bold = false,
+  });
+
+  final String label;
+  final bool value;
+  final ValueChanged<bool> onChanged;
+  final bool bold;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: () => onChanged(!value),
+      borderRadius: FnRadius.br12,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(
+            horizontal: FnSpace.x12, vertical: FnSpace.x12),
+        child: Row(
+          children: [
+            AnimatedContainer(
+              duration: FnDuration.fast,
+              width: 20,
+              height: 20,
+              decoration: BoxDecoration(
+                color: value ? FnColors.primaryNormal : Colors.transparent,
+                borderRadius: BorderRadius.circular(FnRadius.r6),
+                border: Border.all(
+                  color: value ? FnColors.primaryNormal : FnColors.lineStrong,
+                  width: 1.5,
+                ),
+              ),
+              child: value
+                  ? const Icon(Icons.check_rounded,
+                      size: 14, color: Colors.white)
+                  : null,
+            ),
+            const SizedBox(width: FnSpace.x10),
+            Expanded(
+              child: Text(
+                label,
+                style: (bold ? FnType.label1 : FnType.body2).copyWith(
+                  fontWeight: bold ? FontWeight.w700 : FontWeight.w500,
+                  color: bold
+                      ? FnColors.labelNormal
+                      : FnColors.labelNeutral,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _StrengthBar extends StatelessWidget {
+  const _StrengthBar({required this.level});
+  final int level;
+
+  @override
+  Widget build(BuildContext context) {
+    const labels = ['약함', '보통', '좋음', '아주 좋음'];
+    const colors = [
+      FnColors.statusNegative,
+      FnColors.statusCautionary,
+      FnColors.statusPositive,
+      FnColors.statusPositiveStrong,
+    ];
+    final c = colors[level.clamp(0, 3)];
+
+    return Row(
+      children: [
+        for (var i = 0; i < 3; i++)
+          Expanded(
+            child: Padding(
+              padding: EdgeInsets.only(right: i == 2 ? 0 : 4),
+              child: Container(
+                height: 3,
+                decoration: BoxDecoration(
+                  color: i < level ? c : FnColors.fillNormal,
+                  borderRadius: FnRadius.brFull,
+                ),
+              ),
+            ),
+          ),
+        const SizedBox(width: FnSpace.x8),
+        Text(labels[level.clamp(0, 3)],
+            style: FnType.caption2.copyWith(color: c)),
+      ],
     );
   }
 }
